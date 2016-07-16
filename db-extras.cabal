@@ -1,0 +1,71 @@
+name:                db-extras
+version:             0.1
+synopsis:            Extra utilities for hpqtypes library
+description:         The following extras for hpqtypes library:
+                     .
+                     * DSL for easy, modular construction of SQL queries.
+                     .
+                     * System for automatic validation and migration of a database schema.
+homepage:            https://github.com/scrive/hpqtypes-extras
+license:             BSD3
+license-file:        LICENSE
+author:              Scrive
+maintainer:          Andrzej Ryhbczak <andrzej@rybczak.net>
+category:            Database
+build-type:          Simple
+cabal-version:       >=1.10
+
+Source-repository head
+  Type:     git
+  Location: git@github.com:scrive/db-extras.git
+
+library
+  hs-source-dirs: src
+
+  ghc-options: -Wall
+
+  exposed-modules: DB.Checks
+                 , DB.Model
+                 , DB.Model.Check
+                 , DB.Model.ColumnType
+                 , DB.Model.CompositeType
+                 , DB.Model.Domain
+                 , DB.Model.Extension
+                 , DB.Model.ForeignKey
+                 , DB.Model.Index
+                 , DB.Model.Migration
+                 , DB.Model.PrimaryKey
+                 , DB.Model.Table
+                 , DB.SQL
+                 , DB.Versions
+
+  build-depends: base < 5
+               , base16-bytestring
+               , bytestring
+               , containers
+               , cryptohash
+               , exceptions
+               , fields-json
+               , hpqtypes >= 1.5.0
+               , lifted-base
+               , log >= 0.5
+               , monad-control >= 1.0.0.0
+               , mtl
+               , text
+               , text-show
+
+  default-language: Haskell2010
+  default-extensions: BangPatterns
+                    , ExistentialQuantification
+                    , FlexibleContexts
+                    , GeneralizedNewtypeDeriving
+                    , LambdaCase
+                    , MultiWayIf
+                    , OverloadedStrings
+                    , RankNTypes
+                    , RecordWildCards
+                    , ScopedTypeVariables
+                    , StandaloneDeriving
+                    , TupleSections
+                    , TypeFamilies
+                    , UndecidableInstances
