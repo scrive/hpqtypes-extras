@@ -581,7 +581,7 @@ sqlWhereE exc sql = modify (\cmd -> sqlWhere1 cmd (SqlPlainCondition sql (SqlWhy
   where
     exc2 (_::()) = exc
 
-sqlWhereEV :: (MonadState v m, SqlWhere v, KontraException e, Show a, FromSQL a) => (a -> e, SQL) -> SQL -> m ()
+sqlWhereEV :: (MonadState v m, SqlWhere v, KontraException e, FromSQL a) => (a -> e, SQL) -> SQL -> m ()
 sqlWhereEV (exc, vsql) sql = modify (\cmd -> sqlWhere1 cmd (SqlPlainCondition sql (SqlWhyNot True exc2 [vsql])))
   where
     exc2 (Identity v1) = exc v1
@@ -678,7 +678,7 @@ sqlWhereIsNULL col = sqlWhere $ col <+> "IS NULL"
 sqlWhereIsNotNULL :: (MonadState v m, SqlWhere v) => SQL -> m ()
 sqlWhereIsNotNULL col = sqlWhere $ col <+> "IS NOT NULL"
 
-sqlWhereIsNULLE :: (MonadState v m, SqlWhere v, KontraException e, Show a, FromSQL a)
+sqlWhereIsNULLE :: (MonadState v m, SqlWhere v, KontraException e, FromSQL a)
                 => (a -> e) -> SQL -> m ()
 sqlWhereIsNULLE exc col = sqlWhereEV (exc, col) $ col <+> "IS NULL"
 
@@ -939,12 +939,12 @@ sqlTurnIntoWhyNotSelect command =
                         then "TRUE"
                         else "EXISTS (" <> (toSQLCommand $ s { sqlSelectResult = [ "TRUE" ]}) <> ")"
 
-          run :: (Monad m,MonadState Int m) => Int -> SqlSelect -> m SqlSelect
+          run :: (MonadState Int m) => Int -> SqlSelect -> m SqlSelect
           run current select' = do
             new <- mapM (around current) (sqlSelectWhere select')
             return (select' { sqlSelectWhere = concat new })
 
-          around :: (Monad m,MonadState Int m) => Int -> SqlCondition -> m [SqlCondition]
+          around :: (MonadState Int m) => Int -> SqlCondition -> m [SqlCondition]
           around current cond@(SqlPlainCondition{}) = do
             index <- get
             modify (+1)
