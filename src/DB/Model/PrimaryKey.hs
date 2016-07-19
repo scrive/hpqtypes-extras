@@ -7,6 +7,7 @@ module DB.Model.PrimaryKey (
   , sqlDropPK
   ) where
 
+import Data.Monoid (mconcat)
 import Data.Monoid.Utils
 import Database.PostgreSQL.PQTypes
 import Prelude
