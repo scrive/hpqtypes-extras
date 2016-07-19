@@ -1,4 +1,4 @@
-name:                db-extras
+name:                hpqtypes-extras
 version:             0.2.3
 synopsis:            Extra utilities for hpqtypes library
 description:         The following extras for hpqtypes library:
@@ -18,7 +18,7 @@ cabal-version:       >=1.10
 
 Source-repository head
   Type:     git
-  Location: git@github.com:scrive/db-extras.git
+  Location: git@github.com:scrive/hpqtypes-extras.git
 
 library
   hs-source-dirs: src
