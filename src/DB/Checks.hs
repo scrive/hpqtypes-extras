@@ -5,6 +5,7 @@ module DB.Checks (
   , createDomain
   ) where
 
+import Control.Applicative ((<$>))
 import Control.Monad.Catch
 import Control.Monad.Reader
 import Data.Int
