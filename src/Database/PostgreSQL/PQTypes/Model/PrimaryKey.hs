@@ -1,4 +1,4 @@
-module DB.Model.PrimaryKey (
+module Database.PostgreSQL.PQTypes.Model.PrimaryKey (
     PrimaryKey
   , pkOnColumn
   , pkOnColumns

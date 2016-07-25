@@ -1,4 +1,4 @@
-module DB.Model.CompositeType (
+module Database.PostgreSQL.PQTypes.Model.CompositeType (
     CompositeType(..)
   , CompositeColumn(..)
   , defineComposites
@@ -8,7 +8,7 @@ import Data.Monoid.Utils
 import Database.PostgreSQL.PQTypes
 import Prelude
 
-import DB.Model.ColumnType
+import Database.PostgreSQL.PQTypes.Model.ColumnType
 
 data CompositeType = CompositeType {
   ctName    :: !(RawSQL ())

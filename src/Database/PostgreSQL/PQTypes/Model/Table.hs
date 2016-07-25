@@ -1,5 +1,5 @@
 {-# LANGUAGE ExistentialQuantification #-}
-module DB.Model.Table (
+module Database.PostgreSQL.PQTypes.Model.Table (
     TableColumn(..)
   , tblColumn
   , sqlAddColumn
@@ -20,11 +20,11 @@ import Data.Monoid.Utils
 import Database.PostgreSQL.PQTypes
 import Prelude
 
-import DB.Model.Check
-import DB.Model.ColumnType
-import DB.Model.ForeignKey
-import DB.Model.Index
-import DB.Model.PrimaryKey
+import Database.PostgreSQL.PQTypes.Model.Check
+import Database.PostgreSQL.PQTypes.Model.ColumnType
+import Database.PostgreSQL.PQTypes.Model.ForeignKey
+import Database.PostgreSQL.PQTypes.Model.Index
+import Database.PostgreSQL.PQTypes.Model.PrimaryKey
 
 data TableColumn = TableColumn {
   colName     :: RawSQL ()

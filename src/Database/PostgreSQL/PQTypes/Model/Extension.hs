@@ -1,4 +1,4 @@
-module DB.Model.Extension (
+module Database.PostgreSQL.PQTypes.Model.Extension (
     Extension(..)
   , ununExtension
   ) where

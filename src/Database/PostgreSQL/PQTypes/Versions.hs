@@ -1,8 +1,8 @@
-module DB.Versions where
+module Database.PostgreSQL.PQTypes.Versions where
 
 import Prelude
 
-import DB.Model
+import Database.PostgreSQL.PQTypes.Model
 
 tableVersions :: Table
 tableVersions = tblTable {

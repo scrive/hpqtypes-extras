@@ -1,4 +1,4 @@
-module DB.Model.Domain (
+module Database.PostgreSQL.PQTypes.Model.Domain (
     Domain(..)
   , mkChecks
   , sqlCreateDomain
@@ -11,8 +11,8 @@ import Data.Set (Set, fromList)
 import Database.PostgreSQL.PQTypes
 import Prelude
 
-import DB.Model.Check
-import DB.Model.ColumnType
+import Database.PostgreSQL.PQTypes.Model.Check
+import Database.PostgreSQL.PQTypes.Model.ColumnType
 
 -- Domains are global, i.e. not bound to any particular table.
 -- The first table that uses a new domain needs to create it

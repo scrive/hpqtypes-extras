@@ -1,4 +1,4 @@
-module DB.Model.ForeignKey (
+module Database.PostgreSQL.PQTypes.Model.ForeignKey (
     ForeignKey(..)
   , ForeignKeyAction(..)
   , fkOnColumn
