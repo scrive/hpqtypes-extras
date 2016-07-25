@@ -1,5 +1,5 @@
 name:                hpqtypes-extras
-version:             0.2.3
+version:             0.2.4
 synopsis:            Extra utilities for hpqtypes library
 description:         The following extras for hpqtypes library:
                      .
@@ -49,7 +49,7 @@ library
                , fields-json
                , hpqtypes >= 1.5.0
                , lifted-base
-               , log >= 0.5
+               , log > 0.5.2
                , monad-control >= 1.0.0.0
                , mtl
                , text
