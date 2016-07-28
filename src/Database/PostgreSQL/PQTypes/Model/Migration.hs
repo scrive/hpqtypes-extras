@@ -1,10 +1,10 @@
-module DB.Model.Migration (
+module Database.PostgreSQL.PQTypes.Model.Migration (
     Migration(..)
   )  where
 
 import Data.Int
 
-import DB.Model.Table
+import Database.PostgreSQL.PQTypes.Model.Table
 
 -- | Migration object. Fields description:
 -- * mgrTable is the table you're migrating

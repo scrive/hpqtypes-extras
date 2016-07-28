@@ -1,4 +1,4 @@
-module DB.Model.Check (
+module Database.PostgreSQL.PQTypes.Model.Check (
     Check(..)
   , sqlAddCheck
   , sqlDropCheck

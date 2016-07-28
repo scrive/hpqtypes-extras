@@ -1,4 +1,4 @@
-module DB.Checks (
+module Database.PostgreSQL.PQTypes.Checks (
     migrateDatabase
   , checkDatabase
   , createTable
@@ -20,9 +20,9 @@ import qualified Data.Foldable as F
 import qualified Data.List as L
 import qualified Data.Text as T
 
-import DB.Model
-import DB.SQL
-import DB.Versions
+import Database.PostgreSQL.PQTypes.Model
+import Database.PostgreSQL.PQTypes.SQL.Builder
+import Database.PostgreSQL.PQTypes.Versions
 
 newtype ValidationResult = ValidationResult [T.Text] -- ^ list of error messages
 

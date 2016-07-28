@@ -1,4 +1,4 @@
-module DB.Model.ColumnType (
+module Database.PostgreSQL.PQTypes.Model.ColumnType (
     ColumnType(..)
   , columnTypeToSQL
   ) where

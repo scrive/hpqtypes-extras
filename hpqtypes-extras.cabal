@@ -1,5 +1,5 @@
-name:                db-extras
-version:             0.1.3
+name:                hpqtypes-extras
+version:             1.2.4
 synopsis:            Extra utilities for hpqtypes library
 description:         The following extras for hpqtypes library:
                      .
@@ -18,27 +18,27 @@ cabal-version:       >=1.10
 
 Source-repository head
   Type:     git
-  Location: git@github.com:scrive/db-extras.git
+  Location: git@github.com:scrive/hpqtypes-extras.git
 
 library
   hs-source-dirs: src
 
   ghc-options: -Wall
 
-  exposed-modules: DB.Checks
-                 , DB.Model
-                 , DB.Model.Check
-                 , DB.Model.ColumnType
-                 , DB.Model.CompositeType
-                 , DB.Model.Domain
-                 , DB.Model.Extension
-                 , DB.Model.ForeignKey
-                 , DB.Model.Index
-                 , DB.Model.Migration
-                 , DB.Model.PrimaryKey
-                 , DB.Model.Table
-                 , DB.SQL
-                 , DB.Versions
+  exposed-modules: Database.PostgreSQL.PQTypes.Checks
+                 , Database.PostgreSQL.PQTypes.Model
+                 , Database.PostgreSQL.PQTypes.Model.Check
+                 , Database.PostgreSQL.PQTypes.Model.ColumnType
+                 , Database.PostgreSQL.PQTypes.Model.CompositeType
+                 , Database.PostgreSQL.PQTypes.Model.Domain
+                 , Database.PostgreSQL.PQTypes.Model.Extension
+                 , Database.PostgreSQL.PQTypes.Model.ForeignKey
+                 , Database.PostgreSQL.PQTypes.Model.Index
+                 , Database.PostgreSQL.PQTypes.Model.Migration
+                 , Database.PostgreSQL.PQTypes.Model.PrimaryKey
+                 , Database.PostgreSQL.PQTypes.Model.Table
+                 , Database.PostgreSQL.PQTypes.SQL.Builder
+                 , Database.PostgreSQL.PQTypes.Versions
 
   build-depends: base < 5
                , base16-bytestring
@@ -49,7 +49,7 @@ library
                , fields-json
                , hpqtypes >= 1.5.0
                , lifted-base
-               , log >= 0.5
+               , log > 0.5.2
                , monad-control >= 1.0.0.0
                , mtl
                , text

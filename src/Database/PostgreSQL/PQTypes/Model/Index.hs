@@ -1,4 +1,4 @@
-module DB.Model.Index (
+module Database.PostgreSQL.PQTypes.Model.Index (
     TableIndex(..)
   , tblIndex
   , indexOnColumn
