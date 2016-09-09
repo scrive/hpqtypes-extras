@@ -3,6 +3,7 @@ module Database.PostgreSQL.PQTypes.Checks (
   , checkDatabase
   , createTable
   , createDomain
+  , MigrateOptions(..)
   ) where
 
 import Control.Applicative ((<$>))
@@ -25,6 +26,8 @@ import Database.PostgreSQL.PQTypes.SQL.Builder
 import Database.PostgreSQL.PQTypes.Versions
 
 newtype ValidationResult = ValidationResult [T.Text] -- ^ list of error messages
+
+data MigrateOptions = ForceCommitAfterEveryMigration deriving Eq
 
 instance Monoid ValidationResult where
   mempty = ValidationResult []
@@ -50,12 +53,12 @@ resultCheck = \case
 -- | Runs all checks on a database
 migrateDatabase
   :: (MonadDB m, MonadLog m, MonadThrow m)
-  => [Extension] -> [Domain] -> [Table] -> [Migration m]
+  => [MigrateOptions] -> [Extension] -> [Domain] -> [Table] -> [Migration m]
   -> m ()
-migrateDatabase extensions domains tables migrations = do
+migrateDatabase options extensions domains tables migrations = do
   void checkDBTimeZone
   mapM_ checkExtension extensions
-  checkDBConsistency domains (tableVersions : tables) migrations
+  checkDBConsistency options domains (tableVersions : tables) migrations
   resultCheck =<< checkDomainsStructure domains
   resultCheck =<< checkDBStructure (tableVersions : tables)
   checkUnknownTables tables
@@ -322,9 +325,9 @@ checkDBStructure tables = fmap mconcat . forM tables $ \table ->
 -- | Checks whether database is consistent (performs migrations if necessary)
 checkDBConsistency
   :: forall m. (MonadDB m, MonadLog m, MonadThrow m)
-  => [Domain] -> [Table] -> [Migration m]
+  => [MigrateOptions] -> [Domain] -> [Table] -> [Migration m]
   -> m ()
-checkDBConsistency domains tables migrations = do
+checkDBConsistency options domains tables migrations = do
   -- check if migrations list has the following properties:
   -- - consecutive mgrFrom numbers
   -- - no duplicates
@@ -383,6 +386,12 @@ checkDBConsistency domains tables migrations = do
           runQuery_ $ sqlUpdate "table_versions" $ do
             sqlSet "version" $ succ (mgrFrom migration)
             sqlWhereEq "name" $ tblNameString (mgrTable migration)
+          when (ForceCommitAfterEveryMigration `elem` options) $ do
+            logInfo_ "Forcing commit after migraton and starting new transaction..."
+            commit
+            begin
+            logInfo_ "Forcing commit after migraton and starting new transaction... done."
+            logInfo_ "!IMPORTANT! Database has been permanently changed"
         logInfo_ "Running migrations... done."
 
 checkTableVersion :: (MonadDB m, MonadThrow m) => Table -> m (Maybe Int32)
