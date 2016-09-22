@@ -5,7 +5,9 @@ description:         The following extras for hpqtypes library:
                      .
                      * DSL for easy, modular construction of SQL queries.
                      .
-                     * System for automatic validation and migration of a database schema.
+                     * System for automatic validation and migration
+                       of a database schema.
+
 homepage:            https://github.com/scrive/hpqtypes-extras
 license:             BSD3
 license-file:        LICENSE
@@ -20,7 +22,7 @@ tested-with:         GHC == 7.8.4, GHC == 7.10.3, GHC == 8.0.1
 
 Source-repository head
   Type:     git
-  Location: git@github.com:scrive/hpqtypes-extras.git
+  Location: https://github.com/scrive/hpqtypes-extras.git
 
 library
   hs-source-dirs: src
