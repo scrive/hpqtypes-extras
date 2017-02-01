@@ -64,7 +64,7 @@ script:
  - TESTS=( $(awk 'tolower($0) ~ /^test-suite / { print $2 }' *.cabal) );
    shopt -s globstar;
    RC=true; for T in ${TESTS[@]}; do echo "== $T ==";
-   if dist-newstyle/build/**/$SRC_BASENAME/**/build/$T/$T; then echo "= $T OK =";
+   if dist-newstyle/build/**/$SRC_BASENAME/**/build/$T/$T --connection-string 'postgresql://postgres@localhost/travis_ci_test'; then echo "= $T OK =";
    else echo "= $T FAILED ="; RC=false; fi; done; $RC
  - cabal sdist # test that a source-distribution can be generated
 

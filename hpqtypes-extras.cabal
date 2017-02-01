@@ -77,3 +77,25 @@ library
                     , TupleSections
                     , TypeFamilies
                     , UndecidableInstances
+
+test-suite  hpqtypes-extras-tests
+  type:               exitcode-stdio-1.0
+  hs-source-dirs:     test
+  main-is:            Main.hs
+  default-language:   Haskell2010
+  default-extensions: ConstraintKinds
+                    , DeriveDataTypeable
+                    , FlexibleContexts
+                    , OverloadedStrings
+                    , RecordWildCards
+                    , ScopedTypeVariables
+  ghc-options:        -Wall
+  build-depends:      base,
+                      exceptions,
+                      hpqtypes,
+                      hpqtypes-extras,
+                      log,
+                      tasty,
+                      tasty-hunit,
+                      text,
+                      transformers
