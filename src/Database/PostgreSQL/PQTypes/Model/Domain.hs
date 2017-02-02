@@ -51,17 +51,17 @@ import Database.PostgreSQL.PQTypes.Model.ColumnType
 
 data Domain = Domain {
   -- | Name of the domain.
-  domName :: RawSQL ()
+  domName     :: RawSQL ()
   -- | Type of the domain.
-, domType :: ColumnType
+, domType     :: ColumnType
   -- | Defines whether the domain value can be NULL.
   -- *Cannot* be superseded by a table column definition.
 , domNullable :: Bool
   -- Default value for the domain. *Can* be
   -- superseded by a table column definition.
-, domDefault :: Maybe (RawSQL ())
+, domDefault  :: Maybe (RawSQL ())
   -- Set of constraint checks on the domain.
-, domChecks :: Set Check
+, domChecks   :: Set Check
 } deriving (Eq, Ord, Show)
 
 mkChecks :: [Check] -> Set Check

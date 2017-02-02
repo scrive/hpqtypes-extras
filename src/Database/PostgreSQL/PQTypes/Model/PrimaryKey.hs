@@ -20,7 +20,7 @@ pkOnColumn :: RawSQL () -> Maybe PrimaryKey
 pkOnColumn = Just . PrimaryKey . S.singleton
 
 pkOnColumns :: [RawSQL ()] -> Maybe PrimaryKey
-pkOnColumns [] = Nothing
+pkOnColumns []      = Nothing
 pkOnColumns columns = Just . PrimaryKey . S.fromList $ columns
 
 pkName :: RawSQL () -> RawSQL ()

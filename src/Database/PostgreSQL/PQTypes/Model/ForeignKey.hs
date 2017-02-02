@@ -72,10 +72,10 @@ sqlAddFK tname fk@ForeignKey{..} = mconcat [
   , " INITIALLY" <+> if fkDeferred then "DEFERRED" else "IMMEDIATE"
   ]
   where
-    foreignKeyActionToSQL ForeignKeyNoAction = "NO ACTION"
-    foreignKeyActionToSQL ForeignKeyRestrict = "RESTRICT"
-    foreignKeyActionToSQL ForeignKeyCascade = "CASCADE"
-    foreignKeyActionToSQL ForeignKeySetNull = "SET NULL"
+    foreignKeyActionToSQL ForeignKeyNoAction   = "NO ACTION"
+    foreignKeyActionToSQL ForeignKeyRestrict   = "RESTRICT"
+    foreignKeyActionToSQL ForeignKeyCascade    = "CASCADE"
+    foreignKeyActionToSQL ForeignKeySetNull    = "SET NULL"
     foreignKeyActionToSQL ForeignKeySetDefault = "SET DEFAULT"
 
 sqlDropFK :: RawSQL () -> ForeignKey -> RawSQL ()

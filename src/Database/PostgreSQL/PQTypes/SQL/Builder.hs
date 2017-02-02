@@ -291,55 +291,55 @@ instance Sqlable SqlCondition where
   toSQLCommand (SqlExistsCondition a) = "EXISTS (" <> toSQLCommand (a { sqlSelectResult = ["TRUE"] }) <> ")"
 
 data SqlSelect = SqlSelect
-  { sqlSelectFrom    :: SQL
+  { sqlSelectFrom     :: SQL
   , sqlSelectDistinct :: Bool
-  , sqlSelectResult  :: [SQL]
-  , sqlSelectWhere   :: [SqlCondition]
-  , sqlSelectOrderBy :: [SQL]
-  , sqlSelectGroupBy :: [SQL]
-  , sqlSelectHaving  :: [SQL]
-  , sqlSelectOffset  :: Integer
-  , sqlSelectLimit   :: Integer
-  , sqlSelectWith    :: [(SQL, SQL)]
+  , sqlSelectResult   :: [SQL]
+  , sqlSelectWhere    :: [SqlCondition]
+  , sqlSelectOrderBy  :: [SQL]
+  , sqlSelectGroupBy  :: [SQL]
+  , sqlSelectHaving   :: [SQL]
+  , sqlSelectOffset   :: Integer
+  , sqlSelectLimit    :: Integer
+  , sqlSelectWith     :: [(SQL, SQL)]
   }
 
 data SqlUpdate = SqlUpdate
-  { sqlUpdateWhat    :: SQL
-  , sqlUpdateFrom    :: SQL
-  , sqlUpdateWhere   :: [SqlCondition]
-  , sqlUpdateSet     :: [(SQL,SQL)]
-  , sqlUpdateResult  :: [SQL]
-  , sqlUpdateWith    :: [(SQL, SQL)]
+  { sqlUpdateWhat   :: SQL
+  , sqlUpdateFrom   :: SQL
+  , sqlUpdateWhere  :: [SqlCondition]
+  , sqlUpdateSet    :: [(SQL,SQL)]
+  , sqlUpdateResult :: [SQL]
+  , sqlUpdateWith   :: [(SQL, SQL)]
   }
 
 data SqlInsert = SqlInsert
-  { sqlInsertWhat    :: SQL
-  , sqlInsertSet     :: [(SQL, Multiplicity SQL)]
-  , sqlInsertResult  :: [SQL]
-  , sqlInsertWith    :: [(SQL, SQL)]
+  { sqlInsertWhat   :: SQL
+  , sqlInsertSet    :: [(SQL, Multiplicity SQL)]
+  , sqlInsertResult :: [SQL]
+  , sqlInsertWith   :: [(SQL, SQL)]
   }
 
 data SqlInsertSelect = SqlInsertSelect
-  { sqlInsertSelectWhat    :: SQL
+  { sqlInsertSelectWhat     :: SQL
   , sqlInsertSelectDistinct :: Bool
-  , sqlInsertSelectSet     :: [(SQL, SQL)]
-  , sqlInsertSelectResult  :: [SQL]
-  , sqlInsertSelectFrom    :: SQL
-  , sqlInsertSelectWhere   :: [SqlCondition]
-  , sqlInsertSelectOrderBy :: [SQL]
-  , sqlInsertSelectGroupBy :: [SQL]
-  , sqlInsertSelectHaving  :: [SQL]
-  , sqlInsertSelectOffset  :: Integer
-  , sqlInsertSelectLimit   :: Integer
-  , sqlInsertSelectWith    :: [(SQL, SQL)]
+  , sqlInsertSelectSet      :: [(SQL, SQL)]
+  , sqlInsertSelectResult   :: [SQL]
+  , sqlInsertSelectFrom     :: SQL
+  , sqlInsertSelectWhere    :: [SqlCondition]
+  , sqlInsertSelectOrderBy  :: [SQL]
+  , sqlInsertSelectGroupBy  :: [SQL]
+  , sqlInsertSelectHaving   :: [SQL]
+  , sqlInsertSelectOffset   :: Integer
+  , sqlInsertSelectLimit    :: Integer
+  , sqlInsertSelectWith     :: [(SQL, SQL)]
   }
 
 data SqlDelete = SqlDelete
-  { sqlDeleteFrom    :: SQL
-  , sqlDeleteUsing   :: SQL
-  , sqlDeleteWhere   :: [SqlCondition]
-  , sqlDeleteResult  :: [SQL]
-  , sqlDeleteWith    :: [(SQL, SQL)]
+  { sqlDeleteFrom   :: SQL
+  , sqlDeleteUsing  :: SQL
+  , sqlDeleteWhere  :: [SqlCondition]
+  , sqlDeleteResult :: [SQL]
+  , sqlDeleteWith   :: [(SQL, SQL)]
   }
 
 -- | This is not exported and is used as an implementation detail in
@@ -423,9 +423,9 @@ instance Sqlable SqlInsert where
       -- this is the longest list of values
       longest = maximum (1 : (map (lengthOfEither . snd) (sqlInsertSet cmd)))
       lengthOfEither (Single _) = 1
-      lengthOfEither (Many x) = length x
+      lengthOfEither (Many x)   = length x
       makeLongEnough (Single x) = take longest (repeat x)
-      makeLongEnough (Many x) = take longest (x ++ repeat "DEFAULT")
+      makeLongEnough (Many x)   = take longest (x ++ repeat "DEFAULT")
 
 instance Sqlable SqlInsertSelect where
   toSQLCommand cmd =

@@ -61,14 +61,14 @@ sqlDropColumn cname = "DROP COLUMN" <+> cname
 data Rows = forall row. (Show row, ToRow row) => Rows [ByteString] [row]
 
 data Table = Table {
-  tblName          :: RawSQL ()
-, tblVersion       :: Int32
-, tblColumns       :: [TableColumn]
-, tblPrimaryKey    :: Maybe PrimaryKey
-, tblChecks        :: [Check]
-, tblForeignKeys   :: [ForeignKey]
-, tblIndexes       :: [TableIndex]
-, tblInitialSetup  :: Maybe TableInitialSetup
+  tblName         :: RawSQL ()
+, tblVersion      :: Int32
+, tblColumns      :: [TableColumn]
+, tblPrimaryKey   :: Maybe PrimaryKey
+, tblChecks       :: [Check]
+, tblForeignKeys  :: [ForeignKey]
+, tblIndexes      :: [TableIndex]
+, tblInitialSetup :: Maybe TableInitialSetup
 }
 
 data TableInitialSetup = TableInitialSetup {
