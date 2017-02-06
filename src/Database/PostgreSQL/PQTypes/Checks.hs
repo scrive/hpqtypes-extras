@@ -330,42 +330,64 @@ checkDBStructure tables = fmap mconcat . forM tables $ \table ->
 --   * consecutive 'mgrFrom' numbers
 --   * no duplicates
 --   * all 'mgrFrom' are less than table version number of the table in
---     the database (or the just created table)
+--     the 'tables' list
 checkDBConsistency
   :: forall m. (MonadDB m, MonadLog m, MonadThrow m)
   => [MigrateOptions] -> [Domain] -> [Table] -> [Migration m]
   -> m ()
 checkDBConsistency options domains tables migrations = do
-  forM_ tables $ \table -> do
-    let presentMigrationVersions =
-          map mgrFrom $ filter (\m -> tblName (mgrTable m) == tblName table)
-          migrations
-        expectedMigrationVersions =
-          reverse $ take (length presentMigrationVersions) $
-          reverse  [0 .. tblVersion table - 1]
-    when (presentMigrationVersions /= expectedMigrationVersions) $ do
-      logAttention "Migrations are invalid" $ object [
-          "table"                       .= tblNameText table
-        , "migration_versions"          .= presentMigrationVersions
-        , "expected_migration_versions" .= expectedMigrationVersions
-        ]
-      error $ "checkDBConsistency: invalid migrations for table"
-        <+> tblNameString table
+  -- Check the validity of the migrations list.
+  validateMigrationsList
 
+  -- Load version numbers of the tables that actually exist in the DB.
   versions <- mapM checkTableVersion tables
   let tablesWithVersions = zip tables (map (fromMaybe 0) versions)
 
   if all ((==) 0 . snd) tablesWithVersions
+
+    -- No tables are present, create everything from scratch.
     then do
-      -- No tables are present, create everything from scratch.
+      createDBSchema
+      initializeDB
+
+    -- Migration mode.
+    else do
+      -- Additional validity checks for the migrations list.
+      validateMigrationsListAgainstDB tablesWithVersions
+      -- Run migrations, if necessary.
+      runMigrations tablesWithVersions
+
+  where
+    validateMigrationsList :: m ()
+    validateMigrationsList = forM_ tables $ \table -> do
+      let presentMigrationVersions
+            = map mgrFrom $ filter (\m -> tblName (mgrTable m) == tblName table)
+              migrations
+          expectedMigrationVersions
+            = reverse $ take (length presentMigrationVersions) $
+              reverse  [0 .. tblVersion table - 1]
+      when (presentMigrationVersions /= expectedMigrationVersions) $ do
+        logAttention "Migrations are invalid" $ object [
+            "table"                       .= tblNameText table
+          , "migration_versions"          .= presentMigrationVersions
+          , "expected_migration_versions" .= expectedMigrationVersions
+          ]
+        error $ "checkDBConsistency: invalid migrations for table"
+          <+> tblNameString table
+
+    createDBSchema :: m ()
+    createDBSchema = do
       logInfo_ "Creating domains..."
       mapM_ createDomain domains
-      logInfo_ "Creating tables..."
       -- Create all tables with no constraints first to allow cyclic references.
+      logInfo_ "Creating tables..."
       mapM_ (createTable False) tables
       logInfo_ "Creating table constraints..."
       mapM_ createTableConstraints tables
       logInfo_ "Done."
+
+    initializeDB :: m ()
+    initializeDB = do
       logInfo_ "Running initial setup for tables..."
       forM_ tables $ \t -> case tblInitialSetup t of
         Nothing -> return ()
@@ -374,29 +396,30 @@ checkDBConsistency options domains tables migrations = do
           initialSetup tis
       logInfo_ "Done."
 
-    else do
-      -- Migration mode.
-      forM_ tablesWithVersions $ \(table, ver) ->
-        when (tblVersion table /= ver) $ do
+    validateMigrationsListAgainstDB :: [(Table, Int32)] -> m ()
+    validateMigrationsListAgainstDB tablesWithVersions
+      = forM_ tablesWithVersions $ \(table, ver) ->
+        when (tblVersion table /= ver) $
         case L.find
           (\m -> tblNameString (mgrTable m) == tblNameString table) migrations of
-          Nothing -> do
+          Nothing ->
             error $ "checkDBConsistency: no migrations found for table '"
               ++ tblNameString table ++ "', cannot migrate "
               ++ show ver ++ " -> " ++ show (tblVersion table)
-          Just m | mgrFrom m > ver -> do
+          Just m | mgrFrom m > ver ->
             error $ "checkDBConsistency: earliest migration for table '"
               ++ tblNameString table ++ "' is from version "
               ++ show (mgrFrom m) ++ ", cannot migrate "
               ++ show ver ++ " -> " ++ show (tblVersion table)
           Just _ -> return ()
 
+    runMigrations :: [(Table, Int32)] -> m ()
+    runMigrations tablesWithVersions = do
       let migrationsToRun
             = filter (\m -> any (\(t, from) -> tblName (mgrTable m) == tblName t
                                   && mgrFrom m >= from) tablesWithVersions)
               migrations
 
-      -- Run migrations, if necessary.
       when (not . null $ migrationsToRun) $ do
         logInfo_ "Running migrations..."
         forM_ migrationsToRun $ \migration -> do
