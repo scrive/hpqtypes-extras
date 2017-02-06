@@ -122,7 +122,8 @@ checkDBTimeZone = do
   if timezone /= "UTC"
     then do
       dbname <- currentCatalog
-      logInfo_ $ "Setting '" <> unRawSQL dbname <> "' database to return timestamps in UTC"
+      logInfo_ $ "Setting '" <> unRawSQL dbname
+        <> "' database to return timestamps in UTC"
       runQuery_ $ "ALTER DATABASE" <+> dbname <+> "SET TIMEZONE = 'UTC'"
       return True
     else return False
@@ -323,25 +324,32 @@ checkDBStructure tables = fmap mconcat . forM tables $ \table ->
           ]
 
 -- | Checks whether database is consistent (performs migrations if necessary)
+--
+-- The migrations list must have the following properties:
+--   * consecutive 'mgrFrom' numbers
+--   * no duplicates
+--   * all 'mgrFrom' are less than table version number of the table in
+--     the database (or the just created table)
 checkDBConsistency
   :: forall m. (MonadDB m, MonadLog m, MonadThrow m)
   => [MigrateOptions] -> [Domain] -> [Table] -> [Migration m]
   -> m ()
 checkDBConsistency options domains tables migrations = do
-  -- check if migrations list has the following properties:
-  -- - consecutive mgrFrom numbers
-  -- - no duplicates
-  -- - all mgrFrom are less than table version number of the table in the database (or the just created table)
   forM_ tables $ \table -> do
-    let presentMigrationVersions = map mgrFrom $ filter (\m -> tblName (mgrTable m) == tblName table) migrations
-        expectedMigrationVersions = reverse $ take (length presentMigrationVersions) $ reverse  [0 .. tblVersion table - 1]
+    let presentMigrationVersions =
+          map mgrFrom $ filter (\m -> tblName (mgrTable m) == tblName table)
+          migrations
+        expectedMigrationVersions =
+          reverse $ take (length presentMigrationVersions) $
+          reverse  [0 .. tblVersion table - 1]
     when (presentMigrationVersions /= expectedMigrationVersions) $ do
       logAttention "Migrations are invalid" $ object [
-          "table" .= tblNameText table
-        , "migration_versions" .= presentMigrationVersions
+          "table"                       .= tblNameText table
+        , "migration_versions"          .= presentMigrationVersions
         , "expected_migration_versions" .= expectedMigrationVersions
         ]
-      error $ "checkDBConsistency: invalid migrations for table" <+> tblNameString table
+      error $ "checkDBConsistency: invalid migrations for table"
+        <+> tblNameString table
 
   versions <- mapM checkTableVersion tables
   let tablesWithVersions = zip tables (map (fromMaybe 0) versions)
@@ -367,30 +375,44 @@ checkDBConsistency options domains tables migrations = do
 
     else do
       -- Migration mode.
-      forM_ tablesWithVersions $ \(table, ver) -> when (tblVersion table /= ver) $ do
-        case L.find (\m -> tblNameString (mgrTable m) == tblNameString table) migrations of
+      forM_ tablesWithVersions $ \(table, ver) ->
+        when (tblVersion table /= ver) $ do
+        case L.find
+          (\m -> tblNameString (mgrTable m) == tblNameString table) migrations of
           Nothing -> do
-            error $ "checkDBConsistency: no migrations found for table '" ++ tblNameString table ++ "', cannot migrate " ++ show ver ++ " -> " ++ show (tblVersion table)
+            error $ "checkDBConsistency: no migrations found for table '"
+              ++ tblNameString table ++ "', cannot migrate "
+              ++ show ver ++ " -> " ++ show (tblVersion table)
           Just m | mgrFrom m > ver -> do
-            error $ "checkDBConsistency: earliest migration for table '" ++ tblNameString table ++ "' is from version " ++ show (mgrFrom m) ++ ", cannot migrate " ++ show ver ++ " -> " ++ show (tblVersion table)
+            error $ "checkDBConsistency: earliest migration for table '"
+              ++ tblNameString table ++ "' is from version "
+              ++ show (mgrFrom m) ++ ", cannot migrate "
+              ++ show ver ++ " -> " ++ show (tblVersion table)
           Just _ -> return ()
 
-      let migrationsToRun = filter (\m -> any (\(t, from) -> tblName (mgrTable m) == tblName t && mgrFrom m >= from) tablesWithVersions) migrations
+      let migrationsToRun
+            = filter (\m -> any (\(t, from) -> tblName (mgrTable m) == tblName t
+                                  && mgrFrom m >= from) tablesWithVersions)
+              migrations
 
       -- Run migrations, if necessary.
       when (not . null $ migrationsToRun) $ do
         logInfo_ "Running migrations..."
         forM_ migrationsToRun $ \migration -> do
-          logInfo_ $ arrListTable (mgrTable migration) <> showt (mgrFrom migration) <+> "->" <+> showt (succ $ mgrFrom migration)
+          logInfo_ $ arrListTable (mgrTable migration)
+            <> showt (mgrFrom migration) <+> "->"
+            <+> showt (succ $ mgrFrom migration)
           mgrDo migration
           runQuery_ $ sqlUpdate "table_versions" $ do
             sqlSet "version" $ succ (mgrFrom migration)
             sqlWhereEq "name" $ tblNameString (mgrTable migration)
           when (ForceCommitAfterEveryMigration `elem` options) $ do
-            logInfo_ "Forcing commit after migraton and starting new transaction..."
+            logInfo_ $ "Forcing commit after migraton"
+              <> " and starting new transaction..."
             commit
             begin
-            logInfo_ "Forcing commit after migraton and starting new transaction... done."
+            logInfo_ $ "Forcing commit after migraton"
+              <> " and starting new transaction... done."
             logInfo_ "!IMPORTANT! Database has been permanently changed"
         logInfo_ "Running migrations... done."
 
@@ -403,11 +425,15 @@ checkTableVersion table = do
     sqlWhere "pg_catalog.pg_table_is_visible(c.oid)"
   if doesExist
     then do
-      runQuery_ $ "SELECT version FROM table_versions WHERE name =" <?> tblNameString table
+      runQuery_ $ "SELECT version FROM table_versions WHERE name ="
+        <?> tblNameString table
       mver <- fetchMaybe runIdentity
       case mver of
         Just ver -> return $ Just ver
-        Nothing  -> error $ "checkTableVersion: table '" ++ tblNameString table ++ "' is present in the database, but there is no corresponding version info in 'table_versions'."
+        Nothing  -> error $ "checkTableVersion: table '"
+          ++ tblNameString table
+          ++ "' is present in the database, "
+          ++ "but there is no corresponding version info in 'table_versions'."
     else do
       return Nothing
 

@@ -274,7 +274,9 @@ data SqlCondition = SqlPlainCondition SQL SqlWhyNot
 -- @mkException@ should take as input same lenth list as there are
 -- queries. Each query will be run in a JOIN context with all
 -- referenced tables, so it can extract values from there.
-data SqlWhyNot = forall e row. (FromRow row, DBExtraException e) => SqlWhyNot Bool (row -> e) [SQL]
+data SqlWhyNot =
+  forall e row. (FromRow row, DBExtraException e) =>
+  SqlWhyNot Bool (row -> e) [SQL]
 
 {-
 instance Eq SqlCondition where
