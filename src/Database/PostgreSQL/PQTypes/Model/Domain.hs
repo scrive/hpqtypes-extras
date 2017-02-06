@@ -29,12 +29,13 @@ import Database.PostgreSQL.PQTypes.Model.ColumnType
 --
 -- 1) One of the tables that use the domain should migrate it.
 -- 2) The table that requires data modification should migrate it.
--- 3) One of the tables that require data modification should migrate it.
--- Note that modification of constraints may conflict with the data in
--- the other tables. In this case, these constraints should be created
--- as NOT VALID (see http://www.postgresql.org/docs/current/static/sql-alterdomain.html
--- for more info) and VALIDATEd in the migration of the last table with
--- the conflicting data.
+-- 3) One of the tables that require data modification should migrate
+-- it.  Note that modification of constraints may conflict with the
+-- data in the other tables. In this case, these constraints should be
+-- created as NOT VALID (see
+-- http://www.postgresql.org/docs/current/static/sql-alterdomain.html
+-- for more info) and VALIDATEd in the migration of the last table
+-- with the conflicting data.
 --
 -- TODO: the proper solution to this is to version the domains to be
 -- able to handle (1) and the first and last part of (3) by migrating

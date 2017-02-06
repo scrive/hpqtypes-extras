@@ -323,7 +323,8 @@ checkDBStructure tables = fmap mconcat . forM tables $ \table ->
           , checkNames (fkName tblName) fkeys
           ]
 
--- | Checks whether database is consistent (performs migrations if necessary)
+-- | Checks whether database is consistent, performing migrations if
+-- necessary. Requires all table names to be in lower case.
 --
 -- The migrations list must have the following properties:
 --   * consecutive 'mgrFrom' numbers

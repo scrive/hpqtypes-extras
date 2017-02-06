@@ -61,7 +61,7 @@ sqlDropColumn cname = "DROP COLUMN" <+> cname
 data Rows = forall row. (Show row, ToRow row) => Rows [ByteString] [row]
 
 data Table = Table {
-  tblName         :: RawSQL ()
+  tblName         :: RawSQL () -- ^ Must be in lower case.
 , tblVersion      :: Int32
 , tblColumns      :: [TableColumn]
 , tblPrimaryKey   :: Maybe PrimaryKey
