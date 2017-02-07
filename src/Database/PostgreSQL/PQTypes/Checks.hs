@@ -10,9 +10,11 @@ import Control.Applicative ((<$>))
 import Control.Monad.Catch
 import Control.Monad.Reader
 import Data.Int
+import Data.Function (on)
 import Data.Maybe
 import Data.Monoid
 import Data.Monoid.Utils
+import Data.Text (Text)
 import Database.PostgreSQL.PQTypes hiding (def)
 import Log
 import Prelude
@@ -25,7 +27,7 @@ import Database.PostgreSQL.PQTypes.Model
 import Database.PostgreSQL.PQTypes.SQL.Builder
 import Database.PostgreSQL.PQTypes.Versions
 
-newtype ValidationResult = ValidationResult [T.Text] -- ^ list of error messages
+newtype ValidationResult = ValidationResult [Text] -- ^ list of error messages
 
 data MigrateOptions = ForceCommitAfterEveryMigration deriving Eq
 
@@ -33,7 +35,7 @@ instance Monoid ValidationResult where
   mempty = ValidationResult []
   mappend (ValidationResult a) (ValidationResult b) = ValidationResult (a ++ b)
 
-topMessage :: T.Text -> T.Text -> ValidationResult -> ValidationResult
+topMessage :: Text -> Text -> ValidationResult -> ValidationResult
 topMessage objtype objname = \case
   ValidationResult [] -> ValidationResult []
   ValidationResult es -> ValidationResult ("There are problems with the" <+> objtype <+> "'" <> objname <> "'" : es)
@@ -50,46 +52,64 @@ resultCheck = \case
 
 ----------------------------------------
 
--- | Runs all checks on a database
+-- | Run migrations and check the database structure.
 migrateDatabase
   :: (MonadDB m, MonadLog m, MonadThrow m)
   => [MigrateOptions] -> [Extension] -> [Domain] -> [Table] -> [Migration m]
   -> m ()
 migrateDatabase options extensions domains tables migrations = do
-  void checkDBTimeZone
+  setDBTimeZoneToUTC
   mapM_ checkExtension extensions
+  -- 'checkDBConsistency' also performs migrations.
   checkDBConsistency options domains (tableVersions : tables) migrations
   resultCheck =<< checkDomainsStructure domains
   resultCheck =<< checkDBStructure (tableVersions : tables)
-  checkUnknownTables tables
+  resultCheck =<< checkTablesWereDropped migrations
+  resultCheck =<< checkUnknownTables tables
 
   -- everything is OK, commit changes
   commit
 
+-- | Run checks on the database structure and whether the database
+-- needs to be migrated.
 checkDatabase
-  :: (MonadDB m, MonadLog m, MonadThrow m)
-  => [Domain] -> [Table]
-  -> m ()
+  :: forall m . (MonadDB m, MonadLog m, MonadThrow m)
+  => [Domain] -> [Table] -> m ()
 checkDatabase domains tables = do
-  versions <- mapM checkTableVersion tables
-  let tablesWithVersions = zip tables (map (fromMaybe 0) versions)
-  resultCheck . mconcat $ checkVersions tablesWithVersions
+  tablesWithVersions <- getTableVersions tables
+
+  resultCheck $ checkVersions tablesWithVersions
   resultCheck =<< checkDomainsStructure domains
   resultCheck =<< checkDBStructure (tableVersions : tables)
-  -- check initial setups only after database structure is considered
-  -- consistent as before that some of the checks may fail internally.
-  resultCheck . mconcat =<< checkInitialSetups tables
-  where
-    checkVersions = map $ \(t@Table{..}, v) -> ValidationResult $ if
-      | tblVersion == v -> []
-      | v == 0 -> ["Table '" <> tblNameText t <> "' must be created"]
-      | otherwise -> ["Table '" <> tblNameText t <> "' must be migrated" <+> showt v <+> "->" <+> showt tblVersion]
+  resultCheck =<< checkUnknownTables tables
 
-    checkInitialSetups = mapM $ \t -> case tblInitialSetup t of
-      Nothing -> return $ ValidationResult []
+  -- Check initial setups only after database structure is considered
+  -- consistent as before that some of the checks may fail internally.
+  resultCheck =<< checkInitialSetups tables
+
+  where
+    checkVersions :: [(Table, Int32)] -> ValidationResult
+    checkVersions vs = mconcat . map (ValidationResult . checkVersion) $ vs
+
+    checkVersion :: (Table, Int32) -> [Text]
+    checkVersion (t@Table{..}, v)
+      | tblVersion == v = []
+      | v == 0          = ["Table '" <> tblNameText t <> "' must be created"]
+      | otherwise       = ["Table '" <> tblNameText t
+                           <> "' must be migrated" <+> showt v <+> "->"
+                           <+> showt tblVersion]
+
+    checkInitialSetups :: [Table] -> m ValidationResult
+    checkInitialSetups tbls =
+      liftM mconcat . mapM (liftM ValidationResult . checkInitialSetup') $ tbls
+
+    checkInitialSetup' :: Table -> m [Text]
+    checkInitialSetup' t@Table{..} = case tblInitialSetup of
+      Nothing -> return []
       Just is -> checkInitialSetup is >>= \case
-        True  -> return $ ValidationResult []
-        False -> return $ ValidationResult ["Initial setup for table '" <> tblNameText t <> "' is not valid"]
+        True  -> return []
+        False -> return ["Initial setup for table '"
+                          <> tblNameText t <> "' is not valid"]
 
 -- | Return SQL fragment of current catalog within quotes
 currentCatalog :: (MonadDB m, MonadThrow m) => m (RawSQL ())
@@ -114,31 +134,49 @@ checkExtension (Extension extension) = do
   where
     txtExtension = unRawSQL extension
 
--- |  Checks whether database returns timestamps in UTC
-checkDBTimeZone :: (MonadDB m, MonadLog m, MonadThrow m) => m Bool
-checkDBTimeZone = do
+-- | Check whether the database returns timestamps in UTC, and set the
+-- timezone to UTC if it doesn't.
+setDBTimeZoneToUTC :: (MonadDB m, MonadLog m, MonadThrow m) => m ()
+setDBTimeZoneToUTC = do
   runSQL_ "SHOW timezone"
   timezone :: String <- fetchOne runIdentity
-  if timezone /= "UTC"
-    then do
-      dbname <- currentCatalog
-      logInfo_ $ "Setting '" <> unRawSQL dbname
-        <> "' database to return timestamps in UTC"
-      runQuery_ $ "ALTER DATABASE" <+> dbname <+> "SET TIMEZONE = 'UTC'"
-      return True
-    else return False
+  when (timezone /= "UTC") $ do
+    dbname <- currentCatalog
+    logInfo_ $ "Setting '" <> unRawSQL dbname
+      <> "' database to return timestamps in UTC"
+    runQuery_ $ "ALTER DATABASE" <+> dbname <+> "SET TIMEZONE = 'UTC'"
 
-checkUnknownTables :: (MonadDB m, MonadLog m) => [Table] -> m ()
-checkUnknownTables tables = do
+-- | Get the names of all user-defined tables that actually exist in
+-- the DB.
+getDBTableNames :: (MonadDB m) => m [Text]
+getDBTableNames = do
   runQuery_ $ sqlSelect "information_schema.tables" $ do
     sqlResult "table_name::text"
     sqlWhere "table_name <> 'table_versions'"
     sqlWhere "table_type = 'BASE TABLE'"
     sqlWhere "table_schema NOT IN ('information_schema','pg_catalog')"
-  desc <- fetchMany runIdentity
-  let absent = desc L.\\ map (unRawSQL . tblName) tables
-  when (not (null absent)) $
-    mapM_ (\t -> logInfo_ $ "Unknown table:" <+> t) absent
+
+  dbTableNames <- fetchMany runIdentity
+  return dbTableNames
+
+-- | Check that there's a 1-to-1 correspondence between the list of
+-- 'Table's and what's actually in the database.
+checkUnknownTables :: (MonadDB m, MonadLog m) => [Table] -> m ValidationResult
+checkUnknownTables tables = do
+  dbTableNames  <- getDBTableNames
+  let tableNames = map (unRawSQL . tblName) tables
+      absent     = dbTableNames L.\\ tableNames
+      notPresent = tableNames   L.\\ dbTableNames
+
+  if (not . null $ absent) || (not . null $ notPresent)
+    then do
+    mapM_ (logInfo_ . (<+>) "Unknown table:") absent
+    mapM_ (logInfo_ . (<+>) "Table not present in the database:") notPresent
+    return . ValidationResult $
+      [ "Unknown tables:" <+> T.intercalate ", " absent
+      , "Tables not present in the database:" <+> T.intercalate ", " notPresent
+      ]
+    else return mempty
 
 createTable :: MonadDB m => Bool -> Table -> m ()
 createTable withConstraints table@Table{..} = do
@@ -197,7 +235,7 @@ checkDomainsStructure defs = fmap mconcat . forM defs $ \def -> do
       | otherwise -> mempty
     Nothing -> ValidationResult ["Domain '" <> unRawSQL (domName def) <> "' doesn't exist in the database"]
   where
-    compareAttr :: (Eq a, Show a) => Domain -> Domain -> T.Text -> (Domain -> a) -> ValidationResult
+    compareAttr :: (Eq a, Show a) => Domain -> Domain -> Text -> (Domain -> a) -> ValidationResult
     compareAttr dom def attrname attr
       | attr dom == attr def = ValidationResult []
       | otherwise = ValidationResult ["Attribute '" <> attrname <> "' does not match (database:" <+> T.pack (show $ attr dom) <> ", definition:" <+> T.pack (show $ attr def) <> ")"]
@@ -209,7 +247,23 @@ createDomain dom@Domain{..} = do
   -- add constraint checks to the domain
   F.forM_ domChecks $ runQuery_ . sqlAlterDomain domName . sqlAddCheck
 
--- | Checks whether database is consistent (performs migrations if necessary)
+-- | Check that the tables that must have been dropped are actually
+-- missing from the DB.
+checkTablesWereDropped :: (MonadDB m, MonadThrow m) =>
+                          [Migration m] -> m ValidationResult
+checkTablesWereDropped mgrs = do
+  let droppedTables = [ mgrTable mgr | mgr <- mgrs, isDropTableMigration mgr ]
+  fmap mconcat . forM droppedTables $
+    \tbl -> do
+      mver <- checkTableVersion (tblNameString tbl)
+      return $ if isNothing mver
+               then mempty
+               else ValidationResult [ "The table '" <> tblNameText tbl
+                                       <> "' that must have been dropped"
+                                       <> " is still present in the database."
+                                     ]
+
+-- | Checks whether database is consistent.
 checkDBStructure :: forall m. (MonadDB m, MonadThrow m)
                  => [Table] -> m ValidationResult
 checkDBStructure tables = fmap mconcat . forM tables $ \table ->
@@ -337,11 +391,12 @@ checkDBConsistency
   -> m ()
 checkDBConsistency options domains tables migrations = do
   -- Check the validity of the migrations list.
-  validateMigrationsList
+  validateMigrations
+  validateDropTableMigrations
 
   -- Load version numbers of the tables that actually exist in the DB.
-  versions <- mapM checkTableVersion tables
-  let tablesWithVersions = zip tables (map (fromMaybe 0) versions)
+  tablesWithVersions   <- getTableVersions $ tables
+  dbTablesWithVersions <- getDBTableVersions
 
   if all ((==) 0 . snd) tablesWithVersions
 
@@ -353,27 +408,81 @@ checkDBConsistency options domains tables migrations = do
     -- Migration mode.
     else do
       -- Additional validity checks for the migrations list.
-      validateMigrationsListAgainstDB tablesWithVersions
+      validateMigrationsAgainstDB tablesWithVersions
+      validateDropTableMigrationsAgainstDB dbTablesWithVersions
       -- Run migrations, if necessary.
-      runMigrations tablesWithVersions
+      runMigrations dbTablesWithVersions
 
   where
-    validateMigrationsList :: m ()
-    validateMigrationsList = forM_ tables $ \table -> do
-      let presentMigrationVersions
-            = map mgrFrom $ filter (\m -> tblName (mgrTable m) == tblName table)
-              migrations
-          expectedMigrationVersions
-            = reverse $ take (length presentMigrationVersions) $
-              reverse  [0 .. tblVersion table - 1]
+
+    errorInvalidMigrations :: [Table] -> a
+    errorInvalidMigrations tbls =
+      error $ "checkDBConsistency: invalid migrations for tables"
+              <+> (L.intercalate ", " $ map tblNameString tbls)
+
+    checkMigrationsListValidity :: Table -> [Int32] -> [Int32] -> m ()
+    checkMigrationsListValidity table presentMigrationVersions
+      expectedMigrationVersions = do
       when (presentMigrationVersions /= expectedMigrationVersions) $ do
         logAttention "Migrations are invalid" $ object [
             "table"                       .= tblNameText table
           , "migration_versions"          .= presentMigrationVersions
           , "expected_migration_versions" .= expectedMigrationVersions
           ]
-        error $ "checkDBConsistency: invalid migrations for table"
-          <+> tblNameString table
+        errorInvalidMigrations [table]
+
+    validateMigrations :: m ()
+    validateMigrations = forM_ tables $ \table -> do
+      let presentMigrationVersions
+            = [ mgrFrom | Migration{..} <- migrations
+                        , tblName mgrTable == tblName table ]
+          expectedMigrationVersions
+            = reverse $ take (length presentMigrationVersions) $
+              reverse  [0 .. tblVersion table - 1]
+      checkMigrationsListValidity table presentMigrationVersions
+        expectedMigrationVersions
+
+    validateDropTableMigrations :: m ()
+    validateDropTableMigrations = do
+      let droppedTableNames =
+            [ tblName . mgrTable $ mgr | mgr <- migrations
+                                       , isDropTableMigration mgr ]
+          tableNames =
+            [ tblName tbl | tbl <- tables ]
+
+      -- Check that the intersection between the 'tables' list and
+      -- dropped tables is empty.
+      let intersection = L.intersect droppedTableNames tableNames
+      when (not . null $ intersection) $ do
+          logAttention ("The intersection between tables "
+                        <> "and dropped tables is not empty")
+            $ object
+            [ "intersection" .= map unRawSQL intersection ]
+          errorInvalidMigrations [ tbl | tbl <- tables
+                                       , tblName tbl `elem` intersection ]
+
+      -- Check that if a list of migrations for a given table has a
+      -- drop table migration, it is unique and is the last migration
+      -- in the list.
+      let migrationsByTable     = L.groupBy ((==) `on` (tblName . mgrTable))
+                                  migrations
+          dropMigrationLists    = [ mgrs | mgrs <- migrationsByTable
+                                         , any isDropTableMigration mgrs ]
+          invalidMigrationLists =
+            [ mgrs | mgrs <- dropMigrationLists
+                   , (not . isDropTableMigration . last $ mgrs) ||
+                     (length . filter isDropTableMigration $ mgrs) > 1 ]
+
+      when (not . null $ invalidMigrationLists) $ do
+        let tablesWithInvalidMigrationLists =
+              [ mgrTable mgr | mgrs <- invalidMigrationLists
+                             , let mgr = head mgrs ]
+        logAttention ("Migration lists for some tables contain "
+                      <> "either multiple drop table migrations or "
+                      <> "a drop table migration in non-tail position.")
+          $ object [ "tables" .= [ tblNameText tbl
+                                 | tbl <- tablesWithInvalidMigrationLists ] ]
+        errorInvalidMigrations tablesWithInvalidMigrationLists
 
     createDBSchema :: m ()
     createDBSchema = do
@@ -396,40 +505,88 @@ checkDBConsistency options domains tables migrations = do
           initialSetup tis
       logInfo_ "Done."
 
-    validateMigrationsListAgainstDB :: [(Table, Int32)] -> m ()
-    validateMigrationsListAgainstDB tablesWithVersions
+    validateMigrationsAgainstDB :: [(Table, Int32)] -> m ()
+    validateMigrationsAgainstDB tablesWithVersions
       = forM_ tablesWithVersions $ \(table, ver) ->
         when (tblVersion table /= ver) $
-        case L.find
-          (\m -> tblNameString (mgrTable m) == tblNameString table) migrations of
-          Nothing ->
+        case [ m | m@Migration{..} <- migrations
+                 , tblName mgrTable == tblName table ] of
+          [] ->
             error $ "checkDBConsistency: no migrations found for table '"
               ++ tblNameString table ++ "', cannot migrate "
               ++ show ver ++ " -> " ++ show (tblVersion table)
-          Just m | mgrFrom m > ver ->
-            error $ "checkDBConsistency: earliest migration for table '"
-              ++ tblNameString table ++ "' is from version "
-              ++ show (mgrFrom m) ++ ", cannot migrate "
-              ++ show ver ++ " -> " ++ show (tblVersion table)
-          Just _ -> return ()
+          (m:_) | mgrFrom m > ver ->
+                  error $ "checkDBConsistency: earliest migration for table '"
+                    ++ tblNameString table ++ "' is from version "
+                    ++ show (mgrFrom m) ++ ", cannot migrate "
+                    ++ show ver ++ " -> " ++ show (tblVersion table)
+                | otherwise -> return ()
 
-    runMigrations :: [(Table, Int32)] -> m ()
-    runMigrations tablesWithVersions = do
-      let migrationsToRun
-            = filter (\m -> any (\(t, from) -> tblName (mgrTable m) == tblName t
-                                  && mgrFrom m >= from) tablesWithVersions)
-              migrations
+    validateDropTableMigrationsAgainstDB :: [(Text, Int32)] -> m ()
+    validateDropTableMigrationsAgainstDB dbTablesWithVersions = do
+      let dbTablesToDropWithVersions =
+            [ (tbl,ver) | mgr <- migrations
+                        , isDropTableMigration mgr
+                        , let tbl  = mgrTable mgr
+                        , let mver = lookup (tblNameText tbl) $
+                                     dbTablesWithVersions
+                        , isJust mver
+                        , let ver = fromMaybe 0 mver ]
+      forM_ dbTablesToDropWithVersions $ \(table, ver) ->
+        when (tblVersion table /= ver) $
+        -- In case when the table we're going to drop is an old
+        -- version, check that there are migrations that bring it to a new one.
+        validateMigrationsAgainstDB [(table, ver)]
 
+    findMigrationsToRun :: [(Text, Int32)] -> [Migration m]
+    findMigrationsToRun dbTablesWithVersions =
+      let tableNamesToDrop = [ tblName tbl | mgr <- migrations
+                                       , isDropTableMigration mgr
+                                       , let tbl = mgrTable mgr ]
+          -- The idea here is that we find the first migration we need
+          -- to run and then just run all migrations in order after
+          -- that one.
+          migrationsToRun = dropWhile
+            (\mgr -> let tbl   = mgrTable $ mgr
+                         mbtbl = lookup (tblNameText tbl) dbTablesWithVersions
+                     in case mbtbl of
+                          -- Table doesn't exist in the DB. Run migrations
+                          -- for it only if we're not going to delete it
+                          -- afterwards.
+                          Nothing -> tblName tbl `elem` tableNamesToDrop
+                          -- Table exists in the DB. Run only those
+                          -- migrations that have mgrFrom >= table version
+                          -- in the DB.
+                          Just ver -> mgrFrom mgr < ver)
+            migrations
+      in migrationsToRun
+
+    runMigration :: (Migration m) -> m ()
+    runMigration Migration{..} = do
+      case mgrType of
+        StandardMigration mgrDo -> do
+          logInfo_ $ arrListTable mgrTable <> showt mgrFrom <+> "->"
+            <+> showt (succ mgrFrom)
+          mgrDo
+          runQuery_ $ sqlUpdate "table_versions" $ do
+            sqlSet "version"  (succ mgrFrom)
+            sqlWhereEq "name" (tblNameString mgrTable)
+
+        DropTableMigration mgrDropTableMode -> do
+          logInfo_ $ arrListTable mgrTable <> "drop table"
+          runQuery_ $ sqlDropTable (tblName mgrTable) mgrDropTableMode
+          runQuery_ $ sqlDelete "table_versions" $ do
+            sqlWhereEq "name" (tblNameString mgrTable)
+
+    runMigrations :: [(Text, Int32)] -> m ()
+    runMigrations dbTablesWithVersions = do
+      let migrationsToRun = findMigrationsToRun dbTablesWithVersions
+      validateMigrationsToRun migrationsToRun dbTablesWithVersions
       when (not . null $ migrationsToRun) $ do
         logInfo_ "Running migrations..."
-        forM_ migrationsToRun $ \migration -> do
-          logInfo_ $ arrListTable (mgrTable migration)
-            <> showt (mgrFrom migration) <+> "->"
-            <+> showt (succ $ mgrFrom migration)
-          mgrDo migration
-          runQuery_ $ sqlUpdate "table_versions" $ do
-            sqlSet "version" $ succ (mgrFrom migration)
-            sqlWhereEq "name" $ tblNameString (mgrTable migration)
+        forM_ migrationsToRun $ \mgr -> do
+          runMigration mgr
+
           when (ForceCommitAfterEveryMigration `elem` options) $ do
             logInfo_ $ "Forcing commit after migraton"
               <> " and starting new transaction..."
@@ -440,22 +597,57 @@ checkDBConsistency options domains tables migrations = do
             logInfo_ "!IMPORTANT! Database has been permanently changed"
         logInfo_ "Running migrations... done."
 
-checkTableVersion :: (MonadDB m, MonadThrow m) => Table -> m (Maybe Int32)
-checkTableVersion table = do
+    validateMigrationsToRun :: [Migration m] -> [(Text, Int32)] -> m ()
+    validateMigrationsToRun migrationsToRun dbTablesWithVersions = do
+      let invalidMigrationsToRun =
+            [ mgr
+            | mgr <- migrationsToRun
+            , isDropTableMigration mgr
+            , isNothing $
+              lookup (tblNameText . mgrTable $ mgr) dbTablesWithVersions
+            ]
+      when (not . null $ invalidMigrationsToRun) $ do
+        let tbls = [ mgrTable mgr | mgr <- invalidMigrationsToRun ]
+        logAttention "There are drop table migrations for non-existing tables."
+          $ object [ "tables" .= map tblNameText tbls ]
+        errorInvalidMigrations tbls
+
+
+-- | Associate each table in the list with its version as it exists in
+-- the DB, or 0 if it's missing from the DB.
+getTableVersions :: (MonadDB m, MonadThrow m) => [Table] -> m [(Table, Int32)]
+getTableVersions tbls =
+  sequence
+  [ (\mver -> (tbl, fromMaybe 0 mver)) <$> checkTableVersion (tblNameString tbl)
+  | tbl <- tbls ]
+
+-- | Like 'getTableVersions', but for all user-defined tables that
+-- actually exist in the DB.
+getDBTableVersions :: (MonadDB m, MonadThrow m) => m [(Text, Int32)]
+getDBTableVersions = do
+  dbTableNames <- getDBTableNames
+  sequence
+    [ (\mver -> (name, fromMaybe 0 mver)) <$> checkTableVersion (T.unpack name)
+    | name <- dbTableNames ]
+
+-- | Check whether the table exists in the DB, and return 'Just' its
+-- version if it does, or 'Nothing' if it doesn't.
+checkTableVersion :: (MonadDB m, MonadThrow m) => String -> m (Maybe Int32)
+checkTableVersion tblName = do
   doesExist <- runQuery01 . sqlSelect "pg_catalog.pg_class c" $ do
     sqlResult "TRUE"
     sqlLeftJoinOn "pg_catalog.pg_namespace n" "n.oid = c.relnamespace"
-    sqlWhereEq "c.relname" $ tblNameString table
+    sqlWhereEq "c.relname" $ tblName
     sqlWhere "pg_catalog.pg_table_is_visible(c.oid)"
   if doesExist
     then do
       runQuery_ $ "SELECT version FROM table_versions WHERE name ="
-        <?> tblNameString table
+        <?> tblName
       mver <- fetchMaybe runIdentity
       case mver of
         Just ver -> return $ Just ver
         Nothing  -> error $ "checkTableVersion: table '"
-          ++ tblNameString table
+          ++ tblName
           ++ "' is present in the database, "
           ++ "but there is no corresponding version info in 'table_versions'."
     else do
@@ -571,13 +763,13 @@ fetchForeignKey (name, Array1 columns, reftable, Array1 refcolumns, on_update, o
 
 -- *** UTILS ***
 
-tblNameText :: Table -> T.Text
+tblNameText :: Table -> Text
 tblNameText = unRawSQL . tblName
 
 tblNameString :: Table -> String
 tblNameString = T.unpack . tblNameText
 
-checkEquality :: (Eq t, Show t) => T.Text -> [t] -> [t] -> ValidationResult
+checkEquality :: (Eq t, Show t) => Text -> [t] -> [t] -> ValidationResult
 checkEquality pname defs props = case (defs L.\\ props, props L.\\ defs) of
   ([], []) -> mempty
   (def_diff, db_diff) -> ValidationResult [mconcat [
@@ -610,11 +802,11 @@ checkNames prop_name = mconcat . map check
           , ")."
           ]]
 
-tableHasLess :: Show t => T.Text -> t -> T.Text
+tableHasLess :: Show t => Text -> t -> Text
 tableHasLess ptype missing = "Table in the database has *less*" <+> ptype <+> "than its definition (missing:" <+> T.pack (show missing) <> ")"
 
-tableHasMore :: Show t => T.Text -> t -> T.Text
+tableHasMore :: Show t => Text -> t -> Text
 tableHasMore ptype extra = "Table in the database has *more*" <+> ptype <+> "than its definition (extra:" <+> T.pack (show extra) <> ")"
 
-arrListTable :: Table -> T.Text
+arrListTable :: Table -> Text
 arrListTable table = " ->" <+> tblNameText table <> ": "
