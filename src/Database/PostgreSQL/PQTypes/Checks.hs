@@ -392,7 +392,7 @@ checkDBConsistency options domains tables migrations = do
       forM_ tables $ \t -> case tblInitialSetup t of
         Nothing -> return ()
         Just tis -> do
-          logInfo_ $ "Intializing" <+> tblNameText t <> "..."
+          logInfo_ $ "Initializing" <+> tblNameText t <> "..."
           initialSetup tis
       logInfo_ "Done."
 
