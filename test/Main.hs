@@ -67,6 +67,52 @@ tableBankSchema2 = tableBankSchema1
 tableBankSchema3 :: Table
 tableBankSchema3 = tableBankSchema2
 
+tableBankMigration4 :: (MonadDB m) => Migration m
+tableBankMigration4 = Migration
+  { mgrTable = tableBankSchema3
+  , mgrFrom  = 1
+  , mgrType  = StandardMigration $ do
+      runQuery_ $ sqlAlterTable (tblName tableBankSchema3) [
+        sqlAddColumn $ tblColumn
+          { colName = "cash"
+          , colType = IntegerT
+          , colNullable = False
+          , colDefault = Just "0"
+          }
+        ]
+  }
+
+tableBankSchema4 :: Table
+tableBankSchema4 = tableBankSchema3 {
+    tblVersion = (tblVersion tableBankSchema3)  + 1
+  , tblColumns = (tblColumns tableBankSchema3) ++ [
+      tblColumn
+      { colName = "cash", colType = IntegerT
+      , colNullable = False
+      , colDefault = Just "0"
+      }
+    ]
+  }
+
+
+tableBankMigration5 :: (MonadDB m) => Migration m
+tableBankMigration5 = Migration
+  { mgrTable = tableBankSchema3
+  , mgrFrom  = 2
+  , mgrType  = StandardMigration $ do
+      runQuery_ $ sqlAlterTable (tblName tableBankSchema4) [
+        sqlDropColumn $ "cash"
+        ]
+  }
+
+
+tableBankSchema5 :: Table
+tableBankSchema5 = tableBankSchema4 {
+    tblVersion = (tblVersion tableBankSchema4)  + 1
+  , tblColumns = filter (\c -> colName c /= "cash")
+      (tblColumns tableBankSchema4)
+  }
+
 tableBadGuySchema1 :: Table
 tableBadGuySchema1 =
   tblTable
@@ -88,6 +134,12 @@ tableBadGuySchema2 = tableBadGuySchema1
 tableBadGuySchema3 :: Table
 tableBadGuySchema3 = tableBadGuySchema2
 
+tableBadGuySchema4 :: Table
+tableBadGuySchema4 = tableBadGuySchema3
+
+tableBadGuySchema5 :: Table
+tableBadGuySchema5 = tableBadGuySchema4
+
 tableRobberySchema1 :: Table
 tableRobberySchema1 =
   tblTable
@@ -108,6 +160,12 @@ tableRobberySchema2 = tableRobberySchema1
 tableRobberySchema3 :: Table
 tableRobberySchema3 = tableRobberySchema2
 
+tableRobberySchema4 :: Table
+tableRobberySchema4 = tableRobberySchema3
+
+tableRobberySchema5 :: Table
+tableRobberySchema5 = tableRobberySchema4
+
 tableParticipatedInRobberySchema1 :: Table
 tableParticipatedInRobberySchema1 =
   tblTable
@@ -126,6 +184,12 @@ tableParticipatedInRobberySchema2 = tableParticipatedInRobberySchema1
 
 tableParticipatedInRobberySchema3 :: Table
 tableParticipatedInRobberySchema3 = tableParticipatedInRobberySchema2
+
+tableParticipatedInRobberySchema4 :: Table
+tableParticipatedInRobberySchema4 = tableParticipatedInRobberySchema3
+
+tableParticipatedInRobberySchema5 :: Table
+tableParticipatedInRobberySchema5 = tableParticipatedInRobberySchema4
 
 tableWitnessName :: RawSQL ()
 tableWitnessName = "witness"
@@ -203,6 +267,24 @@ tablePrisonSentenceSchema3 =
   , tblForeignKeys = [fkOnColumn  "bad_guy_id" "bad_guy" "id"
                      ,fkOnColumn  "robbery_id" "robbery" "id"] }
 
+tablePrisonSentenceSchema4 :: Table
+tablePrisonSentenceSchema4 = tablePrisonSentenceSchema3
+
+tablePrisonSentenceSchema5 :: Table
+tablePrisonSentenceSchema5 = tablePrisonSentenceSchema4
+
+tableFlashName :: RawSQL ()
+tableFlashName = "flash"
+
+tableFlash :: Table
+tableFlash =
+  tblTable
+  { tblName = tableFlashName
+  , tblVersion = 1
+  , tblColumns =
+    [ tblColumn { colName = "flash_id", colType = BigIntT, colNullable = False }
+    ]
+  }
 
 createTableMigration :: (MonadDB m) => Table -> Migration m
 createTableMigration tbl = Migration
@@ -265,6 +347,33 @@ schema3Migrations = schema2Migrations
                  ++ [ dropTableMigration   tableUnderArrestSchema2
                     , createTableMigration tablePrisonSentenceSchema3 ]
 
+schema4Tables :: [Table]
+schema4Tables = [ tableBankSchema4
+                , tableBadGuySchema4
+                , tableRobberySchema4
+                , tableParticipatedInRobberySchema4
+                , tablePrisonSentenceSchema4
+                ]
+
+schema4Migrations :: (MonadDB m) => [Migration m]
+schema4Migrations = schema3Migrations
+                 ++ [ tableBankMigration4 ]
+
+schema5Tables :: [Table]
+schema5Tables = [ tableBankSchema5
+                , tableBadGuySchema5
+                , tableRobberySchema5
+                , tableParticipatedInRobberySchema5
+                , tablePrisonSentenceSchema5
+                ]
+
+schema5Migrations :: (MonadDB m) => [Migration m]
+schema5Migrations = schema4Migrations
+                 ++ [ createTableMigration tableFlash
+                    , tableBankMigration5
+                    , dropTableMigration tableFlash
+                    ]
+
 type TestM a = DBT (LogT IO) a
 
 createTablesSchema1 :: (String -> TestM ()) -> TestM ()
@@ -322,17 +431,36 @@ testDBSchema3 step = do
   step "Running test queries (schema version 3)..."
   return ()
 
-finalDropTableMigrations :: (MonadDB m) => [Migration m]
-finalDropTableMigrations =
-  schema3Migrations ++
-  [ dropTableMigration tbl | tbl <- reverse schema3Tables ]
-
-dropTablesFinal :: (String -> TestM ()) -> TestM ()
-dropTablesFinal step = do
-  step "Dropping database tables (schema 3)..."
+migrateDBToSchema4 :: (String -> TestM ()) -> TestM ()
+migrateDBToSchema4 step = do
+  step "Migrating the database (schema version 3 -> schema version 4)..."
   migrateDatabase {- options -} [] {- extensions -} [] {- domains -} []
-    {- tables -} [] finalDropTableMigrations
-  checkDatabase {- domains -} [] {- tables -} []
+    schema4Tables schema4Migrations
+  checkDatabase {- domains -} [] schema4Tables
+
+testDBSchema4 :: (String -> TestM ()) -> TestM ()
+testDBSchema4 step = do
+  step "Running test queries (schema version 4)..."
+  return ()
+
+migrateDBToSchema5 :: (String -> TestM ()) -> TestM ()
+migrateDBToSchema5 step = do
+  step "Migrating the database (schema version 4 -> schema version 5)..."
+  migrateDatabase {- options -} [] {- extensions -} [] {- domains -} []
+    schema5Tables schema5Migrations
+  checkDatabase {- domains -} [] schema5Tables
+
+testDBSchema5 :: (String -> TestM ()) -> TestM ()
+testDBSchema5 step = do
+  step "Running test queries (schema version 5)..."
+  return ()
+
+
+cleanPublicScheme ::  (String -> TestM ()) -> TestM ()
+cleanPublicScheme step = do
+  step "Cleaning public scheme..."
+  runSQL_ "DROP SCHEMA public CASCADE"
+  runSQL_ "CREATE SCHEMA public"
 
 main :: IO ()
 main = do
@@ -348,6 +476,8 @@ main = do
         runTests step
   where
     runTests step = do
+      cleanPublicScheme step
+
       createTablesSchema1 step
       testDBSchema1       step
 
@@ -357,7 +487,13 @@ main = do
       migrateDBToSchema3  step
       testDBSchema3       step
 
-      dropTablesFinal     step
+      migrateDBToSchema4  step
+      testDBSchema4       step
+
+      migrateDBToSchema5  step
+      testDBSchema5       step
+
+      cleanPublicScheme step
 
     ings =
       includingOptions [Option (Proxy :: Proxy ConnectionString)]
