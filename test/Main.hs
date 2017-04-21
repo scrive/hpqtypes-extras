@@ -25,10 +25,11 @@ data ConnectionString = ConnectionString String
   deriving Typeable
 
 instance IsOption ConnectionString where
-  defaultValue = ConnectionString "postgresql://postgres@localhost/travis_ci_test"
-  parseValue = Just . ConnectionString
-  optionName = return "connection-string"
-  optionHelp = return "Postgres connection string"
+  defaultValue = ConnectionString
+                 "postgresql://postgres@localhost/travis_ci_test"
+  parseValue   = Just . ConnectionString
+  optionName   = return "connection-string"
+  optionHelp   = return "Postgres connection string"
 
 -- Simple example schemata inspired by the one in
 -- <http://www.databaseanswers.org/data_models/bank_robberies/index.htm>
@@ -146,8 +147,10 @@ tableRobberySchema1 =
   { tblName = "robbery"
   , tblVersion = 1
   , tblColumns =
-    [ tblColumn { colName = "id",      colType = BigSerialT, colNullable = False }
-    , tblColumn { colName = "bank_id", colType = BigIntT,    colNullable = False }
+    [ tblColumn { colName = "id",      colType = BigSerialT
+                , colNullable = False }
+    , tblColumn { colName = "bank_id", colType = BigIntT
+                , colNullable = False }
     , tblColumn { colName = "date",    colType = DateT
                 , colNullable = False, colDefault = Just "now()" }
     ]
@@ -172,8 +175,10 @@ tableParticipatedInRobberySchema1 =
   { tblName = "participated_in_robbery"
   , tblVersion = 1
   , tblColumns =
-    [ tblColumn { colName = "bad_guy_id", colType = BigIntT, colNullable = False }
-    , tblColumn { colName = "robbery_id", colType = BigIntT, colNullable = False }
+    [ tblColumn { colName = "bad_guy_id", colType = BigIntT
+                , colNullable = False }
+    , tblColumn { colName = "robbery_id", colType = BigIntT
+                , colNullable = False }
     ]
   , tblPrimaryKey  = pkOnColumns ["bad_guy_id", "robbery_id"]
   , tblForeignKeys = [fkOnColumn  "bad_guy_id" "bad_guy" "id"
@@ -218,8 +223,10 @@ tableWitnessedRobberySchema1 =
   { tblName = tableWitnessedRobberyName
   , tblVersion = 1
   , tblColumns =
-    [ tblColumn { colName = "witness_id", colType = BigIntT, colNullable = False }
-    , tblColumn { colName = "robbery_id", colType = BigIntT, colNullable = False }
+    [ tblColumn { colName = "witness_id", colType = BigIntT
+                , colNullable = False }
+    , tblColumn { colName = "robbery_id", colType = BigIntT
+                , colNullable = False }
     ]
   , tblPrimaryKey  = pkOnColumns ["witness_id", "robbery_id"]
   , tblForeignKeys = [fkOnColumn  "witness_id" "witness" "id"
@@ -234,9 +241,12 @@ tableUnderArrestSchema2 =
   { tblName = tableUnderArrestName
   , tblVersion = 1
   , tblColumns =
-    [ tblColumn { colName = "bad_guy_id", colType = BigIntT, colNullable = False }
-    , tblColumn { colName = "robbery_id", colType = BigIntT, colNullable = False }
-    , tblColumn { colName = "court_date", colType = DateT,   colNullable = False }
+    [ tblColumn { colName = "bad_guy_id", colType = BigIntT
+                , colNullable = False }
+    , tblColumn { colName = "robbery_id", colType = BigIntT
+                , colNullable = False }
+    , tblColumn { colName = "court_date", colType = DateT
+                , colNullable = False }
     ]
   , tblPrimaryKey  = pkOnColumns ["bad_guy_id", "robbery_id"]
   , tblForeignKeys = [fkOnColumn  "bad_guy_id" "bad_guy" "id"
@@ -251,8 +261,10 @@ tablePrisonSentenceSchema3 =
   { tblName = tablePrisonSentenceName
   , tblVersion = 1
   , tblColumns =
-    [ tblColumn { colName = "bad_guy_id", colType = BigIntT, colNullable = False }
-    , tblColumn { colName = "robbery_id", colType = BigIntT, colNullable = False }
+    [ tblColumn { colName = "bad_guy_id", colType = BigIntT
+                , colNullable = False }
+    , tblColumn { colName = "robbery_id", colType = BigIntT
+                , colNullable = False }
     , tblColumn { colName = "sentence_start"
                 , colType = DateT
                 , colNullable = False }
