@@ -468,8 +468,8 @@ testDBSchema5 step = do
   return ()
 
 
-cleanPublicScheme ::  (String -> TestM ()) -> TestM ()
-cleanPublicScheme step = do
+cleanPublicSchemas ::  (String -> TestM ()) -> TestM ()
+cleanPublicSchemas step = do
   step "Cleaning public scheme..."
   runSQL_ "DROP SCHEMA public CASCADE"
   runSQL_ "CREATE SCHEMA public"
@@ -488,7 +488,7 @@ main = do
         runTests step
   where
     runTests step = do
-      cleanPublicScheme step
+      cleanPublicSchemas step
 
       createTablesSchema1 step
       testDBSchema1       step
@@ -505,7 +505,7 @@ main = do
       migrateDBToSchema5  step
       testDBSchema5       step
 
-      cleanPublicScheme step
+      cleanPublicSchemas step
 
     ings =
       includingOptions [Option (Proxy :: Proxy ConnectionString)]
