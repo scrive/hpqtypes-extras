@@ -70,9 +70,9 @@ tableBankSchema3 = tableBankSchema2
 
 tableBankMigration4 :: (MonadDB m) => Migration m
 tableBankMigration4 = Migration
-  { mgrTable = tableBankSchema3
-  , mgrFrom  = 1
-  , mgrType  = StandardMigration $ do
+  { mgrTableName = tblName tableBankSchema3
+  , mgrFrom      = 1
+  , mgrAction    = StandardMigration $ do
       runQuery_ $ sqlAlterTable (tblName tableBankSchema3) [
         sqlAddColumn $ tblColumn
           { colName = "cash"
@@ -98,9 +98,9 @@ tableBankSchema4 = tableBankSchema3 {
 
 tableBankMigration5 :: (MonadDB m) => Migration m
 tableBankMigration5 = Migration
-  { mgrTable = tableBankSchema3
-  , mgrFrom  = 2
-  , mgrType  = StandardMigration $ do
+  { mgrTableName = tblName tableBankSchema3
+  , mgrFrom      = 2
+  , mgrAction    = StandardMigration $ do
       runQuery_ $ sqlAlterTable (tblName tableBankSchema4) [
         sqlDropColumn $ "cash"
         ]
@@ -300,17 +300,17 @@ tableFlash =
 
 createTableMigration :: (MonadDB m) => Table -> Migration m
 createTableMigration tbl = Migration
-  { mgrTable = tbl
-  , mgrFrom  = 0
-  , mgrType  = StandardMigration $ do
+  { mgrTableName = tblName tbl
+  , mgrFrom      = 0
+  , mgrAction    = StandardMigration $ do
       createTable True tbl
   }
 
 dropTableMigration :: (MonadDB m) => Table -> Migration m
 dropTableMigration tbl = Migration
-  { mgrTable = tbl
-  , mgrFrom  = tblVersion tbl
-  , mgrType  = DropTableMigration DropTableCascade
+  { mgrTableName = tblName tbl
+  , mgrFrom      = tblVersion tbl
+  , mgrAction    = DropTableMigration DropTableCascade
   }
 
 schema1Tables :: [Table]

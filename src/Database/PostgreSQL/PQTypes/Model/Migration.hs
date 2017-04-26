@@ -23,7 +23,7 @@ the migration.
 
 module Database.PostgreSQL.PQTypes.Model.Migration (
     DropTableMode(..),
-    MigrationType(..),
+    MigrationAction(..),
     Migration(..),
     isStandardMigration, isDropTableMigration
   )  where
@@ -31,39 +31,42 @@ module Database.PostgreSQL.PQTypes.Model.Migration (
 import Data.Int
 
 import Database.PostgreSQL.PQTypes.Model.Table
+import Database.PostgreSQL.PQTypes.SQL.Raw
 
--- | Migration type and additional associated data.
-data MigrationType m =
+-- | Migration action to run, either an arbitrary 'MonadDB' action, or
+-- something more fine-grained.
+data MigrationAction m =
 
-  -- | Standard migration. Associated data is the 'MonadDB' action to run.
+  -- | Standard migration, i.e. an arbitrary 'MonadDB' action.
   StandardMigration (m ())
 
-  -- | Drop table migration. Associated data is the drop table mode
-  -- (@RESTRICT@/@CASCADE@).
+  -- | Drop table migration. Parameter is the drop table mode
+  -- (@RESTRICT@/@CASCADE@). The 'Migration' record holds the name of
+  -- the table to drop.
   | DropTableMigration DropTableMode
 
 -- | Migration object.
 data Migration m =
   Migration {
-  -- | The table you're migrating.
-  mgrTable :: Table
-  -- | The version you're migrating from (you don't specify what
+  -- | The name of the table you're migrating.
+  mgrTableName :: RawSQL ()
+  -- | The version you're migrating *from* (you don't specify what
   -- version you migrate TO, because version is always increased by 1,
   -- so if 'mgrFrom' is 2, that means that after that migration is run,
   -- table version will equal 3
-, mgrFrom  :: Int32
-  -- | Migration type and additional type-specific associated data.
-, mgrType    :: MigrationType m
+, mgrFrom   :: Int32
+  -- | Migration action.
+, mgrAction :: MigrationAction m
   }
 
 isStandardMigration :: Migration m -> Bool
 isStandardMigration Migration{..} =
-  case mgrType of
+  case mgrAction of
     StandardMigration _  -> True
     DropTableMigration _ -> False
 
 isDropTableMigration :: Migration m -> Bool
 isDropTableMigration Migration{..} =
-  case mgrType of
+  case mgrAction of
     StandardMigration _  -> False
     DropTableMigration _ -> True
