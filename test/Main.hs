@@ -467,10 +467,11 @@ testDBSchema5 step = do
   step "Running test queries (schema version 5)..."
   return ()
 
-
-cleanPublicSchemas ::  (String -> TestM ()) -> TestM ()
-cleanPublicSchemas step = do
-  step "Cleaning public scheme..."
+-- | May require 'ALTER SCHEMA public OWNER TO $user' the first time
+-- you run this.
+freshTestDB ::  (String -> TestM ()) -> TestM ()
+freshTestDB step = do
+  step "Dropping the test DB schema..."
   runSQL_ "DROP SCHEMA public CASCADE"
   runSQL_ "CREATE SCHEMA public"
 
@@ -478,17 +479,30 @@ main :: IO ()
 main = do
   defaultMainWithIngredients ings $
     askOption $ \(ConnectionString connectionString) ->
-    testCaseSteps "DB tests" $ \step' -> do
-      let connSettings = def { csConnInfo = T.pack connectionString }
-          ConnectionSource connSource = simpleSource connSettings
-          step s = liftIO $ step' s
+    let connSettings = def { csConnInfo = T.pack connectionString }
+        ConnectionSource connSource = simpleSource connSettings
+    in
+    testGroup "DB tests" [ migrationTest1 connSource
+                         , migrationTest2 connSource
+                         ]
+  where
+
+    -- | A variant of testCaseSteps that works in TestM monad.
+    testCaseSteps' :: TestName -> ConnectionSourceM (LogT IO)
+                   -> ((String -> TestM ()) -> TestM ())
+                   -> TestTree
+    testCaseSteps' testName connSource f =
+      testCaseSteps testName $ \step' -> do
+      let step s = liftIO $ step' s
       withSimpleStdOutLogger $ \logger ->
         runLogT "hpqtypes-extras-test" logger $
         runDBT connSource {- transactionSettings -} def $
-        runTests step
-  where
-    runTests step = do
-      cleanPublicSchemas step
+        f step
+
+    migrationTest1 :: ConnectionSourceM (LogT IO) -> TestTree
+    migrationTest1 connSource =
+      testCaseSteps' "Migration test 1" connSource $ \step -> do
+      freshTestDB         step
 
       createTablesSchema1 step
       testDBSchema1       step
@@ -505,7 +519,18 @@ main = do
       migrateDBToSchema5  step
       testDBSchema5       step
 
-      cleanPublicSchemas step
+      freshTestDB         step
+
+    -- | This is just here as an example of how to add a new test.
+    migrationTest2 :: ConnectionSourceM (LogT IO) -> TestTree
+    migrationTest2 connSource =
+      testCaseSteps' "Migration test 2" connSource $ \step -> do
+      freshTestDB         step
+
+      createTablesSchema1 step
+      testDBSchema1       step
+
+      freshTestDB         step
 
     ings =
       includingOptions [Option (Proxy :: Proxy ConnectionString)]
