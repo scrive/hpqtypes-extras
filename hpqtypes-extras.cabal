@@ -56,6 +56,7 @@ library
                , log > 0.5.2
                , monad-control >= 1.0.0.0
                , mtl
+               , safe
                , text
                , text-show
 
