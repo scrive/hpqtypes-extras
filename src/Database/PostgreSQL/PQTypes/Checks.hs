@@ -1,9 +1,12 @@
 module Database.PostgreSQL.PQTypes.Checks (
-    migrateDatabase
-  , checkDatabase
+  -- * Checks
+    checkDatabase
   , createTable
   , createDomain
+
+  -- * Migrations
   , MigrateOptions(..)
+  , migrateDatabase
   ) where
 
 import Control.Applicative ((<$>))
@@ -19,36 +22,14 @@ import Database.PostgreSQL.PQTypes hiding (def)
 import Log
 import Prelude
 import TextShow
-import qualified Data.Foldable as F
 import qualified Data.List as L
 import qualified Data.Text as T
 
+import Database.PostgreSQL.PQTypes.Checks.Util
+import Database.PostgreSQL.PQTypes.Migrate
 import Database.PostgreSQL.PQTypes.Model
 import Database.PostgreSQL.PQTypes.SQL.Builder
 import Database.PostgreSQL.PQTypes.Versions
-
-newtype ValidationResult = ValidationResult [Text] -- ^ list of error messages
-
-data MigrateOptions = ForceCommitAfterEveryMigration deriving Eq
-
-instance Monoid ValidationResult where
-  mempty = ValidationResult []
-  mappend (ValidationResult a) (ValidationResult b) = ValidationResult (a ++ b)
-
-topMessage :: Text -> Text -> ValidationResult -> ValidationResult
-topMessage objtype objname = \case
-  ValidationResult [] -> ValidationResult []
-  ValidationResult es -> ValidationResult ("There are problems with the" <+> objtype <+> "'" <> objname <> "'" : es)
-
-resultCheck
-  :: (MonadLog m, MonadThrow m)
-  => ValidationResult
-  -> m ()
-resultCheck = \case
-  ValidationResult [] -> return ()
-  ValidationResult msgs -> do
-    mapM_ logAttention_ msgs
-    error "resultCheck: validation failed"
 
 ----------------------------------------
 
@@ -178,30 +159,6 @@ checkUnknownTables tables = do
       ]
     else return mempty
 
-createTable :: MonadDB m => Bool -> Table -> m ()
-createTable withConstraints table@Table{..} = do
-  -- Create empty table and add the columns.
-  runQuery_ $ sqlCreateTable tblName
-  runQuery_ $ sqlAlterTable tblName $ map sqlAddColumn tblColumns
-  -- Add indexes.
-  forM_ tblIndexes $ runQuery_ . sqlCreateIndex tblName
-  -- Add all the other constraints if applicable.
-  when withConstraints $ createTableConstraints table
-  -- Register the table along with its version.
-  runQuery_ . sqlInsert "table_versions" $ do
-    sqlSet "name" (tblNameText table)
-    sqlSet "version" tblVersion
-
-createTableConstraints :: MonadDB m => Table -> m ()
-createTableConstraints Table{..} = when (not $ null addConstraints) $ do
-  runQuery_ $ sqlAlterTable tblName addConstraints
-  where
-    addConstraints = concat [
-        [sqlAddPK tblName pk | Just pk <- return tblPrimaryKey]
-      , map sqlAddCheck tblChecks
-      , map (sqlAddFK tblName) tblForeignKeys
-      ]
-
 checkDomainsStructure :: (MonadDB m, MonadThrow m)
                       => [Domain] -> m ValidationResult
 checkDomainsStructure defs = fmap mconcat . forM defs $ \def -> do
@@ -239,13 +196,6 @@ checkDomainsStructure defs = fmap mconcat . forM defs $ \def -> do
     compareAttr dom def attrname attr
       | attr dom == attr def = ValidationResult []
       | otherwise = ValidationResult ["Attribute '" <> attrname <> "' does not match (database:" <+> T.pack (show $ attr dom) <> ", definition:" <+> T.pack (show $ attr def) <> ")"]
-
-createDomain :: MonadDB m => Domain -> m ()
-createDomain dom@Domain{..} = do
-  -- create the domain
-  runQuery_ $ sqlCreateDomain dom
-  -- add constraint checks to the domain
-  F.forM_ domChecks $ runQuery_ . sqlAlterDomain domName . sqlAddCheck
 
 -- | Check that the tables that must have been dropped are actually
 -- missing from the DB.
@@ -809,53 +759,3 @@ fetchForeignKey (name, Array1 columns, reftable, Array1 refcolumns, on_update, o
       'n' -> ForeignKeySetNull
       'd' -> ForeignKeySetDefault
       _   -> error $ "fetchForeignKey: invalid foreign key action code: " ++ show c
-
--- *** UTILS ***
-
-tblNameText :: Table -> Text
-tblNameText = unRawSQL . tblName
-
-tblNameString :: Table -> String
-tblNameString = T.unpack . tblNameText
-
-checkEquality :: (Eq t, Show t) => Text -> [t] -> [t] -> ValidationResult
-checkEquality pname defs props = case (defs L.\\ props, props L.\\ defs) of
-  ([], []) -> mempty
-  (def_diff, db_diff) -> ValidationResult [mconcat [
-      "Table and its definition have diverged and have "
-    , showt $ length db_diff
-    , " and "
-    , showt $ length def_diff
-    , " different "
-    , pname
-    , " each, respectively (table: "
-    , T.pack $ show db_diff
-    , ", definition: "
-    , T.pack $ show def_diff
-    , ")."
-    ]]
-
-checkNames :: Show t => (t -> RawSQL ()) -> [(t, RawSQL ())] -> ValidationResult
-checkNames prop_name = mconcat . map check
-  where
-    check (prop, name) = case prop_name prop of
-      pname
-        | pname == name -> mempty
-        | otherwise -> ValidationResult [mconcat [
-            "Property "
-          , T.pack $ show prop
-          , " has invalid name (expected: "
-          , unRawSQL pname
-          , ", given: "
-          , unRawSQL name
-          , ")."
-          ]]
-
-tableHasLess :: Show t => Text -> t -> Text
-tableHasLess ptype missing = "Table in the database has *less*" <+> ptype <+> "than its definition (missing:" <+> T.pack (show missing) <> ")"
-
-tableHasMore :: Show t => Text -> t -> Text
-tableHasMore ptype extra = "Table in the database has *more*" <+> ptype <+> "than its definition (extra:" <+> T.pack (show extra) <> ")"
-
-arrListTable :: RawSQL () -> Text
-arrListTable tableName = " ->" <+> unRawSQL tableName <> ": "

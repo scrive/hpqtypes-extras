@@ -31,6 +31,7 @@ library
   ghc-options: -Wall
 
   exposed-modules: Database.PostgreSQL.PQTypes.Checks
+                 , Database.PostgreSQL.PQTypes.Migrate
                  , Database.PostgreSQL.PQTypes.Model
                  , Database.PostgreSQL.PQTypes.Model.Check
                  , Database.PostgreSQL.PQTypes.Model.ColumnType
@@ -44,6 +45,7 @@ library
                  , Database.PostgreSQL.PQTypes.Model.Table
                  , Database.PostgreSQL.PQTypes.SQL.Builder
                  , Database.PostgreSQL.PQTypes.Versions
+  other-modules:   Database.PostgreSQL.PQTypes.Checks.Util
 
   build-depends: base < 5
                , base16-bytestring
