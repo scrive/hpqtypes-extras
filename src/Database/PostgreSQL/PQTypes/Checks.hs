@@ -544,22 +544,44 @@ checkDBConsistency options domains tables migrations = do
     findMigrationsToRun dbTablesWithVersions =
       let tableNamesToDrop = [ mgrTableName mgr | mgr <- migrations
                                                 , isDropTableMigration mgr ]
+          droppedEventually :: Migration m -> Bool
+          droppedEventually mgr = mgrTableName mgr `elem` tableNamesToDrop
+
+          lookupVer :: Migration m -> Maybe Int32
+          lookupVer mgr = lookup (unRawSQL $ mgrTableName mgr) dbTablesWithVersions
+
+          tableDoesNotExist = isNothing . lookupVer
+
           -- The idea here is that we find the first migration we need
           -- to run and then just run all migrations in order after
           -- that one.
-          migrationsToRun = dropWhile
-            (\mgr -> let tblnm = mgrTableName $ mgr
-                         mbtbl = lookup (unRawSQL tblnm) dbTablesWithVersions
-                     in case mbtbl of
-                          -- Table doesn't exist in the DB. Run migrations
-                          -- for it only if we're not going to delete it
-                          -- afterwards.
-                          Nothing -> tblnm `elem` tableNamesToDrop
-                          -- Table exists in the DB. Run only those
-                          -- migrations that have mgrFrom >= table version
-                          -- in the DB.
-                          Just ver -> mgrFrom mgr < ver)
+          migrationsToRun' = dropWhile
+            (\mgr ->
+               case lookupVer mgr of
+                 -- Table doesn't exist in the DB. If it's a create
+                 -- table migration and we're not going to drop the
+                 -- table afterwards, this is our starting point.
+                 Nothing -> not $
+                            (mgrFrom mgr == 0) && (not . droppedEventually $ mgr)
+                 -- Table exists in the DB. Run only those migrations
+                 -- that have mgrFrom >= table version in the DB.
+                 Just ver -> not $
+                             mgrFrom mgr >= ver)
             migrations
+
+          -- Special case: also include migrations for tables that do
+          -- not exist in the DB and ARE going to be dropped if they
+          -- come as a consecutive list before the starting point that
+          -- we've found.
+          --
+          -- Case in point: createTable t, doSomethingTo t,
+          -- doSomethingTo t1, dropTable t.
+          l = length migrationsToRun'
+          initialMigrations = drop l $ reverse migrations
+          additionalMigrations = takeWhile
+            (\mgr -> droppedEventually mgr && tableDoesNotExist mgr)
+            initialMigrations
+          migrationsToRun = reverse additionalMigrations ++ migrationsToRun'
       in migrationsToRun
 
     runMigration :: (Migration m) -> m ()
@@ -601,18 +623,43 @@ checkDBConsistency options domains tables migrations = do
 
     validateMigrationsToRun :: [Migration m] -> [(Text, Int32)] -> m ()
     validateMigrationsToRun migrationsToRun dbTablesWithVersions = do
-      let invalidMigrationsToRun =
-            [ mgr
-            | mgr <- migrationsToRun
-            , isDropTableMigration mgr
+      let migrationsToRunGrouped = L.groupBy ((==) `on` mgrTableName) .
+                                   L.sortOn mgrTableName $ -- NB: stable sort
+                                   migrationsToRun
+          mgrGroupsNotInDB =
+            [ mgrGroup
+            | mgrGroup <- migrationsToRunGrouped
             , isNothing $
-              lookup (unRawSQL . mgrTableName $ mgr) dbTablesWithVersions
+              lookup (unRawSQL . mgrTableName . head $ mgrGroup)
+              dbTablesWithVersions
             ]
-      when (not . null $ invalidMigrationsToRun) $ do
-        let tblNames = [ mgrTableName mgr | mgr <- invalidMigrationsToRun ]
+          groupsStartingWithDropTable =
+            [ mgrGroup
+            | mgrGroup <- mgrGroupsNotInDB
+            , isDropTableMigration $ head mgrGroup
+            ]
+          groupsNotStartingWithCreateTable =
+            [ mgrGroup
+            | mgrGroup <- mgrGroupsNotInDB
+            , mgrFrom (head mgrGroup) /= 0
+            ]
+          tblNames grps =
+            [ mgrTableName . head $ grp | grp <- grps ]
+
+      when (not . null $ groupsStartingWithDropTable) $ do
+        let tnms = tblNames groupsStartingWithDropTable
         logAttention "There are drop table migrations for non-existing tables."
-          $ object [ "tables" .= map unRawSQL tblNames ]
-        errorInvalidMigrations tblNames
+          $ object [ "tables" .= [ unRawSQL tn | tn <- tnms ] ]
+        errorInvalidMigrations tnms
+
+      -- NB: the following check can break if we allow renaming tables.
+      when (not . null $ groupsNotStartingWithCreateTable) $ do
+        let tnms = tblNames groupsNotStartingWithCreateTable
+        logAttention
+          ("Some tables haven't been created yet, but" <>
+            "their migration lists don't start with a create table migration.")
+          $ object [ "tables" .=  [ unRawSQL tn | tn <- tnms ] ]
+        errorInvalidMigrations tnms
 
 
 -- | Associate each table in the list with its version as it exists in
