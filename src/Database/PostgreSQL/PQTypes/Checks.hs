@@ -17,6 +17,7 @@ import Data.Function (on)
 import Data.Maybe
 import Data.Monoid
 import Data.Monoid.Utils
+import Data.Ord (comparing)
 import Data.Text (Text)
 import Database.PostgreSQL.PQTypes hiding (def)
 import Log
@@ -573,9 +574,10 @@ checkDBConsistency options domains tables migrations = do
 
     validateMigrationsToRun :: [Migration m] -> [(Text, Int32)] -> m ()
     validateMigrationsToRun migrationsToRun dbTablesWithVersions = do
-      let migrationsToRunGrouped = L.groupBy ((==) `on` mgrTableName) .
-                                   L.sortOn mgrTableName $ -- NB: stable sort
-                                   migrationsToRun
+      let migrationsToRunGrouped =
+            L.groupBy ((==) `on` mgrTableName) .
+            L.sortBy (comparing mgrTableName) $ -- NB: stable sort
+            migrationsToRun
           mgrGroupsNotInDB =
             [ mgrGroup
             | mgrGroup <- migrationsToRunGrouped
