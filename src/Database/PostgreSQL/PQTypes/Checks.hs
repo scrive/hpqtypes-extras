@@ -171,7 +171,8 @@ checkDomainsStructure defs = fmap mconcat . forM defs $ \def -> do
     sqlResult "ARRAY(SELECT c.conname::text FROM pg_catalog.pg_constraint c WHERE c.contypid = t1.oid ORDER by c.oid)" -- constraint names
     sqlResult "ARRAY(SELECT regexp_replace(pg_get_constraintdef(c.oid, true), 'CHECK \\((.*)\\)', '\\1') FROM pg_catalog.pg_constraint c WHERE c.contypid = t1.oid ORDER by c.oid)" -- constraint definitions
     sqlWhereEq "t1.typname" $ unRawSQL $ domName def
-  mdom <- fetchMaybe $ \(dname, dtype, nullable, defval, cnames, conds) -> Domain {
+  mdom <- fetchMaybe $ \(dname, dtype, nullable, defval, cnames, conds) ->
+    Domain {
     domName = unsafeSQL dname
   , domType = dtype
   , domNullable = nullable
@@ -191,12 +192,17 @@ checkDomainsStructure defs = fmap mconcat . forM defs $ \def -> do
         , compareAttr dom def "checks" domChecks
         ]
       | otherwise -> mempty
-    Nothing -> ValidationResult ["Domain '" <> unRawSQL (domName def) <> "' doesn't exist in the database"]
+    Nothing -> ValidationResult ["Domain '" <> unRawSQL (domName def)
+                                 <> "' doesn't exist in the database"]
   where
-    compareAttr :: (Eq a, Show a) => Domain -> Domain -> Text -> (Domain -> a) -> ValidationResult
+    compareAttr :: (Eq a, Show a)
+                => Domain -> Domain -> Text -> (Domain -> a) -> ValidationResult
     compareAttr dom def attrname attr
       | attr dom == attr def = ValidationResult []
-      | otherwise = ValidationResult ["Attribute '" <> attrname <> "' does not match (database:" <+> T.pack (show $ attr dom) <> ", definition:" <+> T.pack (show $ attr def) <> ")"]
+      | otherwise = ValidationResult
+        [ "Attribute '" <> attrname
+          <> "' does not match (database:" <+> T.pack (show $ attr dom)
+          <> ", definition:" <+> T.pack (show $ attr def) <> ")" ]
 
 -- | Check that the tables that must have been dropped are actually
 -- missing from the DB.
@@ -212,8 +218,7 @@ checkTablesWereDropped mgrs = do
                then mempty
                else ValidationResult [ "The table '" <> unRawSQL tblName
                                        <> "' that must have been dropped"
-                                       <> " is still present in the database."
-                                     ]
+                                       <> " is still present in the database." ]
 
 -- | Checks whether database is consistent.
 checkDBStructure :: forall m. (MonadDB m, MonadThrow m)
@@ -275,35 +280,53 @@ checkDBStructure tables = fmap mconcat . forM tables $ \table ->
             validateNames $ colName d == colName c
           -- bigserial == bigint + autoincrement and there is no
           -- distinction between them after table is created.
-          , validateTypes $ colType d == colType c || (colType d == BigSerialT && colType c == BigIntT)
+          , validateTypes $ colType d == colType c ||
+            (colType d == BigSerialT && colType c == BigIntT)
           -- there is a problem with default values determined by sequences as
           -- they're implicitely specified by db, so let's omit them in such case
-          , validateDefaults $ colDefault d == colDefault c || (colDefault d == Nothing && ((T.isPrefixOf "nextval('" . unRawSQL) `liftM` colDefault c) == Just True)
+          , validateDefaults $ colDefault d == colDefault c ||
+            (colDefault d == Nothing
+             && ((T.isPrefixOf "nextval('" . unRawSQL) `liftM` colDefault c)
+                == Just True)
           , validateNullables $ colNullable d == colNullable c
           , checkColumns (n+1) defs cols
           ]
           where
             validateNames True = mempty
-            validateNames False = ValidationResult [errorMsg ("no. " <> showt n) "names" (unRawSQL . colName)]
+            validateNames False = ValidationResult
+              [ errorMsg ("no. " <> showt n) "names" (unRawSQL . colName) ]
 
             validateTypes True = mempty
-            validateTypes False = ValidationResult [errorMsg cname "types" (T.pack . show . colType) <+> sqlHint ("TYPE" <+> columnTypeToSQL (colType d))]
+            validateTypes False = ValidationResult
+              [ errorMsg cname "types" (T.pack . show . colType)
+                <+> sqlHint ("TYPE" <+> columnTypeToSQL (colType d)) ]
 
             validateNullables True = mempty
-            validateNullables False = ValidationResult [errorMsg cname "nullables" (showt . colNullable) <+> sqlHint ((if colNullable d then "DROP" else "SET") <+> "NOT NULL")]
+            validateNullables False = ValidationResult
+              [ errorMsg cname "nullables" (showt . colNullable)
+                <+> sqlHint ((if colNullable d then "DROP" else "SET")
+                              <+> "NOT NULL") ]
 
             validateDefaults True = mempty
-            validateDefaults False = ValidationResult [(errorMsg cname "defaults" (showt . fmap unRawSQL . colDefault)) <+> sqlHint set_default]
+            validateDefaults False = ValidationResult
+              [ (errorMsg cname "defaults" (showt . fmap unRawSQL . colDefault))
+                <+> sqlHint set_default ]
               where
                 set_default = case colDefault d of
                   Just v  -> "SET DEFAULT" <+> v
                   Nothing -> "DROP DEFAULT"
 
             cname = unRawSQL $ colName d
-            errorMsg ident attr f = "Column '" <> ident <> "' differs in" <+> attr <+> "(table:" <+> f c <> ", definition:" <+> f d <> ")."
-            sqlHint sql = "(HINT: SQL for making the change is: ALTER TABLE" <+> tblNameText table <+> "ALTER COLUMN" <+> unRawSQL (colName d) <+> unRawSQL sql <> ")"
+            errorMsg ident attr f =
+              "Column '" <> ident <> "' differs in"
+              <+> attr <+> "(table:" <+> f c <> ", definition:" <+> f d <> ")."
+            sqlHint sql =
+              "(HINT: SQL for making the change is: ALTER TABLE"
+              <+> tblNameText table <+> "ALTER COLUMN" <+> unRawSQL (colName d)
+              <+> unRawSQL sql <> ")"
 
-        checkPrimaryKey :: Maybe PrimaryKey -> Maybe (PrimaryKey, RawSQL ()) -> ValidationResult
+        checkPrimaryKey :: Maybe PrimaryKey -> Maybe (PrimaryKey, RawSQL ())
+                        -> ValidationResult
         checkPrimaryKey mdef mpk = mconcat [
             checkEquality "PRIMARY KEY" def (map fst pk)
           , checkNames (const (pkName tblName)) pk
@@ -315,15 +338,18 @@ checkDBStructure tables = fmap mconcat . forM tables $ \table ->
         checkChecks :: [Check] -> [Check] -> ValidationResult
         checkChecks defs checks = case checkEquality "CHECKs" defs checks of
           ValidationResult [] -> ValidationResult []
-          ValidationResult errmsgs -> ValidationResult $ errmsgs ++ [" (HINT: If checks are equal modulo number of parentheses/whitespaces used in conditions, just copy and paste expected output into source code)"]
+          ValidationResult errmsgs -> ValidationResult $
+            errmsgs ++ [" (HINT: If checks are equal modulo number of parentheses/whitespaces used in conditions, just copy and paste expected output into source code)"]
 
-        checkIndexes :: [TableIndex] -> [(TableIndex, RawSQL ())] -> ValidationResult
+        checkIndexes :: [TableIndex] -> [(TableIndex, RawSQL ())]
+                     -> ValidationResult
         checkIndexes defs indexes = mconcat [
             checkEquality "INDEXes" defs (map fst indexes)
           , checkNames (indexName tblName) indexes
           ]
 
-        checkForeignKeys :: [ForeignKey] -> [(ForeignKey, RawSQL ())] -> ValidationResult
+        checkForeignKeys :: [ForeignKey] -> [(ForeignKey, RawSQL ())]
+                         -> ValidationResult
         checkForeignKeys defs fkeys = mconcat [
             checkEquality "FOREIGN KEYs" defs (map fst fkeys)
           , checkNames (fkName tblName) fkeys
@@ -669,7 +695,8 @@ sqlGetTableID table = parenthesize . toSQLCommand $
 sqlGetPrimaryKey :: Table -> SQL
 sqlGetPrimaryKey table = toSQLCommand . sqlSelect "pg_catalog.pg_constraint c" $ do
   sqlResult "c.conname::text"
-  sqlResult "array(SELECT a.attname::text FROM pg_catalog.pg_attribute a WHERE a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)) as columns" -- list of affected columns
+  -- list of affected columns
+  sqlResult "array(SELECT a.attname::text FROM pg_catalog.pg_attribute a WHERE a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)) as columns"
   sqlWhereEq "c.contype" 'p'
   sqlWhereEqSql "c.conrelid" $ sqlGetTableID table
 
@@ -699,9 +726,11 @@ sqlGetIndexes table = toSQLCommand . sqlSelect "pg_catalog.pg_class c" $ do
   sqlResult "c.relname::text" -- index name
   sqlResult $ "ARRAY(" <> selectCoordinates <> ")" -- array of index coordinates
   sqlResult "i.indisunique" -- is it unique?
-  sqlResult "pg_catalog.pg_get_expr(i.indpred, i.indrelid, true)" -- if partial, get constraint def
+  -- if partial, get constraint def
+  sqlResult "pg_catalog.pg_get_expr(i.indpred, i.indrelid, true)"
   sqlJoinOn "pg_catalog.pg_index i" "c.oid = i.indexrelid"
-  sqlLeftJoinOn "pg_catalog.pg_constraint r" "r.conrelid = i.indrelid AND r.conindid = i.indexrelid"
+  sqlLeftJoinOn "pg_catalog.pg_constraint r"
+    "r.conrelid = i.indrelid AND r.conindid = i.indexrelid"
   sqlWhereEqSql "i.indrelid" $ sqlGetTableID table
   sqlWhereIsNULL "r.contype" -- fetch only "pure" indexes
   where
@@ -717,7 +746,8 @@ sqlGetIndexes table = toSQLCommand . sqlSelect "pg_catalog.pg_class c" $ do
       , "SELECT name FROM coordinates WHERE k > 0"
       ]
 
-fetchTableIndex :: (String, Array1 String, Bool, Maybe String) -> (TableIndex, RawSQL ())
+fetchTableIndex :: (String, Array1 String, Bool, Maybe String)
+                -> (TableIndex, RawSQL ())
 fetchTableIndex (name, Array1 columns, unique, mconstraint) = (TableIndex {
   idxColumns = map unsafeSQL columns
 , idxUnique = unique
@@ -727,11 +757,17 @@ fetchTableIndex (name, Array1 columns, unique, mconstraint) = (TableIndex {
 -- *** FOREIGN KEYS ***
 
 sqlGetForeignKeys :: Table -> SQL
-sqlGetForeignKeys table = toSQLCommand . sqlSelect "pg_catalog.pg_constraint r" $ do
+sqlGetForeignKeys table = toSQLCommand
+                          . sqlSelect "pg_catalog.pg_constraint r" $ do
   sqlResult "r.conname::text" -- fk name
-  sqlResult $ "ARRAY(SELECT a.attname::text FROM pg_catalog.pg_attribute a JOIN (" <> unnestWithOrdinality "r.conkey" <> ") conkeys ON (a.attnum = conkeys.item) WHERE a.attrelid = r.conrelid ORDER BY conkeys.n)" -- constrained columns
+  sqlResult $
+    "ARRAY(SELECT a.attname::text FROM pg_catalog.pg_attribute a JOIN ("
+    <> unnestWithOrdinality "r.conkey"
+    <> ") conkeys ON (a.attnum = conkeys.item) WHERE a.attrelid = r.conrelid ORDER BY conkeys.n)" -- constrained columns
   sqlResult "c.relname::text" -- referenced table
-  sqlResult $ "ARRAY(SELECT a.attname::text FROM pg_catalog.pg_attribute a JOIN (" <> unnestWithOrdinality "r.confkey" <> ") confkeys ON (a.attnum = confkeys.item) WHERE a.attrelid = r.confrelid ORDER BY confkeys.n)" -- referenced columns
+  sqlResult $ "ARRAY(SELECT a.attname::text FROM pg_catalog.pg_attribute a JOIN ("
+    <> unnestWithOrdinality "r.confkey"
+    <> ") confkeys ON (a.attnum = confkeys.item) WHERE a.attrelid = r.confrelid ORDER BY confkeys.n)" -- referenced columns
   sqlResult "r.confupdtype" -- on update
   sqlResult "r.confdeltype" -- on delete
   sqlResult "r.condeferrable" -- deferrable?
@@ -741,10 +777,16 @@ sqlGetForeignKeys table = toSQLCommand . sqlSelect "pg_catalog.pg_constraint r" 
   sqlWhereEq "r.contype" 'f'
   where
     unnestWithOrdinality :: RawSQL () -> SQL
-    unnestWithOrdinality arr = "SELECT n, " <> raw arr <> "[n] AS item FROM generate_subscripts(" <> raw arr <> ", 1) AS n"
+    unnestWithOrdinality arr =
+      "SELECT n, " <> raw arr
+      <> "[n] AS item FROM generate_subscripts(" <> raw arr <> ", 1) AS n"
 
-fetchForeignKey :: (String, Array1 String, String, Array1 String, Char, Char, Bool, Bool) -> (ForeignKey, RawSQL ())
-fetchForeignKey (name, Array1 columns, reftable, Array1 refcolumns, on_update, on_delete, deferrable, deferred) = (ForeignKey {
+fetchForeignKey ::
+  (String, Array1 String, String, Array1 String, Char, Char, Bool, Bool)
+  -> (ForeignKey, RawSQL ())
+fetchForeignKey
+  ( name, Array1 columns, reftable, Array1 refcolumns
+  , on_update, on_delete, deferrable, deferred ) = (ForeignKey {
   fkColumns = map unsafeSQL columns
 , fkRefTable = unsafeSQL reftable
 , fkRefColumns = map unsafeSQL refcolumns
