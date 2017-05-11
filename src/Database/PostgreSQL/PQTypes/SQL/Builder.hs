@@ -222,6 +222,7 @@ import Data.String
 import Data.Typeable
 import Database.PostgreSQL.PQTypes
 import Prelude
+import Safe (atMay)
 import qualified Text.JSON.Gen as JSON
 
 class Sqlable a where
@@ -1106,6 +1107,17 @@ instance Show SomeDBExtraException where
 
 data ExceptionMaker = forall row. FromRow row => ExceptionMaker (row -> SomeDBExtraException)
 
+data DBKwhyNotInternalError = DBKwhyNotInternalError String
+  deriving (Show, Typeable)
+
+instance DBExtraException DBKwhyNotInternalError
+
+instance JSON.ToJSValue DBKwhyNotInternalError where
+  toJSValue (DBKwhyNotInternalError msg) = JSON.runJSONGen $
+    JSON.value "message"
+    ("Internal error in Database.PostgreSQL.PQTypes.SQL.Builder.kWhyNot1Ex: "
+     ++ msg)
+
 kWhyNot1Ex :: forall m s. (SqlTurnIntoSelect s, MonadDB m, MonadThrow m)
            => s -> m (Bool, SomeDBExtraException)
 kWhyNot1Ex cmd = do
@@ -1118,11 +1130,15 @@ kWhyNot1Ex cmd = do
 
   let logics = enumerateWhyNotExceptions ((sqlSelectFrom newSelect),[]) (sqlGetWhereConditions newSelect)
 
-  let condition = logics !! (indexOfFirstFailedCondition)
+  let mcondition = logics `atMay` indexOfFirstFailedCondition
 
-  case condition of
-    (important, ExceptionMaker exception, _from, []) -> return (important, exception $ error "kWhyNot1Ex: this argument should've been ignored")
-    (important, ExceptionMaker exception, (from, conds), sqls) -> do
+  case mcondition of
+    Nothing -> return
+      (True, toDBExtraException . DBKwhyNotInternalError $
+        "list of failed conditions is empty")
+    Just (important, ExceptionMaker exception, _from, []) ->
+      return (important, exception $ error "this argument should've been ignored")
+    Just (important, ExceptionMaker exception, (from, conds), sqls) -> do
        let statement' = sqlSelect2 from $ do
              mapM_ sqlResult sqls
              sqlLimit (1::Int)
