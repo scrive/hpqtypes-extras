@@ -1,7 +1,9 @@
 module Main
   where
 
+import Control.Monad
 import Control.Monad.IO.Class
+import Data.Monoid
 import Data.Int
 import qualified Data.Text as T
 import Data.Typeable
@@ -39,12 +41,16 @@ instance IsOption ConnectionString where
 --           witnessed_robbery
 -- Schema 2: Witnesses go into witness protection program,
 --           (some) bad guys get arrested:
---           drop tables witness and witnessed_by,
+--           drop tables witness and witnessed_robbery,
 --           add table under_arrest
 -- Schema 3: Bad guys get their prison sentences:
 --           drop table under_arrest
 --           add table prison_sentence
--- Cleanup:  drop all schema 3 sentences
+-- Schema 4: New 'cash' column for the 'bank' table.
+-- Schema 5: Create a new table 'flash',
+--           drop the 'cash' column from the 'bank' table,
+--           drop table 'flash'.
+-- Cleanup:  drop everything
 
 tableBankSchema1 :: Table
 tableBankSchema1 =
@@ -246,7 +252,8 @@ tableUnderArrestSchema2 =
     , tblColumn { colName = "robbery_id", colType = BigIntT
                 , colNullable = False }
     , tblColumn { colName = "court_date", colType = DateT
-                , colNullable = False }
+                , colNullable = False
+                , colDefault  = Just "now()" }
     ]
   , tblPrimaryKey  = pkOnColumns ["bad_guy_id", "robbery_id"]
   , tblForeignKeys = [fkOnColumn  "bad_guy_id" "bad_guy" "id"
@@ -267,10 +274,12 @@ tablePrisonSentenceSchema3 =
                 , colNullable = False }
     , tblColumn { colName = "sentence_start"
                 , colType = DateT
-                , colNullable = False }
+                , colNullable = False
+                , colDefault  = Just "now()" }
     , tblColumn { colName = "sentence_length"
                 , colType = IntegerT
-                , colNullable = False }
+                , colNullable = False
+                , colDefault  = Just "6" }
     , tblColumn { colName = "prison_name"
                 , colType = TextT
                 , colNullable = False }
@@ -395,9 +404,11 @@ createTablesSchema1 step = do
     schema1Tables schema1Migrations
   checkDatabase {- domains -} [] schema1Tables
 
-testDBSchema1 :: (String -> TestM ()) -> TestM ()
+testDBSchema1 :: (String -> TestM ()) -> TestM ([Int64], [Int64])
 testDBSchema1 step = do
   step "Running test queries (schema version 1)..."
+
+  -- Populate the 'bank' table.
   runQuery_ . sqlInsert "bank" $ do
     sqlSetList "name" ["HSBC" :: T.Text, "Swedbank", "Nordea", "Citi"
                       ,"Wells Fargo"]
@@ -407,17 +418,71 @@ testDBSchema1 step = do
                           , "2/3 Quux Ave., Milton Keynes, UK"
                           , "6600 Sunset Blvd., Los Angeles, CA, USA"]
     sqlResult "id"
-  (_bankIds :: [Int64]) <- fetchMany runIdentity
+  (bankIds :: [Int64]) <- fetchMany runIdentity
+  liftIO $ assertEqual "INSERT into 'bank' table" 5 (length bankIds)
 
+  -- Populate the 'bad_guy' table.
   runQuery_ . sqlInsert "bad_guy" $ do
     sqlSetList "firstname" ["Neil" :: T.Text, "Lee", "Freddie", "Frankie"
                            ,"James", "Roy"]
     sqlSetList "lastname" ["Hetzel"::T.Text, "Murray", "Foreman", "Fraser"
                           ,"Crosbie", "Shaw"]
     sqlResult "id"
-  (_badGuyIds :: [Int64]) <- fetchMany runIdentity
+  (badGuyIds :: [Int64]) <- fetchMany runIdentity
+  liftIO $ assertEqual "INSERT into 'bad_guy' table" 6 (length badGuyIds)
 
-  return ()
+  -- Populate the 'robbery' table.
+  runQuery_ . sqlInsert "robbery" $ do
+    sqlSetList "bank_id" [bankIds !! idx | idx <- [0,3]]
+    sqlResult "id"
+  (robberyIds :: [Int64]) <- fetchMany runIdentity
+  liftIO $ assertEqual "INSERT into 'robbery' table" 2 (length robberyIds)
+
+  -- Populate the 'participated_in_robbery' table.
+  runQuery_ . sqlInsert "participated_in_robbery" $ do
+    sqlSetList "bad_guy_id" [badGuyIds  !! idx | idx <- [0,2]]
+    sqlSet "robbery_id" (robberyIds !! 0)
+    sqlResult "bad_guy_id"
+  (participatorIds :: [Int64]) <- fetchMany runIdentity
+  liftIO $ assertEqual "INSERT into 'participated_in_robbery' table" 2
+    (length participatorIds)
+
+  runQuery_ . sqlInsert "participated_in_robbery" $ do
+    sqlSetList "bad_guy_id" [badGuyIds  !! idx | idx <- [3,4]]
+    sqlSet "robbery_id" (robberyIds !! 1)
+    sqlResult "bad_guy_id"
+  (participatorIds' :: [Int64]) <- fetchMany runIdentity
+  liftIO $ assertEqual "INSERT into 'participated_in_robbery' table" 2
+    (length participatorIds')
+
+  -- Populate the 'witness' table.
+  runQuery_ . sqlInsert "witness" $ do
+    sqlSetList "firstname" ["Meredith" :: T.Text, "Charlie", "Peter", "Emun"
+                           ,"Benedict"]
+    sqlSetList "lastname" ["Vickers"::T.Text, "Holloway", "Weyland", "Eliott"
+                          ,"Wong"]
+    sqlResult "id"
+  (witnessIds :: [Int64]) <- fetchMany runIdentity
+  liftIO $ assertEqual "INSERT into 'witness' table" 5 (length witnessIds)
+
+  -- Populate the 'witnessed_robbery' table.
+  runQuery_ . sqlInsert "witnessed_robbery" $ do
+    sqlSetList "witness_id" [witnessIds  !! idx | idx <- [0,1]]
+    sqlSet "robbery_id" (robberyIds !! 0)
+    sqlResult "witness_id"
+  (robberyWitnessIds :: [Int64]) <- fetchMany runIdentity
+  liftIO $ assertEqual "INSERT into 'witnessed_robbery' table" 2
+    (length robberyWitnessIds)
+
+  runQuery_ . sqlInsert "witnessed_robbery" $ do
+    sqlSetList "witness_id" [witnessIds  !! idx | idx <- [2,3,4]]
+    sqlSet "robbery_id" (robberyIds !! 1)
+    sqlResult "witness_id"
+  (robberyWitnessIds' :: [Int64]) <- fetchMany runIdentity
+  liftIO $ assertEqual "INSERT into 'witnessed_robbery' table" 3
+    (length robberyWitnessIds')
+
+  return (badGuyIds, robberyIds)
 
 migrateDBToSchema2 :: (String -> TestM ()) -> TestM ()
 migrateDBToSchema2 step = do
@@ -426,9 +491,40 @@ migrateDBToSchema2 step = do
     schema2Tables schema2Migrations
   checkDatabase {- domains -} [] schema2Tables
 
-testDBSchema2 :: (String -> TestM ()) -> TestM ()
-testDBSchema2 step = do
+testDBSchema2 :: (String -> TestM ()) -> [Int64] -> [Int64] -> TestM ()
+testDBSchema2 step badGuyIds robberyIds = do
   step "Running test queries (schema version 2)..."
+
+  -- Check that table 'witness' doesn't exist.
+  runSQL_ $ "SELECT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public'"
+    <> " AND tablename = 'witness')";
+  (witnessExists :: Bool) <- fetchOne runIdentity
+  liftIO $ assertEqual "Table 'witness' doesn't exist" False witnessExists
+
+  -- Check that table 'witnessed_robbery' doesn't exist.
+  runSQL_ $ "SELECT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public'"
+    <> " AND tablename = 'witnessed_robbery')";
+  (witnessedRobberyExists :: Bool) <- fetchOne runIdentity
+  liftIO $ assertEqual "Table 'witnessed_robbery' doesn't exist" False
+    witnessedRobberyExists
+
+  -- Populate table 'under_arrest'.
+  runQuery_ . sqlInsert "under_arrest" $ do
+    sqlSetList "bad_guy_id" [badGuyIds  !! idx | idx <- [0,2]]
+    sqlSet "robbery_id" (robberyIds !! 0)
+    sqlResult "bad_guy_id"
+  (arrestedIds :: [Int64]) <- fetchMany runIdentity
+  liftIO $ assertEqual "INSERT into 'under_arrest' table" 2
+    (length arrestedIds)
+
+  runQuery_ . sqlInsert "under_arrest" $ do
+    sqlSetList "bad_guy_id" [badGuyIds  !! idx | idx <- [3,4]]
+    sqlSet "robbery_id" (robberyIds !! 1)
+    sqlResult "bad_guy_id"
+  (arrestedIds' :: [Int64]) <- fetchMany runIdentity
+  liftIO $ assertEqual "INSERT into 'under_arrest' table" 2
+    (length arrestedIds')
+
   return ()
 
 migrateDBToSchema3 :: (String -> TestM ()) -> TestM ()
@@ -438,9 +534,45 @@ migrateDBToSchema3 step = do
     schema3Tables schema3Migrations
   checkDatabase {- domains -} [] schema3Tables
 
-testDBSchema3 :: (String -> TestM ()) -> TestM ()
-testDBSchema3 step = do
+testDBSchema3 :: (String -> TestM ()) -> [Int64] -> [Int64] -> TestM ()
+testDBSchema3 step badGuyIds robberyIds = do
   step "Running test queries (schema version 3)..."
+
+  -- Check that table 'under_arrest' doesn't exist.
+  runSQL_ $ "SELECT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public'"
+    <> " AND tablename = 'under_arrest')";
+  (underArrestExists :: Bool) <- fetchOne runIdentity
+  liftIO $ assertEqual "Table 'under_arrest' doesn't exist" False
+    underArrestExists
+
+  -- Check that the table 'prison_sentence' exists.
+  runSQL_ $ "SELECT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public'"
+    <> " AND tablename = 'prison_sentence')";
+  (prisonSentenceExists :: Bool) <- fetchOne runIdentity
+  liftIO $ assertEqual "Table 'prison_sentence' does exist" True
+    prisonSentenceExists
+
+  -- Populate table 'prison_sentence'.
+  runQuery_ . sqlInsert "prison_sentence" $ do
+    sqlSetList "bad_guy_id" [badGuyIds  !! idx | idx <- [0,2]]
+    sqlSet "robbery_id" (robberyIds !! 0)
+    sqlSet "sentence_length" (12::Int)
+    sqlSet "prison_name" ("Long Kesh"::T.Text)
+    sqlResult "bad_guy_id"
+  (sentencedIds :: [Int64]) <- fetchMany runIdentity
+  liftIO $ assertEqual "INSERT into 'prison_sentence' table" 2
+    (length sentencedIds)
+
+  runQuery_ . sqlInsert "prison_sentence" $ do
+    sqlSetList "bad_guy_id" [badGuyIds  !! idx | idx <- [3,4]]
+    sqlSet "robbery_id" (robberyIds !! 1)
+    sqlSet "sentence_length" (9::Int)
+    sqlSet "prison_name" ("Wormwood Scrubs"::T.Text)
+    sqlResult "bad_guy_id"
+  (sentencedIds' :: [Int64]) <- fetchMany runIdentity
+  liftIO $ assertEqual "INSERT into 'prison_sentence' table" 2
+    (length sentencedIds')
+
   return ()
 
 migrateDBToSchema4 :: (String -> TestM ()) -> TestM ()
@@ -453,6 +585,16 @@ migrateDBToSchema4 step = do
 testDBSchema4 :: (String -> TestM ()) -> TestM ()
 testDBSchema4 step = do
   step "Running test queries (schema version 4)..."
+
+  -- Check that the 'bank' table has a 'cash' column.
+  runSQL_ $ "SELECT EXISTS (SELECT 1 FROM information_schema.columns"
+    <> " WHERE table_schema = 'public'"
+    <> " AND table_name = 'bank'"
+    <> " AND column_name = 'cash')";
+  (colCashExists :: Bool) <- fetchOne runIdentity
+  liftIO $ assertEqual "Column 'cash' in the table 'bank' does exist" True
+    colCashExists
+
   return ()
 
 migrateDBToSchema5 :: (String -> TestM ()) -> TestM ()
@@ -465,6 +607,22 @@ migrateDBToSchema5 step = do
 testDBSchema5 :: (String -> TestM ()) -> TestM ()
 testDBSchema5 step = do
   step "Running test queries (schema version 5)..."
+
+  -- Check that the 'bank' table doesn't have a 'cash' column.
+  runSQL_ $ "SELECT EXISTS (SELECT 1 FROM information_schema.columns"
+    <> " WHERE table_schema = 'public'"
+    <> " AND table_name = 'bank'"
+    <> " AND column_name = 'cash')";
+  (colCashExists :: Bool) <- fetchOne runIdentity
+  liftIO $ assertEqual "Column 'cash' in the table 'bank' doesn't exist" False
+    colCashExists
+
+  -- Check that the 'flash' table doesn't exist.
+  runSQL_ $ "SELECT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public'"
+    <> " AND tablename = 'flash')";
+  (flashExists :: Bool) <- fetchOne runIdentity
+  liftIO $ assertEqual "Table 'flash' doesn't exist" False flashExists
+
   return ()
 
 -- | May require 'ALTER SCHEMA public OWNER TO $user' the first time
@@ -505,13 +663,14 @@ main = do
       freshTestDB         step
 
       createTablesSchema1 step
-      testDBSchema1       step
+      (badGuyIds, robberyIds) <-
+        testDBSchema1     step
 
       migrateDBToSchema2  step
-      testDBSchema2       step
+      testDBSchema2       step badGuyIds robberyIds
 
       migrateDBToSchema3  step
-      testDBSchema3       step
+      testDBSchema3       step badGuyIds robberyIds
 
       migrateDBToSchema4  step
       testDBSchema4       step
@@ -528,7 +687,8 @@ main = do
       freshTestDB         step
 
       createTablesSchema1 step
-      testDBSchema1       step
+      void $
+        testDBSchema1     step
 
       freshTestDB         step
 
