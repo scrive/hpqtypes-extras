@@ -96,6 +96,7 @@ test-suite  hpqtypes-extras-tests
                       exceptions,
                       hpqtypes,
                       hpqtypes-extras,
+                      lifted-base,
                       log,
                       tasty,
                       tasty-hunit,

@@ -1,8 +1,9 @@
 module Main
   where
 
-import Control.Monad
+import Control.Exception.Lifted as E
 import Control.Monad.IO.Class
+
 import Data.Monoid
 import Data.Int
 import qualified Data.Text as T
@@ -633,6 +634,93 @@ freshTestDB step = do
   runSQL_ "DROP SCHEMA public CASCADE"
   runSQL_ "CREATE SCHEMA public"
 
+migrationTest1 :: ConnectionSourceM (LogT IO) -> TestTree
+migrationTest1 connSource =
+  testCaseSteps' "Migration test 1" connSource $ \step -> do
+  freshTestDB         step
+
+  createTablesSchema1 step
+  (badGuyIds, robberyIds) <-
+    testDBSchema1     step
+
+  migrateDBToSchema2  step
+  testDBSchema2       step badGuyIds robberyIds
+
+  migrateDBToSchema3  step
+  testDBSchema3       step badGuyIds robberyIds
+
+  migrateDBToSchema4  step
+  testDBSchema4       step
+
+  migrateDBToSchema5  step
+  testDBSchema5       step
+
+  freshTestDB         step
+
+-- | Test for behaviour of 'checkDatabase' and 'checkDatabaseAllowUnknownTables'
+migrationTest2 :: ConnectionSourceM (LogT IO) -> TestTree
+migrationTest2 connSource =
+  testCaseSteps' "Migration test 2" connSource $ \step -> do
+  freshTestDB         step
+
+  createTablesSchema1 step
+  let currentSchema = schema1Tables
+      differentSchema = schema5Tables
+
+  assertNoException "checkDatabase should runs fine for consistent DB" $
+    (checkDatabase [] currentSchema)
+  assertNoException "checkDatabaseAllowUnknownTables runs fine for consistent DB" $
+    (checkDatabaseAllowUnknownTables [] currentSchema)
+  assertException "checkDatabase should throw exception for wrong scheme" $
+    (checkDatabase [] differentSchema)
+  assertException "checkDatabaseAllowUnknownTables should throw exception for wrong scheme" $
+    (checkDatabaseAllowUnknownTables [] differentSchema)
+
+  runSQL_ "INSERT INTO table_versions (name, version) VALUES ('unknown_table', 0)"
+  assertException "checkDatabase throw when extra entry in 'table_versions'" $
+    (checkDatabase [] currentSchema)
+  assertNoException "checkDatabaseAllowUnknownTables accepts extra entry in 'table_versions'" $
+    (checkDatabaseAllowUnknownTables [] currentSchema)
+  runSQL_ "DELETE FROM table_versions where name='unknown_table'"
+
+  runSQL_ "CREATE TABLE unknown_table (title text)"
+  assertException "checkDatabase should throw with unknown table" $
+    (checkDatabase [] currentSchema)
+  assertNoException "checkDatabaseAllowUnknownTables accepts unknown table" $
+    (checkDatabaseAllowUnknownTables [] currentSchema)
+
+  runSQL_ "INSERT INTO table_versions (name, version) VALUES ('unknown_table', 0)"
+  assertException "checkDatabase should throw with unknown table" $
+    (checkDatabase [] currentSchema)
+  assertNoException "checkDatabaseAllowUnknownTables accepts unknown tables with version" $
+    (checkDatabaseAllowUnknownTables [] currentSchema)
+
+  freshTestDB         step
+
+  where
+    assertNoException :: String -> TestM () -> TestM ()
+    assertNoException t c = (E.try c) >>= \r -> case r of
+      Left (_ :: SomeException) ->
+        liftIO $ assertFailure ("Exception thrown for: " ++ t)
+      Right _ -> return ()
+    assertException :: String -> TestM () -> TestM ()
+    assertException t c = (E.try c) >>= \r -> case r of
+      Left (_ :: SomeException) -> return ()
+      Right _ ->
+        liftIO $ assertFailure ("No exception thrown for: " ++ t)
+
+-- | A variant of testCaseSteps that works in TestM monad.
+testCaseSteps' :: TestName -> ConnectionSourceM (LogT IO)
+                -> ((String -> TestM ()) -> TestM ())
+                -> TestTree
+testCaseSteps' testName connSource f =
+  testCaseSteps testName $ \step' -> do
+  let step s = liftIO $ step' s
+  withSimpleStdOutLogger $ \logger ->
+    runLogT "hpqtypes-extras-test" logger $
+    runDBT connSource {- transactionSettings -} def $
+    f step
+
 main :: IO ()
 main = do
   defaultMainWithIngredients ings $
@@ -644,54 +732,6 @@ main = do
                          , migrationTest2 connSource
                          ]
   where
-
-    -- | A variant of testCaseSteps that works in TestM monad.
-    testCaseSteps' :: TestName -> ConnectionSourceM (LogT IO)
-                   -> ((String -> TestM ()) -> TestM ())
-                   -> TestTree
-    testCaseSteps' testName connSource f =
-      testCaseSteps testName $ \step' -> do
-      let step s = liftIO $ step' s
-      withSimpleStdOutLogger $ \logger ->
-        runLogT "hpqtypes-extras-test" logger $
-        runDBT connSource {- transactionSettings -} def $
-        f step
-
-    migrationTest1 :: ConnectionSourceM (LogT IO) -> TestTree
-    migrationTest1 connSource =
-      testCaseSteps' "Migration test 1" connSource $ \step -> do
-      freshTestDB         step
-
-      createTablesSchema1 step
-      (badGuyIds, robberyIds) <-
-        testDBSchema1     step
-
-      migrateDBToSchema2  step
-      testDBSchema2       step badGuyIds robberyIds
-
-      migrateDBToSchema3  step
-      testDBSchema3       step badGuyIds robberyIds
-
-      migrateDBToSchema4  step
-      testDBSchema4       step
-
-      migrateDBToSchema5  step
-      testDBSchema5       step
-
-      freshTestDB         step
-
-    -- | This is just here as an example of how to add a new test.
-    migrationTest2 :: ConnectionSourceM (LogT IO) -> TestTree
-    migrationTest2 connSource =
-      testCaseSteps' "Migration test 2" connSource $ \step -> do
-      freshTestDB         step
-
-      createTablesSchema1 step
-      void $
-        testDBSchema1     step
-
-      freshTestDB         step
-
     ings =
       includingOptions [Option (Proxy :: Proxy ConnectionString)]
       : defaultIngredients
