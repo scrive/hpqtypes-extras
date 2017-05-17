@@ -49,20 +49,20 @@ migrateDatabase options extensions domains tables migrations = do
   resultCheck =<< checkDBStructure (tableVersions : tables)
   resultCheck =<< checkTablesWereDropped migrations
   resultCheck =<< checkUnknownTables tables
-  resultCheck =<< checkExistanceOfVersionsForTables (tableVersions : tables)
+  resultCheck =<< checkExistenceOfVersionsForTables (tableVersions : tables)
 
   -- everything is OK, commit changes
   commit
 
 -- | Run checks on the database structure and whether the database
--- needs to be migrated. Will do a full check of DB structure
+-- needs to be migrated. Will do a full check of DB structure.
 checkDatabase
   :: forall m . (MonadDB m, MonadLog m, MonadThrow m)
   => [Domain] -> [Table] -> m ()
 checkDatabase = checkDatabase_ False
 
--- | Same as `checkDatabase`, but will not failed if there are
--- additional tables in database
+-- | Same as 'checkDatabase', but will not failed if there are
+-- additional tables in database.
 checkDatabaseAllowUnknownTables
   :: forall m . (MonadDB m, MonadLog m, MonadThrow m)
   => [Domain] -> [Table] -> m ()
@@ -79,7 +79,7 @@ checkDatabase_ allowUnknownTables domains tables = do
   resultCheck =<< checkDBStructure (tableVersions : tables)
   when (not $ allowUnknownTables) $ do
     resultCheck =<< checkUnknownTables tables
-    resultCheck =<< checkExistanceOfVersionsForTables (tableVersions : tables)
+    resultCheck =<< checkExistenceOfVersionsForTables (tableVersions : tables)
 
   -- Check initial setups only after database structure is considered
   -- consistent as before that some of the checks may fail internally.
@@ -171,15 +171,18 @@ checkUnknownTables tables = do
     mapM_ (logInfo_ . (<+>) "Unknown table:") absent
     mapM_ (logInfo_ . (<+>) "Table not present in the database:") notPresent
     return . ValidationResult $
-      [ "Unknown tables:" <+> T.intercalate ", " absent
-      , "Tables not present in the database:" <+> T.intercalate ", " notPresent
-      ]
+      (joinedResult "Unknown tables:" absent) ++
+      (joinedResult "Tables not present in the database:" notPresent)
     else return mempty
+  where
+    joinedResult :: Text -> [Text] -> [Text]
+    joinedResult _ [] = []
+    joinedResult t ts = [ t <+> T.intercalate ", " ts]
 
 -- | Check that there's a 1-to-1 correspondence between the list of
 -- 'Table's and what's actually in the table 'table_versions'.
-checkExistanceOfVersionsForTables :: (MonadDB m, MonadLog m) => [Table] -> m ValidationResult
-checkExistanceOfVersionsForTables tables = do
+checkExistenceOfVersionsForTables :: (MonadDB m, MonadLog m) => [Table] -> m ValidationResult
+checkExistenceOfVersionsForTables tables = do
   runQuery_ $ sqlSelect "table_versions" $ do
     sqlResult "name::text"
   (existingTableNames :: [Text]) <- fetchMany runIdentity
@@ -193,10 +196,14 @@ checkExistanceOfVersionsForTables tables = do
     mapM_ (logInfo_ . (<+>) "Unknown entry in 'table_versions':") absent
     mapM_ (logInfo_ . (<+>) "Table not present in the 'table_versions':") notPresent
     return . ValidationResult $
-      [ "Unknown entry in table_versions':" <+> T.intercalate ", " absent
-      , "Tables not present in the 'table_versions':" <+> T.intercalate ", " notPresent
-      ]
+      (joinedResult "Unknown entry in table_versions':"  absent ) ++
+      (joinedResult "Tables not present in the 'table_versions':" notPresent)
     else return mempty
+  where
+    joinedResult :: Text -> [Text] -> [Text]
+    joinedResult _ [] = []
+    joinedResult t ts = [ t <+> T.intercalate ", " ts]
+
 
 checkDomainsStructure :: (MonadDB m, MonadThrow m)
                       => [Domain] -> m ValidationResult

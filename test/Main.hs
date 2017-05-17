@@ -667,7 +667,7 @@ migrationTest2 connSource =
   let currentSchema = schema1Tables
       differentSchema = schema5Tables
 
-  assertNoException "checkDatabase should runs fine for consistent DB" $
+  assertNoException "checkDatabase should run fine for consistent DB" $
     (checkDatabase [] currentSchema)
   assertNoException "checkDatabaseAllowUnknownTables runs fine for consistent DB" $
     (checkDatabaseAllowUnknownTables [] currentSchema)
