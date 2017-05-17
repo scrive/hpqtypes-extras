@@ -1,6 +1,7 @@
 module Database.PostgreSQL.PQTypes.Checks (
   -- * Checks
     checkDatabase
+  , checkDatabaseAllowUnknownTables
   , createTable
   , createDomain
 
@@ -48,22 +49,37 @@ migrateDatabase options extensions domains tables migrations = do
   resultCheck =<< checkDBStructure (tableVersions : tables)
   resultCheck =<< checkTablesWereDropped migrations
   resultCheck =<< checkUnknownTables tables
+  resultCheck =<< checkExistenceOfVersionsForTables (tableVersions : tables)
 
   -- everything is OK, commit changes
   commit
 
 -- | Run checks on the database structure and whether the database
--- needs to be migrated.
+-- needs to be migrated. Will do a full check of DB structure.
 checkDatabase
   :: forall m . (MonadDB m, MonadLog m, MonadThrow m)
   => [Domain] -> [Table] -> m ()
-checkDatabase domains tables = do
+checkDatabase = checkDatabase_ False
+
+-- | Same as 'checkDatabase', but will not failed if there are
+-- additional tables in database.
+checkDatabaseAllowUnknownTables
+  :: forall m . (MonadDB m, MonadLog m, MonadThrow m)
+  => [Domain] -> [Table] -> m ()
+checkDatabaseAllowUnknownTables = checkDatabase_ True
+
+checkDatabase_
+  :: forall m . (MonadDB m, MonadLog m, MonadThrow m)
+  => Bool -> [Domain] -> [Table] -> m ()
+checkDatabase_ allowUnknownTables domains tables = do
   tablesWithVersions <- getTableVersions tables
 
   resultCheck $ checkVersions tablesWithVersions
   resultCheck =<< checkDomainsStructure domains
   resultCheck =<< checkDBStructure (tableVersions : tables)
-  resultCheck =<< checkUnknownTables tables
+  when (not $ allowUnknownTables) $ do
+    resultCheck =<< checkUnknownTables tables
+    resultCheck =<< checkExistenceOfVersionsForTables (tableVersions : tables)
 
   -- Check initial setups only after database structure is considered
   -- consistent as before that some of the checks may fail internally.
@@ -155,10 +171,39 @@ checkUnknownTables tables = do
     mapM_ (logInfo_ . (<+>) "Unknown table:") absent
     mapM_ (logInfo_ . (<+>) "Table not present in the database:") notPresent
     return . ValidationResult $
-      [ "Unknown tables:" <+> T.intercalate ", " absent
-      , "Tables not present in the database:" <+> T.intercalate ", " notPresent
-      ]
+      (joinedResult "Unknown tables:" absent) ++
+      (joinedResult "Tables not present in the database:" notPresent)
     else return mempty
+  where
+    joinedResult :: Text -> [Text] -> [Text]
+    joinedResult _ [] = []
+    joinedResult t ts = [ t <+> T.intercalate ", " ts]
+
+-- | Check that there's a 1-to-1 correspondence between the list of
+-- 'Table's and what's actually in the table 'table_versions'.
+checkExistenceOfVersionsForTables :: (MonadDB m, MonadLog m) => [Table] -> m ValidationResult
+checkExistenceOfVersionsForTables tables = do
+  runQuery_ $ sqlSelect "table_versions" $ do
+    sqlResult "name::text"
+  (existingTableNames :: [Text]) <- fetchMany runIdentity
+
+  let tableNames = map (unRawSQL . tblName) tables
+      absent     = existingTableNames L.\\ tableNames
+      notPresent = tableNames   L.\\ existingTableNames
+
+  if (not . null $ absent) || (not . null $ notPresent)
+    then do
+    mapM_ (logInfo_ . (<+>) "Unknown entry in 'table_versions':") absent
+    mapM_ (logInfo_ . (<+>) "Table not present in the 'table_versions':") notPresent
+    return . ValidationResult $
+      (joinedResult "Unknown entry in table_versions':"  absent ) ++
+      (joinedResult "Tables not present in the 'table_versions':" notPresent)
+    else return mempty
+  where
+    joinedResult :: Text -> [Text] -> [Text]
+    joinedResult _ [] = []
+    joinedResult t ts = [ t <+> T.intercalate ", " ts]
+
 
 checkDomainsStructure :: (MonadDB m, MonadThrow m)
                       => [Domain] -> m ValidationResult
@@ -558,7 +603,7 @@ checkDBConsistency options domains tables migrations = do
           additionalMigrations = takeWhile
             (\mgr -> droppedEventually mgr && tableDoesNotExist mgr)
             initialMigrations
-          migrationsToRun = reverse additionalMigrations ++ migrationsToRun'
+          migrationsToRun = (reverse additionalMigrations) ++ migrationsToRun'
       in migrationsToRun
 
     runMigration :: (Migration m) -> m ()
