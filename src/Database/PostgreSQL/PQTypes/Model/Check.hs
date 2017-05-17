@@ -9,7 +9,7 @@ import Database.PostgreSQL.PQTypes
 import Prelude
 
 data Check = Check {
-  chkName :: RawSQL ()
+  chkName      :: RawSQL ()
 , chkCondition :: RawSQL ()
 } deriving (Eq, Ord, Show)
 

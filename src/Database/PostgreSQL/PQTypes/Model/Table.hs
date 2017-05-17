@@ -10,6 +10,8 @@ module Database.PostgreSQL.PQTypes.Model.Table (
   , tblTable
   , sqlCreateTable
   , sqlAlterTable
+  , DropTableMode(..)
+  , sqlDropTable
   , TableInitialSetup(..)
   ) where
 
@@ -60,15 +62,16 @@ sqlDropColumn cname = "DROP COLUMN" <+> cname
 
 data Rows = forall row. (Show row, ToRow row) => Rows [ByteString] [row]
 
-data Table = Table {
-  tblName          :: RawSQL ()
-, tblVersion       :: Int32
-, tblColumns       :: [TableColumn]
-, tblPrimaryKey    :: Maybe PrimaryKey
-, tblChecks        :: [Check]
-, tblForeignKeys   :: [ForeignKey]
-, tblIndexes       :: [TableIndex]
-, tblInitialSetup  :: Maybe TableInitialSetup
+data Table =
+  Table {
+  tblName         :: RawSQL () -- ^ Must be in lower case.
+, tblVersion      :: Int32
+, tblColumns      :: [TableColumn]
+, tblPrimaryKey   :: Maybe PrimaryKey
+, tblChecks       :: [Check]
+, tblForeignKeys  :: [ForeignKey]
+, tblIndexes      :: [TableIndex]
+, tblInitialSetup :: Maybe TableInitialSetup
 }
 
 data TableInitialSetup = TableInitialSetup {
@@ -90,6 +93,19 @@ tblTable = Table {
 
 sqlCreateTable :: RawSQL () -> RawSQL ()
 sqlCreateTable tname = "CREATE TABLE" <+> tname <+> "()"
+
+-- | Whether to also drop objects that depend on the table.
+data DropTableMode =
+  -- | Automatically drop objects that depend on the table (such as views).
+  DropTableCascade |
+  -- | Refuse to drop the table if any objects depend on it. This is the default.
+  DropTableRestrict
+
+sqlDropTable :: RawSQL () -> DropTableMode -> RawSQL ()
+sqlDropTable tname mode = "DROP TABLE" <+> tname
+  <+> case mode of
+        DropTableCascade  -> "CASCADE"
+        DropTableRestrict -> "RESTRICT"
 
 sqlAlterTable :: RawSQL () -> [RawSQL ()] -> RawSQL ()
 sqlAlterTable tname alter_statements = smconcat [
