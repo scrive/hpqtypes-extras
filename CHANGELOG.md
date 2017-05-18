@@ -1,4 +1,4 @@
-# hpqtypes-extras-1.3.0.0 (2017-??-??)
+# hpqtypes-extras-1.3.0.0 (2017-05-17)
 * Add drop table migrations.
 * Add a test suite.
 * Improve documentation.
