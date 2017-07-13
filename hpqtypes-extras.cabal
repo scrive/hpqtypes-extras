@@ -98,6 +98,7 @@ test-suite  hpqtypes-extras-tests
                       hpqtypes-extras,
                       lifted-base,
                       log,
+                      monad-control,
                       tasty,
                       tasty-hunit,
                       text,
