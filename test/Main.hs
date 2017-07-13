@@ -493,6 +493,16 @@ migrateDBToSchema2 step = do
     schema2Tables schema2Migrations
   checkDatabase {- domains -} [] schema2Tables
 
+-- | Hacky version of 'migrateDBToSchema2' used by 'migrationTest3'.
+migrateDBToSchema2Hacky :: (String -> TestM ()) -> TestM ()
+migrateDBToSchema2Hacky step = do
+  step "Hackily migrating the database (schema version 1 -> schema version 2)..."
+  migrateDatabase {- options -} [] {- extensions -} [] {- domains -} []
+    schema2Tables schema2Migrations'
+  checkDatabase {- domains -} [] schema2Tables
+    where
+      schema2Migrations' = createTableMigration tableFlash : schema2Migrations
+
 testDBSchema2 :: (String -> TestM ()) -> [Int64] -> [Int64] -> TestM ()
 testDBSchema2 step badGuyIds robberyIds = do
   step "Running test queries (schema version 2)..."
@@ -701,20 +711,37 @@ migrationTest2 connSource =
 
   freshTestDB step
 
-  where
-    eitherExc :: MonadBaseControl IO m =>
-                 (SomeException -> m ()) -> (a -> m ()) -> m a -> m ()
-    eitherExc left right c = (E.try c) >>= either left right
+migrationTest3 :: ConnectionSourceM (LogT IO) -> TestTree
+migrationTest3 connSource =
+  testCaseSteps' "Migration test 3" connSource $ \step -> do
+  freshTestDB         step
 
-    assertNoException :: String -> TestM () -> TestM ()
-    assertNoException t c = eitherExc
-      (const $ liftIO $ assertFailure ("Exception thrown for: " ++ t))
-      (const $ return ()) c
+  createTablesSchema1 step
+  (badGuyIds, robberyIds) <-
+    testDBSchema1     step
 
-    assertException :: String -> TestM () -> TestM ()
-    assertException   t c = eitherExc
-      (const $ return ())
-      (const $ liftIO $ assertFailure ("No exception thrown for: " ++ t)) c
+  migrateDBToSchema2  step
+  testDBSchema2       step badGuyIds robberyIds
+
+  assertException ( "Trying to run the same migration twice should fail, "
+                    ++ "when starting with a createTable migration" ) $
+    migrateDBToSchema2Hacky  step
+
+  freshTestDB         step
+
+eitherExc :: MonadBaseControl IO m =>
+             (SomeException -> m ()) -> (a -> m ()) -> m a -> m ()
+eitherExc left right c = (E.try c) >>= either left right
+
+assertNoException :: String -> TestM () -> TestM ()
+assertNoException t c = eitherExc
+  (const $ liftIO $ assertFailure ("Exception thrown for: " ++ t))
+  (const $ return ()) c
+
+assertException :: String -> TestM () -> TestM ()
+assertException   t c = eitherExc
+  (const $ return ())
+  (const $ liftIO $ assertFailure ("No exception thrown for: " ++ t)) c
 
 -- | A variant of testCaseSteps that works in TestM monad.
 testCaseSteps' :: TestName -> ConnectionSourceM (LogT IO)
@@ -737,6 +764,7 @@ main = do
     in
     testGroup "DB tests" [ migrationTest1 connSource
                          , migrationTest2 connSource
+                         , migrationTest3 connSource
                          ]
   where
     ings =
