@@ -3,6 +3,7 @@ module Main
 
 import Control.Exception.Lifted as E
 import Control.Monad.IO.Class
+import Control.Monad.Trans.Control
 
 import Data.Monoid
 import Data.Int
@@ -661,58 +662,64 @@ migrationTest1 connSource =
 migrationTest2 :: ConnectionSourceM (LogT IO) -> TestTree
 migrationTest2 connSource =
   testCaseSteps' "Migration test 2" connSource $ \step -> do
-  freshTestDB         step
+  freshTestDB    step
 
   createTablesSchema1 step
-  let currentSchema = schema1Tables
+  let currentSchema   = schema1Tables
       differentSchema = schema5Tables
 
   assertNoException "checkDatabase should run fine for consistent DB" $
-    (checkDatabase [] currentSchema)
+    checkDatabase [] currentSchema
   assertNoException "checkDatabaseAllowUnknownTables runs fine for consistent DB" $
-    (checkDatabaseAllowUnknownTables [] currentSchema)
+    checkDatabaseAllowUnknownTables [] currentSchema
   assertException "checkDatabase should throw exception for wrong scheme" $
-    (checkDatabase [] differentSchema)
-  assertException "checkDatabaseAllowUnknownTables should throw exception for wrong scheme" $
-    (checkDatabaseAllowUnknownTables [] differentSchema)
+    checkDatabase [] differentSchema
+  assertException ("checkDatabaseAllowUnknownTables "
+                   ++ "should throw exception for wrong scheme") $
+    checkDatabaseAllowUnknownTables [] differentSchema
 
   runSQL_ "INSERT INTO table_versions (name, version) VALUES ('unknown_table', 0)"
   assertException "checkDatabase throw when extra entry in 'table_versions'" $
-    (checkDatabase [] currentSchema)
-  assertNoException "checkDatabaseAllowUnknownTables accepts extra entry in 'table_versions'" $
-    (checkDatabaseAllowUnknownTables [] currentSchema)
+    checkDatabase [] currentSchema
+  assertNoException ("checkDatabaseAllowUnknownTables "
+                     ++ "accepts extra entry in 'table_versions'") $
+    checkDatabaseAllowUnknownTables [] currentSchema
   runSQL_ "DELETE FROM table_versions where name='unknown_table'"
 
   runSQL_ "CREATE TABLE unknown_table (title text)"
   assertException "checkDatabase should throw with unknown table" $
-    (checkDatabase [] currentSchema)
+    checkDatabase [] currentSchema
   assertNoException "checkDatabaseAllowUnknownTables accepts unknown table" $
-    (checkDatabaseAllowUnknownTables [] currentSchema)
+    checkDatabaseAllowUnknownTables [] currentSchema
 
   runSQL_ "INSERT INTO table_versions (name, version) VALUES ('unknown_table', 0)"
   assertException "checkDatabase should throw with unknown table" $
-    (checkDatabase [] currentSchema)
-  assertNoException "checkDatabaseAllowUnknownTables accepts unknown tables with version" $
-    (checkDatabaseAllowUnknownTables [] currentSchema)
+    checkDatabase [] currentSchema
+  assertNoException ("checkDatabaseAllowUnknownTables "
+                     ++ "accepts unknown tables with version") $
+    checkDatabaseAllowUnknownTables [] currentSchema
 
-  freshTestDB         step
+  freshTestDB step
 
   where
+    eitherExc :: MonadBaseControl IO m =>
+                 (SomeException -> m ()) -> (a -> m ()) -> m a -> m ()
+    eitherExc left right c = (E.try c) >>= either left right
+
     assertNoException :: String -> TestM () -> TestM ()
-    assertNoException t c = (E.try c) >>= \r -> case r of
-      Left (_ :: SomeException) ->
-        liftIO $ assertFailure ("Exception thrown for: " ++ t)
-      Right _ -> return ()
+    assertNoException t c = eitherExc
+      (const $ liftIO $ assertFailure ("Exception thrown for: " ++ t))
+      (const $ return ()) c
+
     assertException :: String -> TestM () -> TestM ()
-    assertException t c = (E.try c) >>= \r -> case r of
-      Left (_ :: SomeException) -> return ()
-      Right _ ->
-        liftIO $ assertFailure ("No exception thrown for: " ++ t)
+    assertException   t c = eitherExc
+      (const $ return ())
+      (const $ liftIO $ assertFailure ("No exception thrown for: " ++ t)) c
 
 -- | A variant of testCaseSteps that works in TestM monad.
 testCaseSteps' :: TestName -> ConnectionSourceM (LogT IO)
-                -> ((String -> TestM ()) -> TestM ())
-                -> TestTree
+               -> ((String -> TestM ()) -> TestM ())
+               -> TestTree
 testCaseSteps' testName connSource f =
   testCaseSteps testName $ \step' -> do
   let step s = liftIO $ step' s
