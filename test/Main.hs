@@ -3,6 +3,7 @@ module Main
 
 import Control.Exception.Lifted as E
 import Control.Monad.IO.Class
+import Control.Monad.Trans.Control
 
 import Data.Monoid
 import Data.Int
@@ -492,6 +493,16 @@ migrateDBToSchema2 step = do
     schema2Tables schema2Migrations
   checkDatabase {- domains -} [] schema2Tables
 
+-- | Hacky version of 'migrateDBToSchema2' used by 'migrationTest3'.
+migrateDBToSchema2Hacky :: (String -> TestM ()) -> TestM ()
+migrateDBToSchema2Hacky step = do
+  step "Hackily migrating the database (schema version 1 -> schema version 2)..."
+  migrateDatabase {- options -} [] {- extensions -} [] {- domains -} []
+    schema2Tables schema2Migrations'
+  checkDatabase {- domains -} [] schema2Tables
+    where
+      schema2Migrations' = createTableMigration tableFlash : schema2Migrations
+
 testDBSchema2 :: (String -> TestM ()) -> [Int64] -> [Int64] -> TestM ()
 testDBSchema2 step badGuyIds robberyIds = do
   step "Running test queries (schema version 2)..."
@@ -661,58 +672,81 @@ migrationTest1 connSource =
 migrationTest2 :: ConnectionSourceM (LogT IO) -> TestTree
 migrationTest2 connSource =
   testCaseSteps' "Migration test 2" connSource $ \step -> do
-  freshTestDB         step
+  freshTestDB    step
 
   createTablesSchema1 step
-  let currentSchema = schema1Tables
+  let currentSchema   = schema1Tables
       differentSchema = schema5Tables
 
   assertNoException "checkDatabase should run fine for consistent DB" $
-    (checkDatabase [] currentSchema)
+    checkDatabase [] currentSchema
   assertNoException "checkDatabaseAllowUnknownTables runs fine for consistent DB" $
-    (checkDatabaseAllowUnknownTables [] currentSchema)
+    checkDatabaseAllowUnknownTables [] currentSchema
   assertException "checkDatabase should throw exception for wrong scheme" $
-    (checkDatabase [] differentSchema)
-  assertException "checkDatabaseAllowUnknownTables should throw exception for wrong scheme" $
-    (checkDatabaseAllowUnknownTables [] differentSchema)
+    checkDatabase [] differentSchema
+  assertException ("checkDatabaseAllowUnknownTables "
+                   ++ "should throw exception for wrong scheme") $
+    checkDatabaseAllowUnknownTables [] differentSchema
 
   runSQL_ "INSERT INTO table_versions (name, version) VALUES ('unknown_table', 0)"
   assertException "checkDatabase throw when extra entry in 'table_versions'" $
-    (checkDatabase [] currentSchema)
-  assertNoException "checkDatabaseAllowUnknownTables accepts extra entry in 'table_versions'" $
-    (checkDatabaseAllowUnknownTables [] currentSchema)
+    checkDatabase [] currentSchema
+  assertNoException ("checkDatabaseAllowUnknownTables "
+                     ++ "accepts extra entry in 'table_versions'") $
+    checkDatabaseAllowUnknownTables [] currentSchema
   runSQL_ "DELETE FROM table_versions where name='unknown_table'"
 
   runSQL_ "CREATE TABLE unknown_table (title text)"
   assertException "checkDatabase should throw with unknown table" $
-    (checkDatabase [] currentSchema)
+    checkDatabase [] currentSchema
   assertNoException "checkDatabaseAllowUnknownTables accepts unknown table" $
-    (checkDatabaseAllowUnknownTables [] currentSchema)
+    checkDatabaseAllowUnknownTables [] currentSchema
 
   runSQL_ "INSERT INTO table_versions (name, version) VALUES ('unknown_table', 0)"
   assertException "checkDatabase should throw with unknown table" $
-    (checkDatabase [] currentSchema)
-  assertNoException "checkDatabaseAllowUnknownTables accepts unknown tables with version" $
-    (checkDatabaseAllowUnknownTables [] currentSchema)
+    checkDatabase [] currentSchema
+  assertNoException ("checkDatabaseAllowUnknownTables "
+                     ++ "accepts unknown tables with version") $
+    checkDatabaseAllowUnknownTables [] currentSchema
+
+  freshTestDB step
+
+migrationTest3 :: ConnectionSourceM (LogT IO) -> TestTree
+migrationTest3 connSource =
+  testCaseSteps' "Migration test 3" connSource $ \step -> do
+  freshTestDB         step
+
+  createTablesSchema1 step
+  (badGuyIds, robberyIds) <-
+    testDBSchema1     step
+
+  migrateDBToSchema2  step
+  testDBSchema2       step badGuyIds robberyIds
+
+  assertException ( "Trying to run the same migration twice should fail, "
+                    ++ "when starting with a createTable migration" ) $
+    migrateDBToSchema2Hacky  step
 
   freshTestDB         step
 
-  where
-    assertNoException :: String -> TestM () -> TestM ()
-    assertNoException t c = (E.try c) >>= \r -> case r of
-      Left (_ :: SomeException) ->
-        liftIO $ assertFailure ("Exception thrown for: " ++ t)
-      Right _ -> return ()
-    assertException :: String -> TestM () -> TestM ()
-    assertException t c = (E.try c) >>= \r -> case r of
-      Left (_ :: SomeException) -> return ()
-      Right _ ->
-        liftIO $ assertFailure ("No exception thrown for: " ++ t)
+eitherExc :: MonadBaseControl IO m =>
+             (SomeException -> m ()) -> (a -> m ()) -> m a -> m ()
+eitherExc left right c = (E.try c) >>= either left right
+
+assertNoException :: String -> TestM () -> TestM ()
+assertNoException t c = eitherExc
+  (const $ liftIO $ assertFailure ("Exception thrown for: " ++ t))
+  (const $ return ()) c
+
+assertException :: String -> TestM () -> TestM ()
+assertException   t c = eitherExc
+  (const $ return ())
+  (const $ liftIO $ assertFailure ("No exception thrown for: " ++ t)) c
 
 -- | A variant of testCaseSteps that works in TestM monad.
 testCaseSteps' :: TestName -> ConnectionSourceM (LogT IO)
-                -> ((String -> TestM ()) -> TestM ())
-                -> TestTree
+               -> ((String -> TestM ()) -> TestM ())
+               -> TestTree
 testCaseSteps' testName connSource f =
   testCaseSteps testName $ \step' -> do
   let step s = liftIO $ step' s
@@ -730,6 +764,7 @@ main = do
     in
     testGroup "DB tests" [ migrationTest1 connSource
                          , migrationTest2 connSource
+                         , migrationTest3 connSource
                          ]
   where
     ings =
