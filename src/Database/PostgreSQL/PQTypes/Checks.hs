@@ -33,6 +33,10 @@ import Database.PostgreSQL.PQTypes.Model
 import Database.PostgreSQL.PQTypes.SQL.Builder
 import Database.PostgreSQL.PQTypes.Versions
 
+headExc :: String -> [a] -> a
+headExc s []    = error s
+headExc _ (x:_) = x
+
 ----------------------------------------
 
 -- | Run migrations and check the database structure.
@@ -652,17 +656,26 @@ checkDBConsistency options domains tables migrations = do
             L.sortBy (comparing mgrTableName) $ -- NB: stable sort
             migrationsToRun
 
+          loc_common = "Database.PostgreSQL.PQTypes.Checks."
+            ++ "checkDBConsistency.validateMigrationsToRun"
+
           lookupDBTableVer :: [Migration m] -> Maybe Int32
           lookupDBTableVer mgrGroup =
-            lookup (unRawSQL . mgrTableName . head $ mgrGroup) dbTablesWithVersions
+            lookup (unRawSQL . mgrTableName . headExc head_err
+                    $ mgrGroup) dbTablesWithVersions
+            where
+              head_err = loc_common ++ ".lookupDBTableVer: broken invariant"
 
           groupsWithWrongDBTableVersions :: [([Migration m], Int32)]
           groupsWithWrongDBTableVersions =
             [ (mgrGroup, dbTableVer)
             | mgrGroup <- migrationsToRunGrouped
             , let dbTableVer = fromMaybe 0 $ lookupDBTableVer mgrGroup
-            , dbTableVer /= (mgrFrom . head $ mgrGroup)
+            , dbTableVer /= (mgrFrom . headExc head_err $ mgrGroup)
             ]
+            where
+              head_err = loc_common
+                ++ ".groupsWithWrongDBTableVersions: broken invariant"
 
           mgrGroupsNotInDB :: [[Migration m]]
           mgrGroupsNotInDB =
@@ -675,19 +688,27 @@ checkDBConsistency options domains tables migrations = do
           groupsStartingWithDropTable =
             [ mgrGroup
             | mgrGroup <- mgrGroupsNotInDB
-            , isDropTableMigration $ head mgrGroup
+            , isDropTableMigration . headExc head_err $ mgrGroup
             ]
+            where
+              head_err = loc_common
+                ++ ".groupsStartingWithDropTable: broken invariant"
 
           groupsNotStartingWithCreateTable :: [[Migration m]]
           groupsNotStartingWithCreateTable =
             [ mgrGroup
             | mgrGroup <- mgrGroupsNotInDB
-            , mgrFrom (head mgrGroup) /= 0
+            , mgrFrom (headExc head_err mgrGroup) /= 0
             ]
+            where
+              head_err = loc_common
+                ++ ".groupsNotStartingWithCreateTable: broken invariant"
 
           tblNames :: [[Migration m]] -> [RawSQL ()]
           tblNames grps =
-            [ mgrTableName . head $ grp | grp <- grps ]
+            [ mgrTableName . headExc head_err $ grp | grp <- grps ]
+            where
+              head_err = loc_common ++ ".tblNames: broken invariant"
 
       when (not . null $ groupsWithWrongDBTableVersions) $ do
         let tnms = tblNames . map fst $ groupsWithWrongDBTableVersions
