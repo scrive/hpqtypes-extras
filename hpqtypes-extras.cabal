@@ -11,6 +11,7 @@ description:         The following extras for hpqtypes library:
 homepage:            https://github.com/scrive/hpqtypes-extras
 license:             BSD3
 license-file:        LICENSE
+extra-source-files:  CHANGELOG.md, README.md
 author:              Scrive AB
 maintainer:          Andrzej Rybczak <andrzej@rybczak.net>,
                      Jonathan Jouty <jonathan@scrive.com>,
