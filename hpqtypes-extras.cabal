@@ -56,7 +56,7 @@ library
                , fields-json
                , hpqtypes >= 1.5.0
                , lifted-base
-               , log > 0.5.2
+               , log-base >= 0.7
                , monad-control >= 1.0.0.0
                , mtl
                , safe
@@ -97,7 +97,7 @@ test-suite  hpqtypes-extras-tests
                       hpqtypes,
                       hpqtypes-extras,
                       lifted-base,
-                      log,
+                      log-base,
                       monad-control,
                       tasty,
                       tasty-hunit,
