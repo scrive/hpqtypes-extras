@@ -1,8 +1,11 @@
 module Database.PostgreSQL.PQTypes.Model.Index (
     TableIndex(..)
+  , IndexMethod(..)
   , tblIndex
   , indexOnColumn
   , indexOnColumns
+  , indexOnColumnWithMethod
+  , indexOnColumnsWithMethod
   , uniqueIndexOnColumn
   , uniqueIndexOnColumnWithCondition
   , uniqueIndexOnColumns
@@ -24,13 +27,29 @@ import qualified Data.Text.Encoding as T
 
 data TableIndex = TableIndex {
   idxColumns :: [RawSQL ()]
+, idxMethod  :: IndexMethod
 , idxUnique  :: Bool
 , idxWhere   :: Maybe (RawSQL ())
 } deriving (Eq, Ord, Show)
 
+data IndexMethod =
+    BTree
+  | GIN
+  deriving (Eq, Ord)
+
+instance Show IndexMethod where
+    show BTree = "btree"
+    show GIN   = "gin"
+
+instance Read IndexMethod where
+    readsPrec _ "btree" = [(BTree,"")]
+    readsPrec _ "gin"   = [(GIN,"")]
+    readsPrec _ _       = []
+
 tblIndex :: TableIndex
 tblIndex = TableIndex {
   idxColumns = []
+, idxMethod = BTree
 , idxUnique = False
 , idxWhere = Nothing
 }
@@ -38,12 +57,28 @@ tblIndex = TableIndex {
 indexOnColumn :: RawSQL () -> TableIndex
 indexOnColumn column = tblIndex { idxColumns = [column] }
 
+-- | Create an index on the given column with the specified method.  No checks
+-- are made that the method is appropriate for the type of the column.
+indexOnColumnWithMethod :: RawSQL () -> IndexMethod -> TableIndex
+indexOnColumnWithMethod column method =
+    tblIndex { idxColumns = [column]
+             , idxMethod = method }
+
 indexOnColumns :: [RawSQL ()] -> TableIndex
 indexOnColumns columns = tblIndex { idxColumns = columns }
+
+-- | Create an index on the given columns with the specified method.  No checks
+-- are made that the method is appropriate for the type of the column;
+-- cf. [the PostgreSQL manual](https://www.postgresql.org/docs/current/static/indexes-multicolumn.html).
+indexOnColumnsWithMethod :: [RawSQL ()] -> IndexMethod -> TableIndex
+indexOnColumnsWithMethod columns method =
+    tblIndex { idxColumns = columns
+             , idxMethod = method }
 
 uniqueIndexOnColumn :: RawSQL () -> TableIndex
 uniqueIndexOnColumn column = TableIndex {
   idxColumns = [column]
+, idxMethod = BTree
 , idxUnique = True
 , idxWhere = Nothing
 }
@@ -51,6 +86,7 @@ uniqueIndexOnColumn column = TableIndex {
 uniqueIndexOnColumns :: [RawSQL ()] -> TableIndex
 uniqueIndexOnColumns columns = TableIndex {
   idxColumns = columns
+, idxMethod = BTree
 , idxUnique = True
 , idxWhere = Nothing
 }
@@ -58,6 +94,7 @@ uniqueIndexOnColumns columns = TableIndex {
 uniqueIndexOnColumnWithCondition :: RawSQL () -> RawSQL () -> TableIndex
 uniqueIndexOnColumnWithCondition column whereC = TableIndex {
   idxColumns = [column]
+, idxMethod = BTree
 , idxUnique = True
 , idxWhere = Just whereC
 }
@@ -89,7 +126,8 @@ sqlCreateIndex :: RawSQL () -> TableIndex -> RawSQL ()
 sqlCreateIndex tname idx@TableIndex{..} = mconcat [
     "CREATE "
   , if idxUnique then "UNIQUE " else ""
-  , "INDEX" <+> indexName tname idx <+> "ON" <+> tname <+> "("
+  , "INDEX" <+> indexName tname idx <+> "ON" <+> tname <+> ""
+  , "USING" <+> (rawSQL (T.pack . show $ idxMethod) ()) <+> "("
   , mintercalate ", " idxColumns
   , ")"
   , maybe "" (" WHERE" <+>) idxWhere
