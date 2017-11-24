@@ -42,8 +42,8 @@ instance Show IndexMethod where
     show GIN   = "gin"
 
 instance Read IndexMethod where
-    readsPrec _ "btree" = [(BTree,"")]
-    readsPrec _ "gin"   = [(GIN,"")]
+    readsPrec _ (map toLower -> "btree") = [(BTree,"")]
+    readsPrec _ (map toLower -> "gin")   = [(GIN,"")]
     readsPrec _ _       = []
 
 tblIndex :: TableIndex

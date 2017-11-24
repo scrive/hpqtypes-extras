@@ -1,5 +1,5 @@
 name:                hpqtypes-extras
-version:             1.4
+version:             1.4.0.0
 synopsis:            Extra utilities for hpqtypes library
 description:         The following extras for hpqtypes library:
                      .
@@ -80,6 +80,7 @@ library
                     , TupleSections
                     , TypeFamilies
                     , UndecidableInstances
+                    , ViewPatterns
 
 test-suite  hpqtypes-extras-tests
   type:               exitcode-stdio-1.0

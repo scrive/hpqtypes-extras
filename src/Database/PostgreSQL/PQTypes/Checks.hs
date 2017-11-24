@@ -13,7 +13,6 @@ module Database.PostgreSQL.PQTypes.Checks (
 import Control.Applicative ((<$>))
 import Control.Monad.Catch
 import Control.Monad.Reader
-import Data.Char (toLower)
 import Data.Int
 import Data.Function (on)
 import Data.Maybe
@@ -849,7 +848,7 @@ fetchTableIndex :: (String, Array1 String, String, Bool, Maybe String)
                 -> (TableIndex, RawSQL ())
 fetchTableIndex (name, Array1 columns, method, unique, mconstraint) = (TableIndex {
   idxColumns = map unsafeSQL columns
-, idxMethod = read $ map toLower method
+, idxMethod = read method
 , idxUnique = unique
 , idxWhere = unsafeSQL `liftM` mconstraint
 }, unsafeSQL name)
