@@ -1,3 +1,6 @@
+# hpqtypes-extras-1.4.0.0 (2017-11-24)
+* Introduced tsvector postgres type and indexing methods GIN and BTree
+
 # hpqtypes-extras-1.3.1.1 (2017-07-21)
 * Now depends on 'log-base' instead of 'log'.
 

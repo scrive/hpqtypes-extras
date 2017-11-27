@@ -23,6 +23,7 @@ data ColumnType
   | SmallIntT
   | TextT
   | TimestampWithZoneT
+  | TSVectorT
   | XmlT
   | ArrayT !ColumnType
   | CustomT !(RawSQL ())
@@ -48,6 +49,7 @@ instance FromSQL ColumnType where
         "smallint" -> SmallIntT
         "text" -> TextT
         "timestamp with time zone" -> TimestampWithZoneT
+        "tsvector" -> TSVectorT
         "xml" -> XmlT
         tname
           | "[]" `T.isSuffixOf` tname -> ArrayT . parseType $ T.take (T.length tname - 2) tname
@@ -66,6 +68,7 @@ columnTypeToSQL JsonT              = "JSON"
 columnTypeToSQL JsonbT             = "JSONB"
 columnTypeToSQL SmallIntT          = "SMALLINT"
 columnTypeToSQL TextT              = "TEXT"
+columnTypeToSQL TSVectorT          = "TSVECTOR"
 columnTypeToSQL TimestampWithZoneT = "TIMESTAMPTZ"
 columnTypeToSQL XmlT               = "XML"
 columnTypeToSQL (ArrayT t)         = columnTypeToSQL t <> "[]"
