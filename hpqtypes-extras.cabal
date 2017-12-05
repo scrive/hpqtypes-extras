@@ -1,5 +1,5 @@
 name:                hpqtypes-extras
-version:             1.4.0.0
+version:             1.5.0.0
 synopsis:            Extra utilities for hpqtypes library
 description:         The following extras for hpqtypes library:
                      .
@@ -51,6 +51,7 @@ library
   build-depends: base < 5
                , base16-bytestring
                , bytestring
+               , Cabal
                , containers
                , cryptohash
                , exceptions

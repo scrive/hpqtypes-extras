@@ -19,6 +19,7 @@ import Data.Maybe
 import Data.Monoid
 import Data.Monoid.Utils
 import Data.Ord (comparing)
+import qualified Data.String
 import Data.Text (Text)
 import Database.PostgreSQL.PQTypes hiding (def)
 import Log
@@ -297,8 +298,7 @@ checkDBStructure tables = fmap mconcat . forM tables $ \table ->
         sqlOrderBy "a.attnum"
       desc <- fetchMany fetchTableColumn
       -- get info about constraints from pg_catalog
-      runQuery_ $ sqlGetPrimaryKey table
-      pk <- join <$> fetchMaybe fetchPrimaryKey
+      pk <- sqlGetPrimaryKey table
       runQuery_ $ sqlGetChecks table
       checks <- fetchMany fetchTableCheck
       runQuery_ $ sqlGetIndexes table
@@ -788,13 +788,46 @@ sqlGetTableID table = parenthesize . toSQLCommand $
 
 -- *** PRIMARY KEY ***
 
-sqlGetPrimaryKey :: Table -> SQL
-sqlGetPrimaryKey table = toSQLCommand . sqlSelect "pg_catalog.pg_constraint c" $ do
-  sqlResult "c.conname::text"
-  -- list of affected columns
-  sqlResult "array(SELECT a.attname::text FROM pg_catalog.pg_attribute a WHERE a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)) as columns"
-  sqlWhereEq "c.contype" 'p'
-  sqlWhereEqSql "c.conrelid" $ sqlGetTableID table
+sqlGetPrimaryKey :: (MonadDB m, MonadThrow m) => Table -> m (Maybe (PrimaryKey, RawSQL ()))
+sqlGetPrimaryKey table = do
+
+  (mColumnNumbers :: Maybe [Int16]) <- do
+    runQuery_ . sqlSelect "pg_catalog.pg_constraint" $ do
+      sqlResult "conkey"
+      sqlWhereEqSql "conrelid" (sqlGetTableID table)
+      sqlWhereEq "contype" 'p'
+    fetchMaybe $ unArray1 . runIdentity
+
+  case mColumnNumbers of
+    Nothing -> do return Nothing
+    Just columnNumbers -> do
+      columnNames <- do
+        forM columnNumbers $ \k -> do
+          runQuery_ . sqlSelect "pk_columns" $ do
+
+            sqlWith "key_series" . sqlSelect "pg_constraint as c2" $ do
+              sqlResult "unnest(c2.conkey) as k"
+              sqlWhereEqSql "c2.conrelid" $ sqlGetTableID table
+              sqlWhereEq "c2.contype" 'p'
+
+            sqlWith "pk_columns" . sqlSelect "key_series" $ do
+              sqlJoinOn  "pg_catalog.pg_attribute as a" "a.attnum = key_series.k"
+              sqlResult "a.attname::text as column_name"
+              sqlResult "key_series.k as column_order"
+              sqlWhereEqSql "a.attrelid" $ sqlGetTableID table
+
+            sqlResult "pk_columns.column_name"
+            sqlWhereEq "pk_columns.column_order" k
+
+          fetchOne (\(Identity t) -> t :: String)
+
+      runQuery_ . sqlSelect "pg_catalog.pg_constraint as c" $ do
+        sqlWhereEq "c.contype" 'p'
+        sqlWhereEqSql "c.conrelid" $ sqlGetTableID table
+        sqlResult "c.conname::text"
+        sqlResult $ Data.String.fromString ("array['" <> (mintercalate "', '" columnNames) <> "']::text[]")
+
+      join <$> fetchMaybe fetchPrimaryKey
 
 fetchPrimaryKey :: (String, Array1 String) -> Maybe (PrimaryKey, RawSQL ())
 fetchPrimaryKey (name, Array1 columns) = (, unsafeSQL name)
