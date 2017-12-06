@@ -35,7 +35,10 @@ matrix:
     - env: CABALVER=head GHCVER=8.0.2
       compiler: ": #GHC 8.0.2"
       addons: {postgresql: "9.5", apt: {packages: [cabal-install-head,ghc-8.0.2], sources: [hvr-ghc]}}
-
+    - env: CABALVER=head GHCVER=8.2.2
+      compiler: ": #GHC 8.2.2"
+      addons: {postgresql: "9.5", apt: {packages: [cabal-install-head,ghc-8.2.2], sources: [hvr-ghc]}}
+      
 before_script:
  - psql -c 'create database travis_ci_test;' -U postgres
 
