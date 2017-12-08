@@ -1,3 +1,8 @@
+# hpqtypes-extras-1.5.0.0 (2017-12-05)
+* Changed internal representation of PrimaryKey to NubList (#11)
+  This will break existing PKs set on multiple columns unless they are
+  alphabetically sorted in the defining list.
+
 # hpqtypes-extras-1.4.0.0 (2017-11-24)
 * Introduced tsvector postgres type and indexing methods GIN and BTree
 
