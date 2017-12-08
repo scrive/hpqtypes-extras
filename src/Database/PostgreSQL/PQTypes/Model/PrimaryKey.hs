@@ -11,7 +11,7 @@ import Data.Monoid (mconcat)
 import Data.Monoid.Utils
 import Database.PostgreSQL.PQTypes
 import Prelude
-import Distribution.Utils.NubList
+import Database.PostgreSQL.PQTypes.Utils.NubList
 
 newtype PrimaryKey = PrimaryKey (NubList (RawSQL ()))
   deriving (Eq, Show)

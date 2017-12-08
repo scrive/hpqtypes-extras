@@ -47,11 +47,11 @@ library
                  , Database.PostgreSQL.PQTypes.SQL.Builder
                  , Database.PostgreSQL.PQTypes.Versions
   other-modules:   Database.PostgreSQL.PQTypes.Checks.Util
+                 , Database.PostgreSQL.PQTypes.Utils.NubList
 
   build-depends: base < 5
                , base16-bytestring
                , bytestring
-               , Cabal
                , containers
                , cryptohash
                , exceptions
