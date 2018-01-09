@@ -157,7 +157,9 @@ getDBTableNames = do
     sqlResult "table_name::text"
     sqlWhere "table_name <> 'table_versions'"
     sqlWhere "table_type = 'BASE TABLE'"
-    sqlWhere "table_schema NOT IN ('information_schema','pg_catalog')"
+    sqlWhereExists $ sqlSelect "unnest(current_schemas(false)) as cs" $ do
+      sqlResult "TRUE"
+      sqlWhere "cs = table_schema"
 
   dbTableNames <- fetchMany runIdentity
   return dbTableNames
