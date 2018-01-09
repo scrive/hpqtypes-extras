@@ -1,3 +1,7 @@
+# hpqtypes-extras-1.5.0.1 (2018-01-09)
+* Changed `getDBTableNames` to only schemas explicitly in search path, rather
+  than an exclusion list. Affects table version and unknown tables checks.
+
 # hpqtypes-extras-1.5.0.0 (2017-12-08)
 * Changed internal representation of PrimaryKey to NubList (#11)
   This will break existing PKs set on multiple columns unless they are
