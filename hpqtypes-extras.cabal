@@ -46,7 +46,8 @@ library
                  , Database.PostgreSQL.PQTypes.Model.Table
                  , Database.PostgreSQL.PQTypes.SQL.Builder
                  , Database.PostgreSQL.PQTypes.Versions
-  other-modules:   Database.PostgreSQL.PQTypes.Checks.Util
+  other-modules:   Database.PostgreSQL.PQTypes.Checks.CheckOptions
+                 , Database.PostgreSQL.PQTypes.Checks.Util
                  , Database.PostgreSQL.PQTypes.Utils.NubList
 
   build-depends: base < 5

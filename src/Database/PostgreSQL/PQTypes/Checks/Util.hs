@@ -6,6 +6,7 @@ module Database.PostgreSQL.PQTypes.Checks.Util (
   tblNameString,
   checkEquality,
   checkNames,
+  checkPresence,
   tableHasLess,
   tableHasMore,
   arrListTable
@@ -84,6 +85,26 @@ checkNames prop_name = mconcat . map check
           , unRawSQL name
           , ")."
           ]]
+
+checkPresence :: RawSQL ()
+              -> Maybe PrimaryKey
+              -> Maybe (PrimaryKey, RawSQL ())
+              -> ValidationResult
+checkPresence tableName mdef mpk =
+  case (mdef, mpk) of
+    (Nothing, Nothing) -> valRes [noSrc, noTbl]
+    (Nothing, Just _)  -> valRes [noSrc]
+    (Just _, Nothing)  -> valRes [noTbl]
+    _                  -> mempty
+  where
+    noSrc = "no source definition"
+    noTbl = "no table definition"
+    valRes msgs =
+        ValidationResult [
+          mconcat [ "Table ", unRawSQL tableName
+                  , " has no primary key defined "
+                  , " (" <> (mintercalate ", " msgs) <> ")"]]
+
 
 tableHasLess :: Show t => Text -> t -> Text
 tableHasLess ptype missing =
