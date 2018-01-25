@@ -385,7 +385,7 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \table ->
             checkEquality "PRIMARY KEY" def (map fst pk)
           , checkNames (const (pkName tblName)) pk
           , if (eoEnforcePKs options)
-            then checkPresence tblName mdef mpk
+            then checkPKPresence tblName mdef mpk
             else mempty
           ]
           where

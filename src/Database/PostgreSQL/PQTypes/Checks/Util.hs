@@ -6,7 +6,7 @@ module Database.PostgreSQL.PQTypes.Checks.Util (
   tblNameString,
   checkEquality,
   checkNames,
-  checkPresence,
+  checkPKPresence,
   tableHasLess,
   tableHasMore,
   arrListTable
@@ -86,11 +86,19 @@ checkNames prop_name = mconcat . map check
           , ")."
           ]]
 
-checkPresence :: RawSQL ()
+-- | Check presence of primary key on the named table. We cover all the cases so
+-- this could be used standalone, but note that the those where the table source
+-- definition and the table in the database differ in this respect is also
+-- covered by @checkEquality@.
+checkPKPresence :: RawSQL ()
+                -- ^ The name of the table to check for presence of primary key
               -> Maybe PrimaryKey
+                -- ^ A possible primary key gotten from the table data structure
               -> Maybe (PrimaryKey, RawSQL ())
+                -- ^ A possible primary key as retrieved from database along
+                -- with its name
               -> ValidationResult
-checkPresence tableName mdef mpk =
+checkPKPresence tableName mdef mpk =
   case (mdef, mpk) of
     (Nothing, Nothing) -> valRes [noSrc, noTbl]
     (Nothing, Just _)  -> valRes [noSrc]
