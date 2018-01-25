@@ -1,5 +1,4 @@
 module Database.PostgreSQL.PQTypes.Migrate (
-  MigrateOptions(..),
   createDomain,
   createTable,
   createTableConstraints
@@ -12,9 +11,6 @@ import Database.PostgreSQL.PQTypes hiding (def)
 import Database.PostgreSQL.PQTypes.Checks.Util
 import Database.PostgreSQL.PQTypes.Model
 import Database.PostgreSQL.PQTypes.SQL.Builder
-
-data MigrateOptions = ForceCommitAfterEveryMigration
-  deriving Eq
 
 createDomain :: MonadDB m => Domain -> m ()
 createDomain dom@Domain{..} = do
