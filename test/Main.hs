@@ -397,6 +397,30 @@ schema5Migrations = schema4Migrations
                     , dropTableMigration tableFlash
                     ]
 
+schema6Tables :: [Table]
+schema6Tables =
+          [ tableBankSchema1
+          , tableBadGuySchema1
+          , tableRobberySchema1
+          , tableParticipatedInRobberySchema1
+              { tblVersion = (tblVersion tableParticipatedInRobberySchema1) + 1,
+                tblPrimaryKey = Nothing }
+          , tableWitnessSchema1
+          , tableWitnessedRobberySchema1
+          ]
+
+schema6Migrations :: (MonadDB m) => Migration m
+schema6Migrations =
+    Migration
+    {
+      mgrTableName = tblName tableParticipatedInRobberySchema1
+    , mgrFrom = tblVersion tableParticipatedInRobberySchema1
+    , mgrAction = StandardMigration $ do
+                    runQuery_ $ ("ALTER TABLE participated_in_robbery DROP CONSTRAINT " <>
+                                 "pk__participated_in_robbery" :: RawSQL ())
+    }
+
+
 type TestM a = DBT (LogT IO) a
 
 createTablesSchema1 :: (String -> TestM ()) -> TestM ()
@@ -695,7 +719,7 @@ migrationTest2 connSource =
   createTablesSchema1 step
   let currentSchema   = schema1Tables
       differentSchema = schema5Tables
-      extrasOptions = def
+      extrasOptions = def { eoEnforcePKs = True }
   assertNoException "checkDatabase should run fine for consistent DB" $
     checkDatabase extrasOptions [] currentSchema
   assertNoException "checkDatabaseAllowUnknownTables runs fine for consistent DB" $
@@ -726,6 +750,26 @@ migrationTest2 connSource =
   assertNoException ("checkDatabaseAllowUnknownTables "
                      ++ "accepts unknown tables with version") $
     checkDatabaseAllowUnknownTables extrasOptions [] currentSchema
+
+  freshTestDB    step
+
+  let schema1TablesWithMissingPK = schema6Tables
+      schema1MigrationsWithMissingPK = schema6Migrations
+      withMissingPKSchema = schema1TablesWithMissingPK
+      optionsNoPKCheck = def { eoEnforcePKs = False }
+      optionsWithPKCheck = def { eoEnforcePKs = True }
+
+  step "Recreating the database (schema version 1, one table is missing PK)..."
+
+  migrateDatabase optionsNoPKCheck [] [] schema1TablesWithMissingPK [schema1MigrationsWithMissingPK]
+  checkDatabase optionsNoPKCheck [] withMissingPKSchema
+
+  assertException ("checkDatabase should throw when PK missing from table " <>
+                   "'participated_in_robbery' and check is enabled") $
+    checkDatabase optionsWithPKCheck [] withMissingPKSchema
+  assertNoException ("checkDatabase should not throw when PK missing from table " <>
+                     "'participated_in_robbery' and check is disabled") $
+    checkDatabase optionsNoPKCheck [] withMissingPKSchema
 
   freshTestDB step
 
