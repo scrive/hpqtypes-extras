@@ -5,8 +5,10 @@ module Database.PostgreSQL.PQTypes.Checks (
   , createTable
   , createDomain
 
+  -- * Options
+  , ExtrasOptions(..)
+
   -- * Migrations
-  , MigrateOptions(..)
   , migrateDatabase
   ) where
 
@@ -28,6 +30,7 @@ import TextShow
 import qualified Data.List as L
 import qualified Data.Text as T
 
+import Database.PostgreSQL.PQTypes.ExtrasOptions
 import Database.PostgreSQL.PQTypes.Checks.Util
 import Database.PostgreSQL.PQTypes.Migrate
 import Database.PostgreSQL.PQTypes.Model
@@ -43,15 +46,15 @@ headExc _ (x:_) = x
 -- | Run migrations and check the database structure.
 migrateDatabase
   :: (MonadDB m, MonadLog m, MonadThrow m)
-  => [MigrateOptions] -> [Extension] -> [Domain] -> [Table] -> [Migration m]
+  => ExtrasOptions -> [Extension] -> [Domain] -> [Table] -> [Migration m]
   -> m ()
-migrateDatabase options extensions domains tables migrations = do
+migrateDatabase options@ExtrasOptions{..} extensions domains tables migrations = do
   setDBTimeZoneToUTC
   mapM_ checkExtension extensions
   -- 'checkDBConsistency' also performs migrations.
   checkDBConsistency options domains (tableVersions : tables) migrations
   resultCheck =<< checkDomainsStructure domains
-  resultCheck =<< checkDBStructure (tableVersions : tables)
+  resultCheck =<< checkDBStructure options (tableVersions : tables)
   resultCheck =<< checkTablesWereDropped migrations
   resultCheck =<< checkUnknownTables tables
   resultCheck =<< checkExistenceOfVersionsForTables (tableVersions : tables)
@@ -63,25 +66,25 @@ migrateDatabase options extensions domains tables migrations = do
 -- needs to be migrated. Will do a full check of DB structure.
 checkDatabase
   :: forall m . (MonadDB m, MonadLog m, MonadThrow m)
-  => [Domain] -> [Table] -> m ()
-checkDatabase = checkDatabase_ False
+  => ExtrasOptions -> [Domain] -> [Table] -> m ()
+checkDatabase options = checkDatabase_ options False
 
 -- | Same as 'checkDatabase', but will not failed if there are
 -- additional tables in database.
 checkDatabaseAllowUnknownTables
   :: forall m . (MonadDB m, MonadLog m, MonadThrow m)
-  => [Domain] -> [Table] -> m ()
-checkDatabaseAllowUnknownTables = checkDatabase_ True
+  => ExtrasOptions -> [Domain] -> [Table] -> m ()
+checkDatabaseAllowUnknownTables options = checkDatabase_ options True
 
 checkDatabase_
   :: forall m . (MonadDB m, MonadLog m, MonadThrow m)
-  => Bool -> [Domain] -> [Table] -> m ()
-checkDatabase_ allowUnknownTables domains tables = do
+  => ExtrasOptions -> Bool -> [Domain] -> [Table] -> m ()
+checkDatabase_ options allowUnknownTables domains tables = do
   tablesWithVersions <- getTableVersions tables
 
   resultCheck $ checkVersions tablesWithVersions
   resultCheck =<< checkDomainsStructure domains
-  resultCheck =<< checkDBStructure (tableVersions : tables)
+  resultCheck =<< checkDBStructure options (tableVersions : tables)
   when (not $ allowUnknownTables) $ do
     resultCheck =<< checkUnknownTables tables
     resultCheck =<< checkExistenceOfVersionsForTables (tableVersions : tables)
@@ -274,8 +277,8 @@ checkTablesWereDropped mgrs = do
 
 -- | Checks whether database is consistent.
 checkDBStructure :: forall m. (MonadDB m, MonadThrow m)
-                 => [Table] -> m ValidationResult
-checkDBStructure tables = fmap mconcat . forM tables $ \table ->
+                 => ExtrasOptions -> [Table] -> m ValidationResult
+checkDBStructure options tables = fmap mconcat . forM tables $ \table ->
   -- final checks for table structure, we do this
   -- both when creating stuff and when migrating
   topMessage "table" (tblNameText table) <$> checkTableStructure table
@@ -381,6 +384,9 @@ checkDBStructure tables = fmap mconcat . forM tables $ \table ->
         checkPrimaryKey mdef mpk = mconcat [
             checkEquality "PRIMARY KEY" def (map fst pk)
           , checkNames (const (pkName tblName)) pk
+          , if (eoEnforcePKs options)
+            then checkPKPresence tblName mdef mpk
+            else mempty
           ]
           where
             def = maybeToList mdef
@@ -416,7 +422,7 @@ checkDBStructure tables = fmap mconcat . forM tables $ \table ->
 --     the 'tables' list
 checkDBConsistency
   :: forall m. (MonadDB m, MonadLog m, MonadThrow m)
-  => [MigrateOptions] -> [Domain] -> [Table] -> [Migration m]
+  => ExtrasOptions -> [Domain] -> [Table] -> [Migration m]
   -> m ()
 checkDBConsistency options domains tables migrations = do
   -- Check the validity of the migrations list.
@@ -639,7 +645,7 @@ checkDBConsistency options domains tables migrations = do
         forM_ migrationsToRun $ \mgr -> do
           runMigration mgr
 
-          when (ForceCommitAfterEveryMigration `elem` options) $ do
+          when (eoForceCommit options) $ do
             logInfo_ $ "Forcing commit after migraton"
               <> " and starting new transaction..."
             commit

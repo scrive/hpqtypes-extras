@@ -397,14 +397,41 @@ schema5Migrations = schema4Migrations
                     , dropTableMigration tableFlash
                     ]
 
+schema6Tables :: [Table]
+schema6Tables =
+          [ tableBankSchema1
+          , tableBadGuySchema1
+          , tableRobberySchema1
+          , tableParticipatedInRobberySchema1
+              { tblVersion = (tblVersion tableParticipatedInRobberySchema1) + 1,
+                tblPrimaryKey = Nothing }
+          , tableWitnessSchema1
+          , tableWitnessedRobberySchema1
+          ]
+
+schema6Migrations :: (MonadDB m) => Migration m
+schema6Migrations =
+    Migration
+    {
+      mgrTableName = tblName tableParticipatedInRobberySchema1
+    , mgrFrom = tblVersion tableParticipatedInRobberySchema1
+    , mgrAction = StandardMigration $ do
+                    runQuery_ $ ("ALTER TABLE participated_in_robbery DROP CONSTRAINT " <>
+                                 "pk__participated_in_robbery" :: RawSQL ())
+    }
+
+
 type TestM a = DBT (LogT IO) a
 
 createTablesSchema1 :: (String -> TestM ()) -> TestM ()
 createTablesSchema1 step = do
+  let extrasOptions = def
+      extensions    = []
+      domains       = []
   step "Creating the database (schema version 1)..."
-  migrateDatabase {- options -} [] {- extensions -} [] {- domains -} []
+  migrateDatabase extrasOptions extensions domains
     schema1Tables schema1Migrations
-  checkDatabase {- domains -} [] schema1Tables
+  checkDatabase extrasOptions domains schema1Tables
 
 testDBSchema1 :: (String -> TestM ()) -> TestM ([Int64], [Int64])
 testDBSchema1 step = do
@@ -488,18 +515,24 @@ testDBSchema1 step = do
 
 migrateDBToSchema2 :: (String -> TestM ()) -> TestM ()
 migrateDBToSchema2 step = do
+  let extrasOptions = def
+      extensions    = []
+      domains       = []
   step "Migrating the database (schema version 1 -> schema version 2)..."
-  migrateDatabase {- options -} [] {- extensions -} [] {- domains -} []
+  migrateDatabase extrasOptions extensions domains
     schema2Tables schema2Migrations
-  checkDatabase {- domains -} [] schema2Tables
+  checkDatabase extrasOptions domains schema2Tables
 
 -- | Hacky version of 'migrateDBToSchema2' used by 'migrationTest3'.
 migrateDBToSchema2Hacky :: (String -> TestM ()) -> TestM ()
 migrateDBToSchema2Hacky step = do
+  let extrasOptions = def
+      extensions    = []
+      domains       = []
   step "Hackily migrating the database (schema version 1 -> schema version 2)..."
-  migrateDatabase {- options -} [] {- extensions -} [] {- domains -} []
+  migrateDatabase extrasOptions extensions domains
     schema2Tables schema2Migrations'
-  checkDatabase {- domains -} [] schema2Tables
+  checkDatabase extrasOptions domains schema2Tables
     where
       schema2Migrations' = createTableMigration tableFlash : schema2Migrations
 
@@ -541,10 +574,13 @@ testDBSchema2 step badGuyIds robberyIds = do
 
 migrateDBToSchema3 :: (String -> TestM ()) -> TestM ()
 migrateDBToSchema3 step = do
+  let extrasOptions = def
+      extensions    = []
+      domains       = []
   step "Migrating the database (schema version 2 -> schema version 3)..."
-  migrateDatabase {- options -} [] {- extensions -} [] {- domains -} []
+  migrateDatabase extrasOptions extensions domains
     schema3Tables schema3Migrations
-  checkDatabase {- domains -} [] schema3Tables
+  checkDatabase extrasOptions domains schema3Tables
 
 testDBSchema3 :: (String -> TestM ()) -> [Int64] -> [Int64] -> TestM ()
 testDBSchema3 step badGuyIds robberyIds = do
@@ -589,10 +625,13 @@ testDBSchema3 step badGuyIds robberyIds = do
 
 migrateDBToSchema4 :: (String -> TestM ()) -> TestM ()
 migrateDBToSchema4 step = do
+  let extrasOptions = def
+      extensions    = []
+      domains       = []
   step "Migrating the database (schema version 3 -> schema version 4)..."
-  migrateDatabase {- options -} [] {- extensions -} [] {- domains -} []
+  migrateDatabase extrasOptions extensions domains
     schema4Tables schema4Migrations
-  checkDatabase {- domains -} [] schema4Tables
+  checkDatabase extrasOptions domains schema4Tables
 
 testDBSchema4 :: (String -> TestM ()) -> TestM ()
 testDBSchema4 step = do
@@ -611,10 +650,13 @@ testDBSchema4 step = do
 
 migrateDBToSchema5 :: (String -> TestM ()) -> TestM ()
 migrateDBToSchema5 step = do
+  let extrasOptions = def
+      extensions    = []
+      domains       = []
   step "Migrating the database (schema version 4 -> schema version 5)..."
-  migrateDatabase {- options -} [] {- extensions -} [] {- domains -} []
+  migrateDatabase extrasOptions extensions domains
     schema5Tables schema5Migrations
-  checkDatabase {- domains -} [] schema5Tables
+  checkDatabase extrasOptions domains schema5Tables
 
 testDBSchema5 :: (String -> TestM ()) -> TestM ()
 testDBSchema5 step = do
@@ -677,37 +719,57 @@ migrationTest2 connSource =
   createTablesSchema1 step
   let currentSchema   = schema1Tables
       differentSchema = schema5Tables
-
+      extrasOptions = def { eoEnforcePKs = True }
   assertNoException "checkDatabase should run fine for consistent DB" $
-    checkDatabase [] currentSchema
+    checkDatabase extrasOptions [] currentSchema
   assertNoException "checkDatabaseAllowUnknownTables runs fine for consistent DB" $
-    checkDatabaseAllowUnknownTables [] currentSchema
+    checkDatabaseAllowUnknownTables extrasOptions [] currentSchema
   assertException "checkDatabase should throw exception for wrong scheme" $
-    checkDatabase [] differentSchema
+    checkDatabase extrasOptions [] differentSchema
   assertException ("checkDatabaseAllowUnknownTables "
                    ++ "should throw exception for wrong scheme") $
-    checkDatabaseAllowUnknownTables [] differentSchema
+    checkDatabaseAllowUnknownTables extrasOptions [] differentSchema
 
   runSQL_ "INSERT INTO table_versions (name, version) VALUES ('unknown_table', 0)"
   assertException "checkDatabase throw when extra entry in 'table_versions'" $
-    checkDatabase [] currentSchema
+    checkDatabase extrasOptions [] currentSchema
   assertNoException ("checkDatabaseAllowUnknownTables "
                      ++ "accepts extra entry in 'table_versions'") $
-    checkDatabaseAllowUnknownTables [] currentSchema
+    checkDatabaseAllowUnknownTables extrasOptions [] currentSchema
   runSQL_ "DELETE FROM table_versions where name='unknown_table'"
 
   runSQL_ "CREATE TABLE unknown_table (title text)"
   assertException "checkDatabase should throw with unknown table" $
-    checkDatabase [] currentSchema
+    checkDatabase extrasOptions [] currentSchema
   assertNoException "checkDatabaseAllowUnknownTables accepts unknown table" $
-    checkDatabaseAllowUnknownTables [] currentSchema
+    checkDatabaseAllowUnknownTables extrasOptions [] currentSchema
 
   runSQL_ "INSERT INTO table_versions (name, version) VALUES ('unknown_table', 0)"
   assertException "checkDatabase should throw with unknown table" $
-    checkDatabase [] currentSchema
+    checkDatabase extrasOptions [] currentSchema
   assertNoException ("checkDatabaseAllowUnknownTables "
                      ++ "accepts unknown tables with version") $
-    checkDatabaseAllowUnknownTables [] currentSchema
+    checkDatabaseAllowUnknownTables extrasOptions [] currentSchema
+
+  freshTestDB    step
+
+  let schema1TablesWithMissingPK = schema6Tables
+      schema1MigrationsWithMissingPK = schema6Migrations
+      withMissingPKSchema = schema1TablesWithMissingPK
+      optionsNoPKCheck = def { eoEnforcePKs = False }
+      optionsWithPKCheck = def { eoEnforcePKs = True }
+
+  step "Recreating the database (schema version 1, one table is missing PK)..."
+
+  migrateDatabase optionsNoPKCheck [] [] schema1TablesWithMissingPK [schema1MigrationsWithMissingPK]
+  checkDatabase optionsNoPKCheck [] withMissingPKSchema
+
+  assertException ("checkDatabase should throw when PK missing from table " <>
+                   "'participated_in_robbery' and check is enabled") $
+    checkDatabase optionsWithPKCheck [] withMissingPKSchema
+  assertNoException ("checkDatabase should not throw when PK missing from table " <>
+                     "'participated_in_robbery' and check is disabled") $
+    checkDatabase optionsNoPKCheck [] withMissingPKSchema
 
   freshTestDB step
 

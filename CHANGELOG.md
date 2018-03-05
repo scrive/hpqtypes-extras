@@ -1,3 +1,7 @@
+# hpqtypes-extras-1.6.0.0 (2018-01-25)
+* Introduce `checkPKPresence` to enforce primary keys on all tables supplied to `checkDatabase`
+* Introduce an options data type, `ExtrasOptions`
+
 # hpqtypes-extras-1.5.0.1 (2018-01-09)
 * Changed `getDBTableNames` to only schemas explicitly in search path, rather
   than an exclusion list. Affects table version and unknown tables checks.
