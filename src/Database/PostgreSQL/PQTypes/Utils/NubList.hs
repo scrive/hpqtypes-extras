@@ -12,6 +12,7 @@ import Data.Typeable
 
 import qualified Text.Read as R
 import qualified Data.Set as Set
+import qualified Data.Semigroup as SG
 
 {-
   This module is a copy-paste fork of Distribution.Utils.NubList in Cabal
@@ -38,11 +39,17 @@ toNubList list = NubList $ (ordNubBy id) list
 overNubList :: Ord a => ([a] -> [a]) -> NubList a -> NubList a
 overNubList f (NubList list) = toNubList . f $ list
 
+instance Ord a => SG.Semigroup (NubList a) where
+    (NubList xs) <> (NubList ys) = NubList $ xs `listUnion` ys
+      where
+        listUnion :: (Ord a) => [a] -> [a] -> [a]
+        listUnion a b = a
+          ++ ordNubBy id (filter (`Set.notMember` (Set.fromList a)) b)
+
+
 instance Ord a => Monoid (NubList a) where
-    mempty = NubList []
-    (NubList xs) `mappend` (NubList ys) = NubList $ xs `listUnion` ys
-      where listUnion :: (Ord a) => [a] -> [a] -> [a]
-            listUnion a b = a ++ (ordNubBy id) (filter (`Set.notMember` (Set.fromList a)) b)
+    mempty  = NubList []
+    mappend = (SG.<>)
 
 instance Show a => Show (NubList a) where
     show (NubList list) = show list

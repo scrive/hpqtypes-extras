@@ -20,6 +20,7 @@ import Log
 import TextShow
 import qualified Data.List as L
 import qualified Data.Text as T
+import qualified Data.Semigroup as SG
 
 import Database.PostgreSQL.PQTypes.Model
 import Database.PostgreSQL.PQTypes
@@ -27,9 +28,12 @@ import Database.PostgreSQL.PQTypes
 -- | A (potentially empty) list of error messages.
 newtype ValidationResult = ValidationResult [Text]
 
+instance SG.Semigroup ValidationResult where
+  (ValidationResult a) <> (ValidationResult b) = ValidationResult (a ++ b)
+
 instance Monoid ValidationResult where
-  mempty = ValidationResult []
-  mappend (ValidationResult a) (ValidationResult b) = ValidationResult (a ++ b)
+  mempty  = ValidationResult []
+  mappend = (SG.<>)
 
 topMessage :: Text -> Text -> ValidationResult -> ValidationResult
 topMessage objtype objname = \case

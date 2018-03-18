@@ -52,6 +52,7 @@ library
                  , Database.PostgreSQL.PQTypes.Utils.NubList
 
   build-depends: base < 5
+               , hpqtypes >= 1.5.2.0
                , base16-bytestring
                , bytestring
                , containers
@@ -59,12 +60,12 @@ library
                , data-default
                , exceptions
                , fields-json
-               , hpqtypes >= 1.5.2.0
                , lifted-base
                , log-base >= 0.7
                , monad-control >= 1.0.0.0
                , mtl
                , safe
+               , semigroups >= 0.16
                , text
                , text-show
 
