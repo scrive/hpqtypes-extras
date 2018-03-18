@@ -1,5 +1,6 @@
 # hpqtypes-extras-1.6.1.0 (2018-03-18)
-* Support GHC 8.4.1
+* Add support for GHC 8.4.1.
+* Drop support for GHC 7.8.
 
 # hpqtypes-extras-1.6.0.0 (2018-01-25)
 * Introduce `checkPKPresence` to enforce primary keys on all tables supplied to `checkDatabase`
