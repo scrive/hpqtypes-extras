@@ -1,5 +1,6 @@
 /TAGS
 /dist/
 /dist-newstyle/
+cabal.project
 cabal.project.local
 .ghc.environment.*
