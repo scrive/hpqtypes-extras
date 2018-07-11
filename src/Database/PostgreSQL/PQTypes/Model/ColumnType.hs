@@ -1,3 +1,4 @@
+{-# LANGUAGE TypeApplications #-}
 module Database.PostgreSQL.PQTypes.Model.ColumnType (
     ColumnType(..)
   , columnTypeToSQL
@@ -30,7 +31,7 @@ data ColumnType
     deriving (Eq, Ord, Show)
 
 instance PQFormat ColumnType where
-  pqFormat = const $ pqFormat (undefined::T.Text)
+  pqFormat = pqFormat @T.Text
 instance FromSQL ColumnType where
   type PQBase ColumnType = PQBase T.Text
   fromSQL mbase = parseType . T.toLower <$> fromSQL mbase
