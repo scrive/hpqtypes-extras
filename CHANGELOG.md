@@ -1,4 +1,4 @@
-# hpqtypes-extras-1.6.2.0 (2018-??-??)
+# hpqtypes-extras-1.6.2.0 (2018-07-11)
 * Support hpqtypes-1.6.0.0.
 * Drop support for GHC < 8.
 
