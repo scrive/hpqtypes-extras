@@ -1,4 +1,3 @@
-{-# LANGUAGE ExistentialQuantification #-}
 module Database.PostgreSQL.PQTypes.Model.Table (
     TableColumn(..)
   , tblColumn

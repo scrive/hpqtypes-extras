@@ -85,6 +85,7 @@ library
                     , TypeFamilies
                     , UndecidableInstances
                     , ViewPatterns
+  other-extensions:   TypeApplications
 
 test-suite  hpqtypes-extras-tests
   type:               exitcode-stdio-1.0

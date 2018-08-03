@@ -1,4 +1,3 @@
-{-# LANGUAGE DeriveDataTypeable #-}
 module Database.PostgreSQL.PQTypes.Utils.NubList
     ( NubList    -- opaque
     , toNubList  -- smart construtor
