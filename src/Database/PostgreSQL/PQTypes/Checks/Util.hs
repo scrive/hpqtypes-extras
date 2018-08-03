@@ -13,7 +13,6 @@ module Database.PostgreSQL.PQTypes.Checks.Util (
   ) where
 
 import Control.Monad.Catch
-import Data.Monoid
 import Data.Monoid.Utils
 import Data.Text (Text)
 import Log
