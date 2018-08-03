@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 module Database.PostgreSQL.PQTypes.Checks.Util (
   ValidationResult(..),
   resultCheck,
@@ -13,6 +14,9 @@ module Database.PostgreSQL.PQTypes.Checks.Util (
   ) where
 
 import Control.Monad.Catch
+#if !MIN_VERSION_base(4,11,0)
+import Data.Monoid
+#endif
 import Data.Monoid.Utils
 import Data.Text (Text)
 import Log
