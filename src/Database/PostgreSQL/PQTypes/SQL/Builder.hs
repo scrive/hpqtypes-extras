@@ -727,17 +727,22 @@ sqlWhereIsNULLE :: (MonadState v m, SqlWhere v, DBExtraException e, FromSQL a)
                 => (a -> e) -> SQL -> m ()
 sqlWhereIsNULLE exc col = sqlWhereEV (exc, col) $ col <+> "IS NULL"
 
+-- | Add a condition in the WHERE statement that holds if any of the given
+-- condition holds.
 sqlWhereAny :: (MonadState v m, SqlWhere v) => [State SqlAll ()] -> m ()
-sqlWhereAny l = do
-  let sql = sqlForWhereAny l
-  sqlWhereE (DBBaseLineConditionIsFalse sql) sql
+sqlWhereAny = sqlWhere . sqlWhereAnyImpl
 
-sqlWhereAnyE :: (DBExtraException e, MonadState v m, SqlWhere v) => e -> [State SqlAll ()] -> m ()
-sqlWhereAnyE e = sqlWhereE e . sqlForWhereAny
+-- | Add a condition just like 'sqlWhereAny' but throw the given exception if
+-- none of the given conditions hold.
+sqlWhereAnyE :: (DBExtraException e, MonadState v m, SqlWhere v)
+             => e -> [State SqlAll ()] -> m ()
+sqlWhereAnyE e = sqlWhereE e . sqlWhereAnyImpl
 
-sqlForWhereAny :: [State SqlAll ()] -> SQL
-sqlForWhereAny [] = "FALSE"
-sqlForWhereAny l = "(" <+> smintercalate "OR" (map (parenthesize . toSQLCommand . flip execState (SqlAll [])) l) <+> ")"
+sqlWhereAnyImpl :: [State SqlAll ()] -> SQL
+sqlWhereAnyImpl [] = "FALSE"
+sqlWhereAnyImpl l =
+  "(" <+> smintercalate "OR" (map (parenthesize . toSQLCommand
+                                   . flip execState (SqlAll [])) l) <+> ")"
 
 class SqlFrom a where
   sqlFrom1 :: a -> SQL -> a
