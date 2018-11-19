@@ -195,6 +195,7 @@ module Database.PostgreSQL.PQTypes.SQL.Builder
   , SqlDelete(..)
 
   , sqlWhereAny
+  , sqlWhereAnyE
 
   , SqlResult
   , SqlSet
@@ -727,8 +728,16 @@ sqlWhereIsNULLE :: (MonadState v m, SqlWhere v, DBExtraException e, FromSQL a)
 sqlWhereIsNULLE exc col = sqlWhereEV (exc, col) $ col <+> "IS NULL"
 
 sqlWhereAny :: (MonadState v m, SqlWhere v) => [State SqlAll ()] -> m ()
-sqlWhereAny [] = sqlWhere "FALSE"
-sqlWhereAny l = sqlWhere $ "(" <+> smintercalate "OR" (map (parenthesize . toSQLCommand . flip execState (SqlAll [])) l) <+> ")"
+sqlWhereAny l = do
+  let sql = sqlForWhereAny l
+  sqlWhereE (DBBaseLineConditionIsFalse sql) sql
+
+sqlWhereAnyE :: (DBExtraException e, MonadState v m, SqlWhere v) => e -> [State SqlAll ()] -> m ()
+sqlWhereAnyE e = sqlWhereE e . sqlForWhereAny
+
+sqlForWhereAny :: [State SqlAll ()] -> SQL
+sqlForWhereAny [] = "FALSE"
+sqlForWhereAny l = "(" <+> smintercalate "OR" (map (parenthesize . toSQLCommand . flip execState (SqlAll [])) l) <+> ")"
 
 class SqlFrom a where
   sqlFrom1 :: a -> SQL -> a
