@@ -17,7 +17,7 @@ createDomain dom@Domain{..} = do
   -- create the domain
   runQuery_ $ sqlCreateDomain dom
   -- add constraint checks to the domain
-  F.forM_ domChecks $ runQuery_ . sqlAlterDomain domName . sqlAddCheck
+  F.forM_ domChecks $ runQuery_ . sqlAlterDomain domName . sqlAddValidCheck
 
 createTable :: MonadDB m => Bool -> Table -> m ()
 createTable withConstraints table@Table{..} = do
@@ -25,7 +25,7 @@ createTable withConstraints table@Table{..} = do
   runQuery_ $ sqlCreateTable tblName
   runQuery_ $ sqlAlterTable tblName $ map sqlAddColumn tblColumns
   -- Add indexes.
-  forM_ tblIndexes $ runQuery_ . sqlCreateIndex tblName
+  forM_ tblIndexes $ runQuery_ . sqlCreateIndexSequentially tblName
   -- Add all the other constraints if applicable.
   when withConstraints $ createTableConstraints table
   -- Register the table along with its version.
@@ -39,6 +39,6 @@ createTableConstraints Table{..} = when (not $ null addConstraints) $ do
   where
     addConstraints = concat [
         [sqlAddPK tblName pk | Just pk <- return tblPrimaryKey]
-      , map sqlAddCheck tblChecks
-      , map (sqlAddFK tblName) tblForeignKeys
+      , map sqlAddValidCheck tblChecks
+      , map (sqlAddValidFK tblName) tblForeignKeys
       ]

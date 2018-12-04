@@ -2,6 +2,8 @@
 module Database.PostgreSQL.PQTypes.Checks.Util (
   ValidationResult(..),
   resultCheck,
+  ValidationResults(..),
+  resultsCheck,
   topMessage,
   tblNameText,
   tblNameString,
@@ -53,6 +55,33 @@ resultCheck = \case
   ValidationResult msgs -> do
     mapM_ logAttention_ msgs
     error "resultCheck: validation failed"
+
+----------------------------------------
+
+data ValidationResults = ValidationResults
+  { vrInfo  :: ValidationResult
+  , vrError :: ValidationResult
+  }
+
+instance SG.Semigroup ValidationResults where
+  ValidationResults info1 error1 <> ValidationResults info2 error2 =
+    ValidationResults (info1 SG.<> info2) (error1 SG.<> error2)
+
+instance Monoid ValidationResults where
+  mempty  = ValidationResults mempty mempty
+  mappend = (SG.<>)
+
+resultsCheck
+  :: (MonadLog m, MonadThrow m)
+  => ValidationResults
+  -> m ()
+resultsCheck ValidationResults{..} = do
+  mapM_ logInfo_ infoMsgs
+  resultCheck vrError
+  where
+    ValidationResult infoMsgs = vrInfo
+
+----------------------------------------
 
 tblNameText :: Table -> Text
 tblNameText = unRawSQL . tblName

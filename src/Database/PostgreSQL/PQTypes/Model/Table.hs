@@ -63,14 +63,15 @@ data Rows = forall row. (Show row, ToRow row) => Rows [ByteString] [row]
 
 data Table =
   Table {
-  tblName         :: RawSQL () -- ^ Must be in lower case.
-, tblVersion      :: Int32
-, tblColumns      :: [TableColumn]
-, tblPrimaryKey   :: Maybe PrimaryKey
-, tblChecks       :: [Check]
-, tblForeignKeys  :: [ForeignKey]
-, tblIndexes      :: [TableIndex]
-, tblInitialSetup :: Maybe TableInitialSetup
+  tblName               :: RawSQL () -- ^ Must be in lower case.
+, tblVersion            :: Int32
+, tblAcceptedDbVersions :: [Int32]
+, tblColumns            :: [TableColumn]
+, tblPrimaryKey         :: Maybe PrimaryKey
+, tblChecks             :: [Check]
+, tblForeignKeys        :: [ForeignKey]
+, tblIndexes            :: [TableIndex]
+, tblInitialSetup       :: Maybe TableInitialSetup
 }
 
 data TableInitialSetup = TableInitialSetup {
@@ -82,6 +83,7 @@ tblTable :: Table
 tblTable = Table {
   tblName = error "tblTable: table name must be specified"
 , tblVersion = error "tblTable: table version must be specified"
+, tblAcceptedDbVersions = []
 , tblColumns = error "tblTable: table columns must be specified"
 , tblPrimaryKey = Nothing
 , tblChecks = []
