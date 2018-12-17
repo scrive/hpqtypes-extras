@@ -38,7 +38,7 @@ sqlAddValidCheck :: Check -> RawSQL ()
 sqlAddValidCheck = sqlAddCheck_ True
 
 -- | Add check marked as NOT VALID. This avoids potentially long validation
--- blocking updates to modified table for its dueation. However, checks created
+-- blocking updates to modified table for its duration. However, checks created
 -- as such need to be validated later using 'sqlValidateCheck'.
 sqlAddNotValidCheck :: Check -> RawSQL ()
 sqlAddNotValidCheck = sqlAddCheck_ False
