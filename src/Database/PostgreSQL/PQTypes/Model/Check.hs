@@ -20,7 +20,7 @@ data Check = Check {
 
 tblCheck :: Check
 tblCheck = Check
-  { chkName = ""
+  { chkName      = ""
   , chkCondition = ""
   , chkValidated = True
   }
