@@ -665,9 +665,9 @@ checkDBConsistency options domains tablesWithVersions migrations = do
           runMigration mgr
 
           when (eoForceCommit options) $ do
-            logInfo_ $ "Commiting migration changes..."
+            logInfo_ $ "Committing migration changes..."
             commit
-            logInfo_ $ "Commiting migration changes done."
+            logInfo_ $ "Committing migration changes done."
             logInfo_ "!IMPORTANT! Database has been permanently changed"
         logInfo_ "Running migrations... done."
 
