@@ -1,4 +1,24 @@
-# hpqtypes-extras-1.6.3.0 (2018-07-11)
+# hpqtypes-extras-1.7.0.0 (2018-12-20)
+* Added support for no-downtime migrations
+  ([#17](https://github.com/scrive/hpqtypes-extras/pull/17)):
+    - `sqlCreateIndex` is deprecated. Use either
+      `sqlCreateIndexSequentially` or `sqlCreateIndexConcurrently`
+      (no-downtime migration variant) instead.
+    - `sqlAddFK` is deprecated. Use either `sqlAddValidFK` or
+      `sqlAddNotValidFK` (no-downtime migration variant) instead.
+    - API addition: `sqlValidateFK`, for validating a foreign key
+      previously added with `sqlAddNotValidFK`.
+    - `sqlAddCheck` is deprecated. Use either `sqlAddValidCheck` or
+      `sqlAddNotValidCheck` (no-downtime migration variant) instead.
+    - API addition: `sqlValidateCheck`, for validating a check
+      previously added with `sqlAddNotValidCheck`.
+    - API addition: `sqlAddPKUsing`, converts a unique index to a
+      primary key.
+    - New `Table` field: `tblAcceptedDbVersions`.
+* `ValidationResult` is now an abstract type.
+* `ValidationResult` now supports info-level messages in addition to errors.
+
+# hpqtypes-extras-1.6.3.0 (2018-11-19)
 * API addition: `sqlWhereAnyE`
   ([#16](https://github.com/scrive/hpqtypes-extras/pull/16)).
 
