@@ -65,7 +65,11 @@ data Table =
   Table {
   tblName               :: RawSQL () -- ^ Must be in lower case.
 , tblVersion            :: Int32
-, tblAcceptedDbVersions :: [Int32]
+, tblAcceptedDbVersions :: [Int32] -- ^ List of database table versions that
+                                   -- will be accepted even if they don't match
+                                   -- the table definition (note that in such
+                                   -- case structural differences are not
+                                   -- errors).
 , tblColumns            :: [TableColumn]
 , tblPrimaryKey         :: Maybe PrimaryKey
 , tblChecks             :: [Check]

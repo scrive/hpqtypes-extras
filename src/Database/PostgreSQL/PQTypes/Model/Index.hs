@@ -31,7 +31,9 @@ data TableIndex = TableIndex {
   idxColumns :: [RawSQL ()]
 , idxMethod  :: IndexMethod
 , idxUnique  :: Bool
-, idxValid   :: Bool
+, idxValid   :: Bool -- ^ If creation of index with CONCURRENTLY fails, index
+                     -- will be marked as invalid. Set it to 'False' if such
+                     -- situation is expected.
 , idxWhere   :: Maybe (RawSQL ())
 } deriving (Eq, Ord, Show)
 
