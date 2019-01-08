@@ -1,6 +1,10 @@
 {-# LANGUAGE CPP #-}
 module Database.PostgreSQL.PQTypes.Checks.Util (
-  ValidationResult(..),
+  ValidationResult,
+  validationError,
+  validationInfo,
+  mapValidationResult,
+  validationErrorsToInfos,
   resultCheck,
   topMessage,
   tblNameText,
@@ -28,31 +32,59 @@ import qualified Data.Semigroup as SG
 import Database.PostgreSQL.PQTypes.Model
 import Database.PostgreSQL.PQTypes
 
--- | A (potentially empty) list of error messages.
-newtype ValidationResult = ValidationResult [Text]
+-- | A (potentially empty) list of info/error messages.
+data ValidationResult = ValidationResult
+  { vrInfos  :: [Text]
+  , vrErrors :: [Text]
+  }
+
+validationError :: Text -> ValidationResult
+validationError err = mempty { vrErrors = [err] }
+
+validationInfo :: Text -> ValidationResult
+validationInfo msg  = mempty { vrInfos = [msg] }
+
+-- | Downgrade all error messages in a ValidationResult to info messages.
+validationErrorsToInfos :: ValidationResult -> ValidationResult
+validationErrorsToInfos ValidationResult{..} =
+  mempty { vrInfos = vrInfos <> vrErrors }
+
+mapValidationResult ::
+  ([Text] -> [Text]) -> ([Text] -> [Text]) -> ValidationResult -> ValidationResult
+mapValidationResult mapInfos mapErrs ValidationResult{..} =
+  mempty { vrInfos = mapInfos vrInfos, vrErrors = mapErrs vrErrors }
 
 instance SG.Semigroup ValidationResult where
-  (ValidationResult a) <> (ValidationResult b) = ValidationResult (a ++ b)
+  (ValidationResult infos0 errs0) <> (ValidationResult infos1 errs1)
+    = ValidationResult (infos0 <> infos1) (errs0 <> errs1)
 
 instance Monoid ValidationResult where
-  mempty  = ValidationResult []
+  mempty  = ValidationResult [] []
   mappend = (SG.<>)
 
 topMessage :: Text -> Text -> ValidationResult -> ValidationResult
-topMessage objtype objname = \case
-  ValidationResult [] -> ValidationResult []
-  ValidationResult es -> ValidationResult
-    ("There are problems with the" <+> objtype <+> "'" <> objname <> "'" : es)
+topMessage objtype objname vr@ValidationResult{..} =
+  case vrErrors of
+    [] -> vr
+    es -> ValidationResult vrInfos
+          ("There are problems with the" <+>
+            objtype <+> "'" <> objname <> "'" : es)
 
+-- | Log all messages in a 'ValidationResult', and fail if any of them
+-- were errors.
 resultCheck
   :: (MonadLog m, MonadThrow m)
   => ValidationResult
   -> m ()
-resultCheck = \case
-  ValidationResult [] -> return ()
-  ValidationResult msgs -> do
-    mapM_ logAttention_ msgs
-    error "resultCheck: validation failed"
+resultCheck ValidationResult{..} = do
+  mapM_ logInfo_ vrInfos
+  case vrErrors of
+    []   -> return ()
+    msgs -> do
+      mapM_ logAttention_ msgs
+      error "resultCheck: validation failed"
+
+----------------------------------------
 
 tblNameText :: Table -> Text
 tblNameText = unRawSQL . tblName
@@ -63,7 +95,7 @@ tblNameString = T.unpack . tblNameText
 checkEquality :: (Eq t, Show t) => Text -> [t] -> [t] -> ValidationResult
 checkEquality pname defs props = case (defs L.\\ props, props L.\\ defs) of
   ([], []) -> mempty
-  (def_diff, db_diff) -> ValidationResult [mconcat [
+  (def_diff, db_diff) -> validationError . mconcat $ [
       "Table and its definition have diverged and have "
     , showt $ length db_diff
     , " and "
@@ -75,7 +107,7 @@ checkEquality pname defs props = case (defs L.\\ props, props L.\\ defs) of
     , ", definition: "
     , T.pack $ show def_diff
     , ")."
-    ]]
+    ]
 
 checkNames :: Show t => (t -> RawSQL ()) -> [(t, RawSQL ())] -> ValidationResult
 checkNames prop_name = mconcat . map check
@@ -83,7 +115,7 @@ checkNames prop_name = mconcat . map check
     check (prop, name) = case prop_name prop of
       pname
         | pname == name -> mempty
-        | otherwise -> ValidationResult [mconcat [
+        | otherwise     -> validationError . mconcat $ [
             "Property "
           , T.pack $ show prop
           , " has invalid name (expected: "
@@ -91,7 +123,7 @@ checkNames prop_name = mconcat . map check
           , ", given: "
           , unRawSQL name
           , ")."
-          ]]
+          ]
 
 -- | Check presence of primary key on the named table. We cover all the cases so
 -- this could be used standalone, but note that the those where the table source
@@ -115,10 +147,10 @@ checkPKPresence tableName mdef mpk =
     noSrc = "no source definition"
     noTbl = "no table definition"
     valRes msgs =
-        ValidationResult [
-          mconcat [ "Table ", unRawSQL tableName
-                  , " has no primary key defined "
-                  , " (" <> (mintercalate ", " msgs) <> ")"]]
+        validationError . mconcat $
+        [ "Table ", unRawSQL tableName
+        , " has no primary key defined "
+        , " (" <> (mintercalate ", " msgs) <> ")"]
 
 
 tableHasLess :: Show t => Text -> t -> Text

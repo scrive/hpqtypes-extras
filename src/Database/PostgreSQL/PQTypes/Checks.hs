@@ -51,10 +51,11 @@ migrateDatabase
 migrateDatabase options@ExtrasOptions{..} extensions domains tables migrations = do
   setDBTimeZoneToUTC
   mapM_ checkExtension extensions
+  tablesWithVersions <- getTableVersions (tableVersions : tables)
   -- 'checkDBConsistency' also performs migrations.
-  checkDBConsistency options domains (tableVersions : tables) migrations
+  checkDBConsistency options domains tablesWithVersions migrations
   resultCheck =<< checkDomainsStructure domains
-  resultCheck =<< checkDBStructure options (tableVersions : tables)
+  resultCheck =<< checkDBStructure options tablesWithVersions
   resultCheck =<< checkTablesWereDropped migrations
   resultCheck =<< checkUnknownTables tables
   resultCheck =<< checkExistenceOfVersionsForTables (tableVersions : tables)
@@ -80,11 +81,10 @@ checkDatabase_
   :: forall m . (MonadDB m, MonadLog m, MonadThrow m)
   => ExtrasOptions -> Bool -> [Domain] -> [Table] -> m ()
 checkDatabase_ options allowUnknownTables domains tables = do
-  tablesWithVersions <- getTableVersions tables
-
+  tablesWithVersions <- getTableVersions (tableVersions : tables)
   resultCheck $ checkVersions tablesWithVersions
   resultCheck =<< checkDomainsStructure domains
-  resultCheck =<< checkDBStructure options (tableVersions : tables)
+  resultCheck =<< checkDBStructure options tablesWithVersions
   when (not $ allowUnknownTables) $ do
     resultCheck =<< checkUnknownTables tables
     resultCheck =<< checkExistenceOfVersionsForTables (tableVersions : tables)
@@ -95,27 +95,34 @@ checkDatabase_ options allowUnknownTables domains tables = do
 
   where
     checkVersions :: [(Table, Int32)] -> ValidationResult
-    checkVersions vs = mconcat . map (ValidationResult . checkVersion) $ vs
+    checkVersions vs = mconcat . map checkVersion $ vs
 
-    checkVersion :: (Table, Int32) -> [Text]
+    checkVersion :: (Table, Int32) -> ValidationResult
     checkVersion (t@Table{..}, v)
-      | tblVersion == v = []
-      | v == 0          = ["Table '" <> tblNameText t <> "' must be created"]
-      | otherwise       = ["Table '" <> tblNameText t
-                           <> "' must be migrated" <+> showt v <+> "->"
-                           <+> showt tblVersion]
+      | tblVersion `elem` tblAcceptedDbVersions
+                  = validationError $
+                    "Table '" <> tblNameText t <>
+                    "' has its current table version in accepted db versions"
+      | tblVersion == v || v `elem` tblAcceptedDbVersions
+                  = mempty
+      | v == 0    = validationError $
+                    "Table '" <> tblNameText t <> "' must be created"
+      | otherwise = validationError $
+                    "Table '" <> tblNameText t
+                    <> "' must be migrated" <+> showt v <+> "->"
+                    <+> showt tblVersion
 
     checkInitialSetups :: [Table] -> m ValidationResult
     checkInitialSetups tbls =
-      liftM mconcat . mapM (liftM ValidationResult . checkInitialSetup') $ tbls
+      liftM mconcat . mapM checkInitialSetup' $ tbls
 
-    checkInitialSetup' :: Table -> m [Text]
+    checkInitialSetup' :: Table -> m ValidationResult
     checkInitialSetup' t@Table{..} = case tblInitialSetup of
-      Nothing -> return []
+      Nothing -> return mempty
       Just is -> checkInitialSetup is >>= \case
-        True  -> return []
-        False -> return ["Initial setup for table '"
-                          <> tblNameText t <> "' is not valid"]
+        True  -> return mempty
+        False -> return . validationError $ "Initial setup for table '"
+                 <> tblNameText t <> "' is not valid"
 
 -- | Return SQL fragment of current catalog within quotes
 currentCatalog :: (MonadDB m, MonadThrow m) => m (RawSQL ())
@@ -180,18 +187,20 @@ checkUnknownTables tables = do
     then do
     mapM_ (logInfo_ . (<+>) "Unknown table:") absent
     mapM_ (logInfo_ . (<+>) "Table not present in the database:") notPresent
-    return . ValidationResult $
-      (joinedResult "Unknown tables:" absent) ++
-      (joinedResult "Tables not present in the database:" notPresent)
+    return $
+      (validateIsNull "Unknown tables:" absent) <>
+      (validateIsNull "Tables not present in the database:" notPresent)
     else return mempty
-  where
-    joinedResult :: Text -> [Text] -> [Text]
-    joinedResult _ [] = []
-    joinedResult t ts = [ t <+> T.intercalate ", " ts]
+
+validateIsNull :: Text -> [Text] -> ValidationResult
+validateIsNull _   [] = mempty
+validateIsNull msg ts = validationError $ msg <+> T.intercalate ", " ts
 
 -- | Check that there's a 1-to-1 correspondence between the list of
 -- 'Table's and what's actually in the table 'table_versions'.
-checkExistenceOfVersionsForTables :: (MonadDB m, MonadLog m) => [Table] -> m ValidationResult
+checkExistenceOfVersionsForTables
+  :: (MonadDB m, MonadLog m)
+  => [Table] -> m ValidationResult
 checkExistenceOfVersionsForTables tables = do
   runQuery_ $ sqlSelect "table_versions" $ do
     sqlResult "name::text"
@@ -205,14 +214,10 @@ checkExistenceOfVersionsForTables tables = do
     then do
     mapM_ (logInfo_ . (<+>) "Unknown entry in 'table_versions':") absent
     mapM_ (logInfo_ . (<+>) "Table not present in the 'table_versions':") notPresent
-    return . ValidationResult $
-      (joinedResult "Unknown entry in table_versions':"  absent ) ++
-      (joinedResult "Tables not present in the 'table_versions':" notPresent)
+    return $
+      (validateIsNull "Unknown entry in table_versions':"  absent ) <>
+      (validateIsNull "Tables not present in the 'table_versions':" notPresent)
     else return mempty
-  where
-    joinedResult :: Text -> [Text] -> [Text]
-    joinedResult _ [] = []
-    joinedResult t ts = [ t <+> T.intercalate ", " ts]
 
 
 checkDomainsStructure :: (MonadDB m, MonadThrow m)
@@ -225,17 +230,19 @@ checkDomainsStructure defs = fmap mconcat . forM defs $ \def -> do
     sqlResult "t1.typdefault" -- default value
     sqlResult "ARRAY(SELECT c.conname::text FROM pg_catalog.pg_constraint c WHERE c.contypid = t1.oid ORDER by c.oid)" -- constraint names
     sqlResult "ARRAY(SELECT regexp_replace(pg_get_constraintdef(c.oid, true), 'CHECK \\((.*)\\)', '\\1') FROM pg_catalog.pg_constraint c WHERE c.contypid = t1.oid ORDER by c.oid)" -- constraint definitions
+    sqlResult "ARRAY(SELECT c.convalidated FROM pg_catalog.pg_constraint c WHERE c.contypid = t1.oid ORDER by c.oid)" -- are constraints validated?
     sqlWhereEq "t1.typname" $ unRawSQL $ domName def
-  mdom <- fetchMaybe $ \(dname, dtype, nullable, defval, cnames, conds) ->
+  mdom <- fetchMaybe $ \(dname, dtype, nullable, defval, cnames, conds, valids) ->
     Domain {
     domName = unsafeSQL dname
   , domType = dtype
   , domNullable = nullable
   , domDefault = unsafeSQL <$> defval
-  , domChecks = mkChecks $ zipWith (\cname cond -> Check {
+  , domChecks = mkChecks $ zipWith3 (\cname cond validated -> Check {
       chkName = unsafeSQL cname
     , chkCondition = unsafeSQL cond
-    }) (unArray1 cnames) (unArray1 conds)
+    , chkValidated = validated
+    }) (unArray1 cnames) (unArray1 conds) (unArray1 valids)
   }
   return $ case mdom of
     Just dom
@@ -247,17 +254,17 @@ checkDomainsStructure defs = fmap mconcat . forM defs $ \def -> do
         , compareAttr dom def "checks" domChecks
         ]
       | otherwise -> mempty
-    Nothing -> ValidationResult ["Domain '" <> unRawSQL (domName def)
-                                 <> "' doesn't exist in the database"]
+    Nothing -> validationError $ "Domain '" <> unRawSQL (domName def)
+               <> "' doesn't exist in the database"
   where
     compareAttr :: (Eq a, Show a)
                 => Domain -> Domain -> Text -> (Domain -> a) -> ValidationResult
     compareAttr dom def attrname attr
-      | attr dom == attr def = ValidationResult []
-      | otherwise = ValidationResult
-        [ "Attribute '" <> attrname
-          <> "' does not match (database:" <+> T.pack (show $ attr dom)
-          <> ", definition:" <+> T.pack (show $ attr def) <> ")" ]
+      | attr dom == attr def = mempty
+      | otherwise            = validationError $
+        "Attribute '" <> attrname
+        <> "' does not match (database:" <+> T.pack (show $ attr dom)
+        <> ", definition:" <+> T.pack (show $ attr def) <> ")"
 
 -- | Check that the tables that must have been dropped are actually
 -- missing from the DB.
@@ -271,17 +278,24 @@ checkTablesWereDropped mgrs = do
       mver <- checkTableVersion (T.unpack . unRawSQL $ tblName)
       return $ if isNothing mver
                then mempty
-               else ValidationResult [ "The table '" <> unRawSQL tblName
-                                       <> "' that must have been dropped"
-                                       <> " is still present in the database." ]
+               else validationError $ "The table '" <> unRawSQL tblName
+                    <> "' that must have been dropped"
+                    <> " is still present in the database."
 
--- | Checks whether database is consistent.
-checkDBStructure :: forall m. (MonadDB m, MonadThrow m)
-                 => ExtrasOptions -> [Table] -> m ValidationResult
-checkDBStructure options tables = fmap mconcat . forM tables $ \table ->
-  -- final checks for table structure, we do this
-  -- both when creating stuff and when migrating
-  topMessage "table" (tblNameText table) <$> checkTableStructure table
+-- | Checks whether the database is consistent.
+checkDBStructure
+  :: forall m. (MonadDB m, MonadThrow m)
+  => ExtrasOptions
+  -> [(Table, Int32)]
+  -> m ValidationResult
+checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version) ->
+  do
+  result <- topMessage "table" (tblNameText table) <$> checkTableStructure table
+  -- If one of the accepted versions defined for the table is the current table
+  -- version in the database, show inconsistencies as info messages only.
+  return $ if version `elem` tblAcceptedDbVersions table
+           then validationErrorsToInfos result
+           else result
   where
     checkTableStructure :: Table -> m ValidationResult
     checkTableStructure table@Table{..} = do
@@ -328,8 +342,8 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \table ->
 
         checkColumns :: Int -> [TableColumn] -> [TableColumn] -> ValidationResult
         checkColumns _ [] [] = mempty
-        checkColumns _ rest [] = ValidationResult [tableHasLess "columns" rest]
-        checkColumns _ [] rest = ValidationResult [tableHasMore "columns" rest]
+        checkColumns _ rest [] = validationError $ tableHasLess "columns" rest
+        checkColumns _ [] rest = validationError $ tableHasMore "columns" rest
         checkColumns !n (d:defs) (c:cols) = mconcat [
             validateNames $ colName d == colName c
           -- bigserial == bigint + autoincrement and there is no
@@ -346,25 +360,25 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \table ->
           , checkColumns (n+1) defs cols
           ]
           where
-            validateNames True = mempty
-            validateNames False = ValidationResult
-              [ errorMsg ("no. " <> showt n) "names" (unRawSQL . colName) ]
+            validateNames True  = mempty
+            validateNames False = validationError $
+              errorMsg ("no. " <> showt n) "names" (unRawSQL . colName)
 
-            validateTypes True = mempty
-            validateTypes False = ValidationResult
-              [ errorMsg cname "types" (T.pack . show . colType)
-                <+> sqlHint ("TYPE" <+> columnTypeToSQL (colType d)) ]
+            validateTypes True  = mempty
+            validateTypes False = validationError $
+              errorMsg cname "types" (T.pack . show . colType)
+              <+> sqlHint ("TYPE" <+> columnTypeToSQL (colType d))
 
-            validateNullables True = mempty
-            validateNullables False = ValidationResult
-              [ errorMsg cname "nullables" (showt . colNullable)
-                <+> sqlHint ((if colNullable d then "DROP" else "SET")
-                              <+> "NOT NULL") ]
+            validateNullables True  = mempty
+            validateNullables False = validationError $
+              errorMsg cname "nullables" (showt . colNullable)
+              <+> sqlHint ((if colNullable d then "DROP" else "SET")
+                            <+> "NOT NULL")
 
-            validateDefaults True = mempty
-            validateDefaults False = ValidationResult
-              [ (errorMsg cname "defaults" (showt . fmap unRawSQL . colDefault))
-                <+> sqlHint set_default ]
+            validateDefaults True  = mempty
+            validateDefaults False = validationError $
+              (errorMsg cname "defaults" (showt . fmap unRawSQL . colDefault))
+              <+> sqlHint set_default
               where
                 set_default = case colDefault d of
                   Just v  -> "SET DEFAULT" <+> v
@@ -393,10 +407,15 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \table ->
             pk = maybeToList mpk
 
         checkChecks :: [Check] -> [Check] -> ValidationResult
-        checkChecks defs checks = case checkEquality "CHECKs" defs checks of
-          ValidationResult [] -> ValidationResult []
-          ValidationResult errmsgs -> ValidationResult $
-            errmsgs ++ [" (HINT: If checks are equal modulo number of parentheses/whitespaces used in conditions, just copy and paste expected output into source code)"]
+        checkChecks defs checks =
+          mapValidationResult id mapErrs (checkEquality "CHECKs" defs checks)
+          where
+            mapErrs []      = []
+            mapErrs errmsgs = errmsgs <>
+              [ " (HINT: If checks are equal modulo number of \
+                \ parentheses/whitespaces used in conditions, \
+                \ just copy and paste expected output into source code)"
+              ]
 
         checkIndexes :: [TableIndex] -> [(TableIndex, RawSQL ())]
                      -> ValidationResult
@@ -422,15 +441,14 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \table ->
 --     the 'tables' list
 checkDBConsistency
   :: forall m. (MonadDB m, MonadLog m, MonadThrow m)
-  => ExtrasOptions -> [Domain] -> [Table] -> [Migration m]
+  => ExtrasOptions -> [Domain] -> [(Table, Int32)] -> [Migration m]
   -> m ()
-checkDBConsistency options domains tables migrations = do
+checkDBConsistency options domains tablesWithVersions migrations = do
   -- Check the validity of the migrations list.
   validateMigrations
   validateDropTableMigrations
 
   -- Load version numbers of the tables that actually exist in the DB.
-  tablesWithVersions   <- getTableVersions $ tables
   dbTablesWithVersions <- getDBTableVersions
 
   if all ((==) 0 . snd) tablesWithVersions
@@ -450,6 +468,7 @@ checkDBConsistency options domains tables migrations = do
       runMigrations dbTablesWithVersions
 
   where
+    tables = map fst tablesWithVersions
 
     errorInvalidMigrations :: [RawSQL ()] -> a
     errorInvalidMigrations tblNames =
@@ -543,8 +562,8 @@ checkDBConsistency options domains tables migrations = do
 
     -- | Input is a list of (table name, expected version, actual version) triples.
     validateMigrationsAgainstDB :: [(RawSQL (), Int32, Int32)] -> m ()
-    validateMigrationsAgainstDB tablesWithVersions
-      = forM_ tablesWithVersions $ \(tableName, expectedVer, actualVer) ->
+    validateMigrationsAgainstDB tablesWithVersions_
+      = forM_ tablesWithVersions_ $ \(tableName, expectedVer, actualVer) ->
         when (expectedVer /= actualVer) $
         case [ m | m@Migration{..} <- migrations
                  , mgrTableName == tableName ] of
@@ -646,12 +665,9 @@ checkDBConsistency options domains tables migrations = do
           runMigration mgr
 
           when (eoForceCommit options) $ do
-            logInfo_ $ "Forcing commit after migraton"
-              <> " and starting new transaction..."
+            logInfo_ $ "Committing migration changes..."
             commit
-            begin
-            logInfo_ $ "Forcing commit after migraton"
-              <> " and starting new transaction... done."
+            logInfo_ $ "Committing migration changes done."
             logInfo_ "!IMPORTANT! Database has been permanently changed"
         logInfo_ "Running migrations... done."
 
@@ -847,13 +863,15 @@ sqlGetChecks :: Table -> SQL
 sqlGetChecks table = toSQLCommand . sqlSelect "pg_catalog.pg_constraint c" $ do
   sqlResult "c.conname::text"
   sqlResult "regexp_replace(pg_get_constraintdef(c.oid, true), 'CHECK \\((.*)\\)', '\\1') AS body" -- check body
+  sqlResult "c.convalidated" -- validated?
   sqlWhereEq "c.contype" 'c'
   sqlWhereEqSql "c.conrelid" $ sqlGetTableID table
 
-fetchTableCheck :: (String, String) -> Check
-fetchTableCheck (name, condition) = Check {
+fetchTableCheck :: (String, String, Bool) -> Check
+fetchTableCheck (name, condition, validated) = Check {
   chkName = unsafeSQL name
 , chkCondition = unsafeSQL condition
+, chkValidated = validated
 }
 
 -- *** INDEXES ***
@@ -864,6 +882,7 @@ sqlGetIndexes table = toSQLCommand . sqlSelect "pg_catalog.pg_class c" $ do
   sqlResult $ "ARRAY(" <> selectCoordinates <> ")" -- array of index coordinates
   sqlResult "am.amname::text" -- the method used (btree, gin etc)
   sqlResult "i.indisunique" -- is it unique?
+  sqlResult "i.indisvalid"  -- is it valid?
   -- if partial, get constraint def
   sqlResult "pg_catalog.pg_get_expr(i.indpred, i.indrelid, true)"
   sqlJoinOn "pg_catalog.pg_index i" "c.oid = i.indexrelid"
@@ -885,12 +904,13 @@ sqlGetIndexes table = toSQLCommand . sqlSelect "pg_catalog.pg_class c" $ do
       , "SELECT name FROM coordinates WHERE k > 0"
       ]
 
-fetchTableIndex :: (String, Array1 String, String, Bool, Maybe String)
+fetchTableIndex :: (String, Array1 String, String, Bool, Bool, Maybe String)
                 -> (TableIndex, RawSQL ())
-fetchTableIndex (name, Array1 columns, method, unique, mconstraint) = (TableIndex {
+fetchTableIndex (name, Array1 columns, method, unique, valid, mconstraint) = (TableIndex {
   idxColumns = map unsafeSQL columns
 , idxMethod = read method
 , idxUnique = unique
+, idxValid = valid
 , idxWhere = unsafeSQL `liftM` mconstraint
 }, unsafeSQL name)
 
@@ -912,6 +932,7 @@ sqlGetForeignKeys table = toSQLCommand
   sqlResult "r.confdeltype" -- on delete
   sqlResult "r.condeferrable" -- deferrable?
   sqlResult "r.condeferred" -- initially deferred?
+  sqlResult "r.convalidated" -- validated?
   sqlJoinOn "pg_catalog.pg_class c" "c.oid = r.confrelid"
   sqlWhereEqSql "r.conrelid" $ sqlGetTableID table
   sqlWhereEq "r.contype" 'f'
@@ -922,11 +943,11 @@ sqlGetForeignKeys table = toSQLCommand
       <> "[n] AS item FROM generate_subscripts(" <> raw arr <> ", 1) AS n"
 
 fetchForeignKey ::
-  (String, Array1 String, String, Array1 String, Char, Char, Bool, Bool)
+  (String, Array1 String, String, Array1 String, Char, Char, Bool, Bool, Bool)
   -> (ForeignKey, RawSQL ())
 fetchForeignKey
   ( name, Array1 columns, reftable, Array1 refcolumns
-  , on_update, on_delete, deferrable, deferred ) = (ForeignKey {
+  , on_update, on_delete, deferrable, deferred, validated ) = (ForeignKey {
   fkColumns = map unsafeSQL columns
 , fkRefTable = unsafeSQL reftable
 , fkRefColumns = map unsafeSQL refcolumns
@@ -934,6 +955,7 @@ fetchForeignKey
 , fkOnDelete = charToForeignKeyAction on_delete
 , fkDeferrable = deferrable
 , fkDeferred = deferred
+, fkValidated = validated
 }, unsafeSQL name)
   where
     charToForeignKeyAction c = case c of

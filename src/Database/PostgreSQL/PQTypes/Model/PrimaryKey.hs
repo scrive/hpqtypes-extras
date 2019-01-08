@@ -4,6 +4,7 @@ module Database.PostgreSQL.PQTypes.Model.PrimaryKey (
   , pkOnColumns
   , pkName
   , sqlAddPK
+  , sqlAddPKUsing
   , sqlDropPK
   ) where
 
@@ -11,6 +12,7 @@ import Data.Monoid (mconcat)
 import Data.Monoid.Utils
 import Database.PostgreSQL.PQTypes
 import Prelude
+import Database.PostgreSQL.PQTypes.Model.Index
 import Database.PostgreSQL.PQTypes.Utils.NubList
 
 newtype PrimaryKey = PrimaryKey (NubList (RawSQL ()))
@@ -33,6 +35,18 @@ sqlAddPK tname (PrimaryKey columns) = smconcat [
   , "PRIMARY KEY ("
   , mintercalate ", " $ fromNubList columns
   , ")"
+  ]
+
+-- | Convert a unique index into a primary key. Main usage is to build a unique
+-- index concurrently first (so that its creation doesn't conflict with table
+-- updates on the modified table) and then convert it into a primary key using
+-- this function.
+sqlAddPKUsing :: RawSQL () -> TableIndex -> RawSQL ()
+sqlAddPKUsing tname idx = smconcat
+  [ "ADD CONSTRAINT"
+  , pkName tname
+  , "PRIMARY KEY USING INDEX"
+  , indexName tname idx
   ]
 
 sqlDropPK :: RawSQL () -> RawSQL ()

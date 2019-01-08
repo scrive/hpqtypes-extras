@@ -5,6 +5,9 @@ module Database.PostgreSQL.PQTypes.Model.ForeignKey (
   , fkOnColumns
   , fkName
   , sqlAddFK
+  , sqlAddValidFK
+  , sqlAddNotValidFK
+  , sqlValidateFK
   , sqlDropFK
   ) where
 
@@ -22,6 +25,8 @@ data ForeignKey = ForeignKey {
 , fkOnDelete   :: ForeignKeyAction
 , fkDeferrable :: Bool
 , fkDeferred   :: Bool
+, fkValidated  :: Bool -- ^ Set to 'True' if foreign key is created as NOT VALID
+                       -- and not validated afterwards.
 } deriving (Eq, Ord, Show)
 
 data ForeignKeyAction
@@ -45,6 +50,7 @@ fkOnColumns columns reftable refcolumns = ForeignKey {
 , fkOnDelete   = ForeignKeyNoAction
 , fkDeferrable = True
 , fkDeferred   = False
+, fkValidated  = True
 }
 
 fkName :: RawSQL () -> ForeignKey -> RawSQL ()
@@ -60,8 +66,31 @@ fkName tname ForeignKey{..} = shorten $ mconcat [
     -- PostgreSQL's limit for identifier is 63 characters
     shorten = flip rawSQL () . T.take 63 . unRawSQL
 
+{-# DEPRECATED sqlAddFK "Use sqlAddValidFK instead" #-}
+-- | Deprecated version of sqlAddValidFK.
 sqlAddFK :: RawSQL () -> ForeignKey -> RawSQL ()
-sqlAddFK tname fk@ForeignKey{..} = mconcat [
+sqlAddFK = sqlAddFK_ True
+
+-- | Add valid foreign key. Warning: PostgreSQL acquires SHARE ROW EXCLUSIVE
+-- lock (that prevents data updates) on both modified and referenced table for
+-- the duration of the creation. If this is not acceptable, use
+-- 'sqlAddNotValidFK' and 'sqlValidateFK'.
+sqlAddValidFK :: RawSQL () -> ForeignKey -> RawSQL ()
+sqlAddValidFK = sqlAddFK_ True
+
+-- | Add foreign key marked as NOT VALID. This avoids potentially long
+-- validation blocking updates to both modified and referenced table for its
+-- duration. However, keys created as such need to be validated later using
+-- 'sqlValidateFK'.
+sqlAddNotValidFK :: RawSQL () -> ForeignKey -> RawSQL ()
+sqlAddNotValidFK = sqlAddFK_ False
+
+-- | Validate foreign key previously created as NOT VALID.
+sqlValidateFK :: RawSQL () -> ForeignKey -> RawSQL ()
+sqlValidateFK tname fk = "VALIDATE" <+> fkName tname fk
+
+sqlAddFK_ :: Bool -> RawSQL () -> ForeignKey -> RawSQL ()
+sqlAddFK_ valid tname fk@ForeignKey{..} = mconcat [
     "ADD CONSTRAINT" <+> fkName tname fk <+> "FOREIGN KEY ("
   , mintercalate ", " fkColumns
   , ") REFERENCES" <+> fkRefTable <+> "("
@@ -70,6 +99,7 @@ sqlAddFK tname fk@ForeignKey{..} = mconcat [
   , "  ON DELETE" <+> foreignKeyActionToSQL fkOnDelete
   , " " <> if fkDeferrable then "DEFERRABLE" else "NOT DEFERRABLE"
   , " INITIALLY" <+> if fkDeferred then "DEFERRED" else "IMMEDIATE"
+  , if valid then "" else " NOT VALID"
   ]
   where
     foreignKeyActionToSQL ForeignKeyNoAction   = "NO ACTION"

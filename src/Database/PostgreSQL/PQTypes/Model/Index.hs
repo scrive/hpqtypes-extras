@@ -11,6 +11,8 @@ module Database.PostgreSQL.PQTypes.Model.Index (
   , uniqueIndexOnColumns
   , indexName
   , sqlCreateIndex
+  , sqlCreateIndexSequentially
+  , sqlCreateIndexConcurrently
   , sqlDropIndex
   ) where
 
@@ -29,6 +31,9 @@ data TableIndex = TableIndex {
   idxColumns :: [RawSQL ()]
 , idxMethod  :: IndexMethod
 , idxUnique  :: Bool
+, idxValid   :: Bool -- ^ If creation of index with CONCURRENTLY fails, index
+                     -- will be marked as invalid. Set it to 'False' if such
+                     -- situation is expected.
 , idxWhere   :: Maybe (RawSQL ())
 } deriving (Eq, Ord, Show)
 
@@ -51,6 +56,7 @@ tblIndex = TableIndex {
   idxColumns = []
 , idxMethod = BTree
 , idxUnique = False
+, idxValid = True
 , idxWhere = Nothing
 }
 
@@ -80,6 +86,7 @@ uniqueIndexOnColumn column = TableIndex {
   idxColumns = [column]
 , idxMethod = BTree
 , idxUnique = True
+, idxValid = True
 , idxWhere = Nothing
 }
 
@@ -88,6 +95,7 @@ uniqueIndexOnColumns columns = TableIndex {
   idxColumns = columns
 , idxMethod = BTree
 , idxUnique = True
+, idxValid = True
 , idxWhere = Nothing
 }
 
@@ -96,6 +104,7 @@ uniqueIndexOnColumnWithCondition column whereC = TableIndex {
   idxColumns = [column]
 , idxMethod = BTree
 , idxUnique = True
+, idxValid = True
 , idxWhere = Just whereC
 }
 
@@ -122,11 +131,30 @@ indexName tname TableIndex{..} = flip rawSQL () $ T.take 63 . unRawSQL $ mconcat
     -- with the same columns, but different constraints can coexist
     hashWhere = asText $ T.decodeUtf8 . encode . BS.take 10 . hash . T.encodeUtf8
 
+{-# DEPRECATED sqlCreateIndex "Use sqlCreateIndexSequentially instead" #-}
+-- | Deprecated version of 'sqlCreateIndexSequentially'.
 sqlCreateIndex :: RawSQL () -> TableIndex -> RawSQL ()
-sqlCreateIndex tname idx@TableIndex{..} = mconcat [
+sqlCreateIndex = sqlCreateIndex_ False
+
+-- | Create index sequentially. Warning: if the affected table is large, this
+-- will prevent the table from being modified during the creation. If this is
+-- not acceptable, use sqlCreateIndexConcurrently. See
+-- https://www.postgresql.org/docs/current/sql-createindex.html for more
+-- information.
+sqlCreateIndexSequentially :: RawSQL () -> TableIndex -> RawSQL ()
+sqlCreateIndexSequentially = sqlCreateIndex_ False
+
+-- | Create index concurrently.
+sqlCreateIndexConcurrently :: RawSQL () -> TableIndex -> RawSQL ()
+sqlCreateIndexConcurrently = sqlCreateIndex_ True
+
+sqlCreateIndex_ :: Bool -> RawSQL () -> TableIndex -> RawSQL ()
+sqlCreateIndex_ concurrently tname idx@TableIndex{..} = mconcat [
     "CREATE "
   , if idxUnique then "UNIQUE " else ""
-  , "INDEX" <+> indexName tname idx <+> "ON" <+> tname <+> ""
+  , "INDEX " <+> indexName tname idx
+  , if concurrently then " CONCURRENTLY" else ""
+  , " ON" <+> tname <+> ""
   , "USING" <+> (rawSQL (T.pack . show $ idxMethod) ()) <+> "("
   , mintercalate ", " idxColumns
   , ")"
