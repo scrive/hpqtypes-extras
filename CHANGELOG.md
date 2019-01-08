@@ -1,4 +1,4 @@
-# hpqtypes-extras-1.7.0.0 (2018-12-20)
+# hpqtypes-extras-1.7.0.0 (2019-01-08)
 * Added support for no-downtime migrations
   ([#17](https://github.com/scrive/hpqtypes-extras/pull/17)):
     - `sqlCreateIndex` is deprecated. Use either
