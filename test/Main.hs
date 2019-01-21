@@ -412,12 +412,12 @@ schema6Tables =
 schema6Migrations :: (MonadDB m) => Migration m
 schema6Migrations =
     Migration
-    {
-      mgrTableName = tblName tableParticipatedInRobberySchema1
+    { mgrTableName = tblName tableParticipatedInRobberySchema1
     , mgrFrom = tblVersion tableParticipatedInRobberySchema1
-    , mgrAction = StandardMigration $ do
-                    runQuery_ $ ("ALTER TABLE participated_in_robbery DROP CONSTRAINT " <>
-                                 "pk__participated_in_robbery" :: RawSQL ())
+    , mgrAction =
+      StandardMigration $ do
+        runQuery_ $ ("ALTER TABLE participated_in_robbery DROP CONSTRAINT \
+                     \pk__participated_in_robbery" :: RawSQL ())
     }
 
 
@@ -529,7 +529,8 @@ migrateDBToSchema2Hacky step = do
   let extrasOptions = def
       extensions    = []
       domains       = []
-  step "Hackily migrating the database (schema version 1 -> schema version 2)..."
+  step "Hackily migrating the database (schema version 1 \
+       \-> schema version 2)..."
   migrateDatabase extrasOptions extensions domains
     schema2Tables schema2Migrations'
   checkDatabase extrasOptions domains schema2Tables
@@ -722,7 +723,8 @@ migrationTest2 connSource =
       extrasOptions = def { eoEnforcePKs = True }
   assertNoException "checkDatabase should run fine for consistent DB" $
     checkDatabase extrasOptions [] currentSchema
-  assertNoException "checkDatabaseAllowUnknownTables runs fine for consistent DB" $
+  assertNoException "checkDatabaseAllowUnknownTables runs fine \
+                    \for consistent DB" $
     checkDatabaseAllowUnknownTables extrasOptions [] currentSchema
   assertException "checkDatabase should throw exception for wrong scheme" $
     checkDatabase extrasOptions [] differentSchema
@@ -730,7 +732,8 @@ migrationTest2 connSource =
                    ++ "should throw exception for wrong scheme") $
     checkDatabaseAllowUnknownTables extrasOptions [] differentSchema
 
-  runSQL_ "INSERT INTO table_versions (name, version) VALUES ('unknown_table', 0)"
+  runSQL_ "INSERT INTO table_versions (name, version) \
+          \VALUES ('unknown_table', 0)"
   assertException "checkDatabase throw when extra entry in 'table_versions'" $
     checkDatabase extrasOptions [] currentSchema
   assertNoException ("checkDatabaseAllowUnknownTables "
@@ -744,7 +747,8 @@ migrationTest2 connSource =
   assertNoException "checkDatabaseAllowUnknownTables accepts unknown table" $
     checkDatabaseAllowUnknownTables extrasOptions [] currentSchema
 
-  runSQL_ "INSERT INTO table_versions (name, version) VALUES ('unknown_table', 0)"
+  runSQL_ "INSERT INTO table_versions (name, version) \
+          \VALUES ('unknown_table', 0)"
   assertException "checkDatabase should throw with unknown table" $
     checkDatabase extrasOptions [] currentSchema
   assertNoException ("checkDatabaseAllowUnknownTables "
@@ -761,14 +765,17 @@ migrationTest2 connSource =
 
   step "Recreating the database (schema version 1, one table is missing PK)..."
 
-  migrateDatabase optionsNoPKCheck [] [] schema1TablesWithMissingPK [schema1MigrationsWithMissingPK]
+  migrateDatabase optionsNoPKCheck [] []
+    schema1TablesWithMissingPK [schema1MigrationsWithMissingPK]
   checkDatabase optionsNoPKCheck [] withMissingPKSchema
 
-  assertException ("checkDatabase should throw when PK missing from table " <>
-                   "'participated_in_robbery' and check is enabled") $
+  assertException
+    "checkDatabase should throw when PK missing from table \
+    \'participated_in_robbery' and check is enabled" $
     checkDatabase optionsWithPKCheck [] withMissingPKSchema
-  assertNoException ("checkDatabase should not throw when PK missing from table " <>
-                     "'participated_in_robbery' and check is disabled") $
+  assertNoException
+    "checkDatabase should not throw when PK missing from table \
+    \'participated_in_robbery' and check is disabled" $
     checkDatabase optionsNoPKCheck [] withMissingPKSchema
 
   freshTestDB step
