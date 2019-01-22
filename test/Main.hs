@@ -6,6 +6,7 @@ import Control.Monad.IO.Class
 import Control.Monad.Trans.Control
 
 import Data.Monoid
+import Prelude
 import Data.Int
 import qualified Data.Text as T
 import Data.Typeable
