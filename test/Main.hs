@@ -727,18 +727,18 @@ migrationTest2 connSource =
   assertNoException "checkDatabaseAllowUnknownTables runs fine \
                     \for consistent DB" $
     checkDatabaseAllowUnknownTables extrasOptions [] currentSchema
-  assertException "checkDatabase should throw exception for wrong scheme" $
+  assertException "checkDatabase should throw exception for wrong schema" $
     checkDatabase extrasOptions [] differentSchema
-  assertException ("checkDatabaseAllowUnknownTables "
-                   ++ "should throw exception for wrong scheme") $
+  assertException ("checkDatabaseAllowUnknownTables \
+                   \should throw exception for wrong scheme") $
     checkDatabaseAllowUnknownTables extrasOptions [] differentSchema
 
   runSQL_ "INSERT INTO table_versions (name, version) \
           \VALUES ('unknown_table', 0)"
   assertException "checkDatabase throw when extra entry in 'table_versions'" $
     checkDatabase extrasOptions [] currentSchema
-  assertNoException ("checkDatabaseAllowUnknownTables "
-                     ++ "accepts extra entry in 'table_versions'") $
+  assertNoException ("checkDatabaseAllowUnknownTables \
+                     \accepts extra entry in 'table_versions'") $
     checkDatabaseAllowUnknownTables extrasOptions [] currentSchema
   runSQL_ "DELETE FROM table_versions where name='unknown_table'"
 
@@ -752,8 +752,8 @@ migrationTest2 connSource =
           \VALUES ('unknown_table', 0)"
   assertException "checkDatabase should throw with unknown table" $
     checkDatabase extrasOptions [] currentSchema
-  assertNoException ("checkDatabaseAllowUnknownTables "
-                     ++ "accepts unknown tables with version") $
+  assertNoException ("checkDatabaseAllowUnknownTables \
+                     \accepts unknown tables with version") $
     checkDatabaseAllowUnknownTables extrasOptions [] currentSchema
 
   freshTestDB    step
@@ -793,8 +793,8 @@ migrationTest3 connSource =
   migrateDBToSchema2  step
   testDBSchema2       step badGuyIds robberyIds
 
-  assertException ( "Trying to run the same migration twice should fail, "
-                    ++ "when starting with a createTable migration" ) $
+  assertException ( "Trying to run the same migration twice should fail, \
+                     \when starting with a createTable migration" ) $
     migrateDBToSchema2Hacky  step
 
   freshTestDB         step
