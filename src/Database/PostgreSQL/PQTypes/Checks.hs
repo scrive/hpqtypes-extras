@@ -24,6 +24,7 @@ import Data.Ord (comparing)
 import qualified Data.String
 import Data.Text (Text)
 import Database.PostgreSQL.PQTypes hiding (def)
+import GHC.Stack (HasCallStack)
 import Log
 import Prelude
 import TextShow
@@ -456,7 +457,7 @@ checkDBConsistency options domains tables migrations = do
 
   where
 
-    errorInvalidMigrations :: [RawSQL ()] -> a
+    errorInvalidMigrations :: HasCallStack => [RawSQL ()] -> a
     errorInvalidMigrations tblNames =
       error $ "checkDBConsistency: invalid migrations for tables"
               <+> (L.intercalate ", " $ map (T.unpack . unRawSQL) tblNames)
