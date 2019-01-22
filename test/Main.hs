@@ -689,11 +689,9 @@ freshTestDB step = do
   runSQL_ "DROP SCHEMA public CASCADE"
   runSQL_ "CREATE SCHEMA public"
 
-migrationTest1 :: ConnectionSourceM (LogT IO) -> TestTree
-migrationTest1 connSource =
-  testCaseSteps' "Migration test 1" connSource $ \step -> do
-  freshTestDB         step
-
+-- | Re-used by 'migrationTest5'.
+migrationTest1Body :: (String -> TestM ()) -> TestM ()
+migrationTest1Body step = do
   createTablesSchema1 step
   (badGuyIds, robberyIds) <-
     testDBSchema1     step
@@ -709,6 +707,14 @@ migrationTest1 connSource =
 
   migrateDBToSchema5  step
   testDBSchema5       step
+
+
+migrationTest1 :: ConnectionSourceM (LogT IO) -> TestTree
+migrationTest1 connSource =
+  testCaseSteps' "Migration test 1" connSource $ \step -> do
+  freshTestDB         step
+
+  migrationTest1Body  step
 
   freshTestDB         step
 
@@ -799,6 +805,21 @@ migrationTest3 connSource =
 
   freshTestDB         step
 
+-- | Test that running the same migrations twice doesn't result in
+-- unexpected errors.
+migrationTest4 :: ConnectionSourceM (LogT IO) -> TestTree
+migrationTest4 connSource =
+  testCaseSteps' "Migration test 4" connSource $ \step -> do
+  freshTestDB         step
+
+  migrationTest1Body  step
+
+  -- Here we run step 5 for the second time. This should be a no-op.
+  migrateDBToSchema5  step
+  testDBSchema5       step
+
+  freshTestDB         step
+
 eitherExc :: MonadBaseControl IO m =>
              (SomeException -> m ()) -> (a -> m ()) -> m a -> m ()
 eitherExc left right c = (E.try c) >>= either left right
@@ -835,6 +856,7 @@ main = do
     testGroup "DB tests" [ migrationTest1 connSource
                          , migrationTest2 connSource
                          , migrationTest3 connSource
+                         , migrationTest4 connSource
                          ]
   where
     ings =
