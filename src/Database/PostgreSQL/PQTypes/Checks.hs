@@ -621,13 +621,29 @@ checkDBConsistency options domains tables migrations = do
           -- we've found.
           --
           -- Case in point: createTable t, doSomethingTo t,
-          -- doSomethingTo t1, dropTable t.
-          l                    = length migrationsToRun'
-          initialMigrations    = drop l $ reverse migrations
-          additionalMigrations = takeWhile
+          -- doSomethingTo t1, dropTable t. If our starting point is
+          -- 'doSomethingTo t1', and that step depends on 't',
+          -- 'doSomethingTo t1' will fail. So we include 'createTable
+          -- t' and 'doSomethingTo t' as well.
+          l                     = length migrationsToRun'
+          initialMigrations     = drop l $ reverse migrations
+          additionalMigrations' = takeWhile
             (\mgr -> droppedEventually mgr && tableDoesNotExist mgr)
             initialMigrations
-          migrationsToRun = (reverse additionalMigrations) ++ migrationsToRun'
+          -- Check that all extra migration chains we've chosen begin
+          -- with 'createTable', otherwise skip adding them (to
+          -- prevent raising an exception during the validation step).
+          additionalMigrations  =
+            let ret  = reverse additionalMigrations'
+                grps = L.groupBy ((==) `on` mgrTableName) ret
+            in if any ((/=) 0 . mgrFrom . head) grps
+               then []
+               else ret
+          -- Also there's no point in adding these extra migrations if
+          -- we're not running any migrations to begin with.
+          migrationsToRun       = if not . null $ migrationsToRun'
+                                  then additionalMigrations ++ migrationsToRun'
+                                  else []
       in migrationsToRun
 
     runMigration :: (Migration m) -> m ()
