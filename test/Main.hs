@@ -6,6 +6,7 @@ import Control.Monad.IO.Class
 import Control.Monad.Trans.Control
 
 import Data.Monoid
+import Prelude
 import Data.Int
 import qualified Data.Text as T
 import Data.Typeable
@@ -412,12 +413,12 @@ schema6Tables =
 schema6Migrations :: (MonadDB m) => Migration m
 schema6Migrations =
     Migration
-    {
-      mgrTableName = tblName tableParticipatedInRobberySchema1
+    { mgrTableName = tblName tableParticipatedInRobberySchema1
     , mgrFrom = tblVersion tableParticipatedInRobberySchema1
-    , mgrAction = StandardMigration $ do
-                    runQuery_ $ ("ALTER TABLE participated_in_robbery DROP CONSTRAINT " <>
-                                 "pk__participated_in_robbery" :: RawSQL ())
+    , mgrAction =
+      StandardMigration $ do
+        runQuery_ $ ("ALTER TABLE participated_in_robbery DROP CONSTRAINT \
+                     \pk__participated_in_robbery" :: RawSQL ())
     }
 
 
@@ -529,7 +530,8 @@ migrateDBToSchema2Hacky step = do
   let extrasOptions = def
       extensions    = []
       domains       = []
-  step "Hackily migrating the database (schema version 1 -> schema version 2)..."
+  step "Hackily migrating the database (schema version 1 \
+       \-> schema version 2)..."
   migrateDatabase extrasOptions extensions domains
     schema2Tables schema2Migrations'
   checkDatabase extrasOptions domains schema2Tables
@@ -687,11 +689,9 @@ freshTestDB step = do
   runSQL_ "DROP SCHEMA public CASCADE"
   runSQL_ "CREATE SCHEMA public"
 
-migrationTest1 :: ConnectionSourceM (LogT IO) -> TestTree
-migrationTest1 connSource =
-  testCaseSteps' "Migration test 1" connSource $ \step -> do
-  freshTestDB         step
-
+-- | Re-used by 'migrationTest5'.
+migrationTest1Body :: (String -> TestM ()) -> TestM ()
+migrationTest1Body step = do
   createTablesSchema1 step
   (badGuyIds, robberyIds) <-
     testDBSchema1     step
@@ -708,6 +708,14 @@ migrationTest1 connSource =
   migrateDBToSchema5  step
   testDBSchema5       step
 
+
+migrationTest1 :: ConnectionSourceM (LogT IO) -> TestTree
+migrationTest1 connSource =
+  testCaseSteps' "Migration test 1" connSource $ \step -> do
+  freshTestDB         step
+
+  migrationTest1Body  step
+
   freshTestDB         step
 
 -- | Test for behaviour of 'checkDatabase' and 'checkDatabaseAllowUnknownTables'
@@ -722,19 +730,21 @@ migrationTest2 connSource =
       extrasOptions = def { eoEnforcePKs = True }
   assertNoException "checkDatabase should run fine for consistent DB" $
     checkDatabase extrasOptions [] currentSchema
-  assertNoException "checkDatabaseAllowUnknownTables runs fine for consistent DB" $
+  assertNoException "checkDatabaseAllowUnknownTables runs fine \
+                    \for consistent DB" $
     checkDatabaseAllowUnknownTables extrasOptions [] currentSchema
-  assertException "checkDatabase should throw exception for wrong scheme" $
+  assertException "checkDatabase should throw exception for wrong schema" $
     checkDatabase extrasOptions [] differentSchema
-  assertException ("checkDatabaseAllowUnknownTables "
-                   ++ "should throw exception for wrong scheme") $
+  assertException ("checkDatabaseAllowUnknownTables \
+                   \should throw exception for wrong scheme") $
     checkDatabaseAllowUnknownTables extrasOptions [] differentSchema
 
-  runSQL_ "INSERT INTO table_versions (name, version) VALUES ('unknown_table', 0)"
+  runSQL_ "INSERT INTO table_versions (name, version) \
+          \VALUES ('unknown_table', 0)"
   assertException "checkDatabase throw when extra entry in 'table_versions'" $
     checkDatabase extrasOptions [] currentSchema
-  assertNoException ("checkDatabaseAllowUnknownTables "
-                     ++ "accepts extra entry in 'table_versions'") $
+  assertNoException ("checkDatabaseAllowUnknownTables \
+                     \accepts extra entry in 'table_versions'") $
     checkDatabaseAllowUnknownTables extrasOptions [] currentSchema
   runSQL_ "DELETE FROM table_versions where name='unknown_table'"
 
@@ -744,11 +754,12 @@ migrationTest2 connSource =
   assertNoException "checkDatabaseAllowUnknownTables accepts unknown table" $
     checkDatabaseAllowUnknownTables extrasOptions [] currentSchema
 
-  runSQL_ "INSERT INTO table_versions (name, version) VALUES ('unknown_table', 0)"
+  runSQL_ "INSERT INTO table_versions (name, version) \
+          \VALUES ('unknown_table', 0)"
   assertException "checkDatabase should throw with unknown table" $
     checkDatabase extrasOptions [] currentSchema
-  assertNoException ("checkDatabaseAllowUnknownTables "
-                     ++ "accepts unknown tables with version") $
+  assertNoException ("checkDatabaseAllowUnknownTables \
+                     \accepts unknown tables with version") $
     checkDatabaseAllowUnknownTables extrasOptions [] currentSchema
 
   freshTestDB    step
@@ -761,14 +772,17 @@ migrationTest2 connSource =
 
   step "Recreating the database (schema version 1, one table is missing PK)..."
 
-  migrateDatabase optionsNoPKCheck [] [] schema1TablesWithMissingPK [schema1MigrationsWithMissingPK]
+  migrateDatabase optionsNoPKCheck [] []
+    schema1TablesWithMissingPK [schema1MigrationsWithMissingPK]
   checkDatabase optionsNoPKCheck [] withMissingPKSchema
 
-  assertException ("checkDatabase should throw when PK missing from table " <>
-                   "'participated_in_robbery' and check is enabled") $
+  assertException
+    "checkDatabase should throw when PK missing from table \
+    \'participated_in_robbery' and check is enabled" $
     checkDatabase optionsWithPKCheck [] withMissingPKSchema
-  assertNoException ("checkDatabase should not throw when PK missing from table " <>
-                     "'participated_in_robbery' and check is disabled") $
+  assertNoException
+    "checkDatabase should not throw when PK missing from table \
+    \'participated_in_robbery' and check is disabled" $
     checkDatabase optionsNoPKCheck [] withMissingPKSchema
 
   freshTestDB step
@@ -785,9 +799,24 @@ migrationTest3 connSource =
   migrateDBToSchema2  step
   testDBSchema2       step badGuyIds robberyIds
 
-  assertException ( "Trying to run the same migration twice should fail, "
-                    ++ "when starting with a createTable migration" ) $
+  assertException ( "Trying to run the same migration twice should fail, \
+                     \when starting with a createTable migration" ) $
     migrateDBToSchema2Hacky  step
+
+  freshTestDB         step
+
+-- | Test that running the same migrations twice doesn't result in
+-- unexpected errors.
+migrationTest4 :: ConnectionSourceM (LogT IO) -> TestTree
+migrationTest4 connSource =
+  testCaseSteps' "Migration test 4" connSource $ \step -> do
+  freshTestDB         step
+
+  migrationTest1Body  step
+
+  -- Here we run step 5 for the second time. This should be a no-op.
+  migrateDBToSchema5  step
+  testDBSchema5       step
 
   freshTestDB         step
 
@@ -827,6 +856,7 @@ main = do
     testGroup "DB tests" [ migrationTest1 connSource
                          , migrationTest2 connSource
                          , migrationTest3 connSource
+                         , migrationTest4 connSource
                          ]
   where
     ings =

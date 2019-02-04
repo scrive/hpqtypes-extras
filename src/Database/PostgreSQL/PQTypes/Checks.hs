@@ -24,6 +24,7 @@ import Data.Ord (comparing)
 import qualified Data.String
 import Data.Text (Text)
 import Database.PostgreSQL.PQTypes hiding (def)
+import GHC.Stack (HasCallStack)
 import Log
 import Prelude
 import TextShow
@@ -48,7 +49,8 @@ migrateDatabase
   :: (MonadDB m, MonadLog m, MonadThrow m)
   => ExtrasOptions -> [Extension] -> [Domain] -> [Table] -> [Migration m]
   -> m ()
-migrateDatabase options@ExtrasOptions{..} extensions domains tables migrations = do
+migrateDatabase options@ExtrasOptions{..}
+  extensions domains tables migrations = do
   setDBTimeZoneToUTC
   mapM_ checkExtension extensions
   -- 'checkDBConsistency' also performs migrations.
@@ -204,7 +206,8 @@ checkExistenceOfVersionsForTables tables = do
   if (not . null $ absent) || (not . null $ notPresent)
     then do
     mapM_ (logInfo_ . (<+>) "Unknown entry in 'table_versions':") absent
-    mapM_ (logInfo_ . (<+>) "Table not present in the 'table_versions':") notPresent
+    mapM_ (logInfo_ . (<+>) "Table not present in the 'table_versions':")
+      notPresent
     return . ValidationResult $
       (joinedResult "Unknown entry in table_versions':"  absent ) ++
       (joinedResult "Tables not present in the 'table_versions':" notPresent)
@@ -318,7 +321,8 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \table ->
         , checkForeignKeys tblForeignKeys fkeys
         ]
       where
-        fetchTableColumn :: (String, ColumnType, Bool, Maybe String) -> TableColumn
+        fetchTableColumn
+          :: (String, ColumnType, Bool, Maybe String) -> TableColumn
         fetchTableColumn (name, ctype, nullable, mdefault) = TableColumn {
             colName = unsafeSQL name
           , colType = ctype
@@ -326,7 +330,8 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \table ->
           , colDefault = unsafeSQL `liftM` mdefault
           }
 
-        checkColumns :: Int -> [TableColumn] -> [TableColumn] -> ValidationResult
+        checkColumns
+          :: Int -> [TableColumn] -> [TableColumn] -> ValidationResult
         checkColumns _ [] [] = mempty
         checkColumns _ rest [] = ValidationResult [tableHasLess "columns" rest]
         checkColumns _ [] rest = ValidationResult [tableHasMore "columns" rest]
@@ -336,8 +341,9 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \table ->
           -- distinction between them after table is created.
           , validateTypes $ colType d == colType c ||
             (colType d == BigSerialT && colType c == BigIntT)
-          -- there is a problem with default values determined by sequences as
-          -- they're implicitely specified by db, so let's omit them in such case
+          -- There is a problem with default values determined by
+          -- sequences as they're implicitly specified by db, so
+          -- let's omit them in such case.
           , validateDefaults $ colDefault d == colDefault c ||
             (colDefault d == Nothing
              && ((T.isPrefixOf "nextval('" . unRawSQL) `liftM` colDefault c)
@@ -451,7 +457,7 @@ checkDBConsistency options domains tables migrations = do
 
   where
 
-    errorInvalidMigrations :: [RawSQL ()] -> a
+    errorInvalidMigrations :: HasCallStack => [RawSQL ()] -> a
     errorInvalidMigrations tblNames =
       error $ "checkDBConsistency: invalid migrations for tables"
               <+> (L.intercalate ", " $ map (T.unpack . unRawSQL) tblNames)
@@ -494,8 +500,9 @@ checkDBConsistency options domains tables migrations = do
                         <> "and dropped tables is not empty")
             $ object
             [ "intersection" .= map unRawSQL intersection ]
-          errorInvalidMigrations [ tblName tbl | tbl <- tables
-                                               , tblName tbl `elem` intersection ]
+          errorInvalidMigrations [ tblName tbl
+                                 | tbl <- tables
+                                 , tblName tbl `elem` intersection ]
 
       -- Check that if a list of migrations for a given table has a
       -- drop table migration, it is unique and is the last migration
@@ -516,8 +523,9 @@ checkDBConsistency options domains tables migrations = do
         logAttention ("Migration lists for some tables contain "
                       <> "either multiple drop table migrations or "
                       <> "a drop table migration in non-tail position.")
-          $ object [ "tables" .= [ unRawSQL tblName
-                                 | tblName <- tablesWithInvalidMigrationLists ] ]
+          $ object [ "tables" .=
+                     [ unRawSQL tblName
+                     | tblName <- tablesWithInvalidMigrationLists ] ]
         errorInvalidMigrations tablesWithInvalidMigrationLists
 
     createDBSchema :: m ()
@@ -541,7 +549,8 @@ checkDBConsistency options domains tables migrations = do
           initialSetup tis
       logInfo_ "Done."
 
-    -- | Input is a list of (table name, expected version, actual version) triples.
+    -- | Input is a list of (table name, expected version, actual
+    -- version) triples.
     validateMigrationsAgainstDB :: [(RawSQL (), Int32, Int32)] -> m ()
     validateMigrationsAgainstDB tablesWithVersions
       = forM_ tablesWithVersions $ \(tableName, expectedVer, actualVer) ->
@@ -571,7 +580,8 @@ checkDBConsistency options domains tables migrations = do
       forM_ dbTablesToDropWithVersions $ \(tblName, fromVer, ver) ->
         when (fromVer /= ver) $
           -- In case when the table we're going to drop is an old
-          -- version, check that there are migrations that bring it to a new one.
+          -- version, check that there are migrations that bring it to
+          -- a new one.
           validateMigrationsAgainstDB [(tblName, fromVer, ver)]
 
     findMigrationsToRun :: [(Text, Int32)] -> [Migration m]
@@ -582,7 +592,8 @@ checkDBConsistency options domains tables migrations = do
           droppedEventually mgr = mgrTableName mgr `elem` tableNamesToDrop
 
           lookupVer :: Migration m -> Maybe Int32
-          lookupVer mgr = lookup (unRawSQL $ mgrTableName mgr) dbTablesWithVersions
+          lookupVer mgr = lookup (unRawSQL $ mgrTableName mgr)
+                          dbTablesWithVersions
 
           tableDoesNotExist = isNothing . lookupVer
 
@@ -596,7 +607,8 @@ checkDBConsistency options domains tables migrations = do
                  -- table migration and we're not going to drop the
                  -- table afterwards, this is our starting point.
                  Nothing -> not $
-                            (mgrFrom mgr == 0) && (not . droppedEventually $ mgr)
+                            (mgrFrom mgr == 0) &&
+                            (not . droppedEventually $ mgr)
                  -- Table exists in the DB. Run only those migrations
                  -- that have mgrFrom >= table version in the DB.
                  Just ver -> not $
@@ -609,13 +621,29 @@ checkDBConsistency options domains tables migrations = do
           -- we've found.
           --
           -- Case in point: createTable t, doSomethingTo t,
-          -- doSomethingTo t1, dropTable t.
-          l = length migrationsToRun'
-          initialMigrations = drop l $ reverse migrations
-          additionalMigrations = takeWhile
+          -- doSomethingTo t1, dropTable t. If our starting point is
+          -- 'doSomethingTo t1', and that step depends on 't',
+          -- 'doSomethingTo t1' will fail. So we include 'createTable
+          -- t' and 'doSomethingTo t' as well.
+          l                     = length migrationsToRun'
+          initialMigrations     = drop l $ reverse migrations
+          additionalMigrations' = takeWhile
             (\mgr -> droppedEventually mgr && tableDoesNotExist mgr)
             initialMigrations
-          migrationsToRun = (reverse additionalMigrations) ++ migrationsToRun'
+          -- Check that all extra migration chains we've chosen begin
+          -- with 'createTable', otherwise skip adding them (to
+          -- prevent raising an exception during the validation step).
+          additionalMigrations  =
+            let ret  = reverse additionalMigrations'
+                grps = L.groupBy ((==) `on` mgrTableName) ret
+            in if any ((/=) 0 . mgrFrom . head) grps
+               then []
+               else ret
+          -- Also there's no point in adding these extra migrations if
+          -- we're not running any migrations to begin with.
+          migrationsToRun       = if not . null $ migrationsToRun'
+                                  then additionalMigrations ++ migrationsToRun'
+                                  else []
       in migrationsToRun
 
     runMigration :: (Migration m) -> m ()
@@ -796,7 +824,9 @@ sqlGetTableID table = parenthesize . toSQLCommand $
 
 -- *** PRIMARY KEY ***
 
-sqlGetPrimaryKey :: (MonadDB m, MonadThrow m) => Table -> m (Maybe (PrimaryKey, RawSQL ()))
+sqlGetPrimaryKey
+  :: (MonadDB m, MonadThrow m)
+  => Table -> m (Maybe (PrimaryKey, RawSQL ()))
 sqlGetPrimaryKey table = do
 
   (mColumnNumbers :: Maybe [Int16]) <- do
@@ -833,7 +863,8 @@ sqlGetPrimaryKey table = do
         sqlWhereEq "c.contype" 'p'
         sqlWhereEqSql "c.conrelid" $ sqlGetTableID table
         sqlResult "c.conname::text"
-        sqlResult $ Data.String.fromString ("array['" <> (mintercalate "', '" columnNames) <> "']::text[]")
+        sqlResult $ Data.String.fromString
+          ("array['" <> (mintercalate "', '" columnNames) <> "']::text[]")
 
       join <$> fetchMaybe fetchPrimaryKey
 
@@ -846,7 +877,8 @@ fetchPrimaryKey (name, Array1 columns) = (, unsafeSQL name)
 sqlGetChecks :: Table -> SQL
 sqlGetChecks table = toSQLCommand . sqlSelect "pg_catalog.pg_constraint c" $ do
   sqlResult "c.conname::text"
-  sqlResult "regexp_replace(pg_get_constraintdef(c.oid, true), 'CHECK \\((.*)\\)', '\\1') AS body" -- check body
+  sqlResult "regexp_replace(pg_get_constraintdef(c.oid, true), \
+            \'CHECK \\((.*)\\)', '\\1') AS body" -- check body
   sqlWhereEq "c.contype" 'c'
   sqlWhereEqSql "c.conrelid" $ sqlGetTableID table
 
@@ -903,11 +935,16 @@ sqlGetForeignKeys table = toSQLCommand
   sqlResult $
     "ARRAY(SELECT a.attname::text FROM pg_catalog.pg_attribute a JOIN ("
     <> unnestWithOrdinality "r.conkey"
-    <> ") conkeys ON (a.attnum = conkeys.item) WHERE a.attrelid = r.conrelid ORDER BY conkeys.n)" -- constrained columns
+    <> ") conkeys ON (a.attnum = conkeys.item) \
+       \WHERE a.attrelid = r.conrelid \
+       \ORDER BY conkeys.n)" -- constrained columns
   sqlResult "c.relname::text" -- referenced table
-  sqlResult $ "ARRAY(SELECT a.attname::text FROM pg_catalog.pg_attribute a JOIN ("
+  sqlResult $ "ARRAY(SELECT a.attname::text \
+              \FROM pg_catalog.pg_attribute a JOIN ("
     <> unnestWithOrdinality "r.confkey"
-    <> ") confkeys ON (a.attnum = confkeys.item) WHERE a.attrelid = r.confrelid ORDER BY confkeys.n)" -- referenced columns
+    <> ") confkeys ON (a.attnum = confkeys.item) \
+       \WHERE a.attrelid = r.confrelid \
+       \ORDER BY confkeys.n)" -- referenced columns
   sqlResult "r.confupdtype" -- on update
   sqlResult "r.confdeltype" -- on delete
   sqlResult "r.condeferrable" -- deferrable?
@@ -942,4 +979,5 @@ fetchForeignKey
       'c' -> ForeignKeyCascade
       'n' -> ForeignKeySetNull
       'd' -> ForeignKeySetDefault
-      _   -> error $ "fetchForeignKey: invalid foreign key action code: " ++ show c
+      _   -> error $ "fetchForeignKey: invalid foreign key action code: "
+                     ++ show c
