@@ -1,4 +1,8 @@
-# hpqtypes-extras-1.6.3.0 (2018-07-11)
+# hpqtypes-extras-1.6.4.0 (2019-02-04)
+* Fix an issue where unnecessary migrations were run sometimes
+  ([#19](https://github.com/scrive/hpqtypes-extras/pull/19)).
+
+# hpqtypes-extras-1.6.3.0 (2018-11-19)
 * API addition: `sqlWhereAnyE`
   ([#16](https://github.com/scrive/hpqtypes-extras/pull/16)).
 
