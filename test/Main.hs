@@ -6,6 +6,7 @@ import Control.Monad.IO.Class
 import Control.Monad.Trans.Control
 
 import Data.Monoid
+import Prelude
 import Data.Int
 import qualified Data.Text as T
 import Data.Typeable
@@ -688,11 +689,9 @@ freshTestDB step = do
   runSQL_ "DROP SCHEMA public CASCADE"
   runSQL_ "CREATE SCHEMA public"
 
-migrationTest1 :: ConnectionSourceM (LogT IO) -> TestTree
-migrationTest1 connSource =
-  testCaseSteps' "Migration test 1" connSource $ \step -> do
-  freshTestDB         step
-
+-- | Re-used by 'migrationTest5'.
+migrationTest1Body :: (String -> TestM ()) -> TestM ()
+migrationTest1Body step = do
   createTablesSchema1 step
   (badGuyIds, robberyIds) <-
     testDBSchema1     step
@@ -708,6 +707,14 @@ migrationTest1 connSource =
 
   migrateDBToSchema5  step
   testDBSchema5       step
+
+
+migrationTest1 :: ConnectionSourceM (LogT IO) -> TestTree
+migrationTest1 connSource =
+  testCaseSteps' "Migration test 1" connSource $ \step -> do
+  freshTestDB         step
+
+  migrationTest1Body  step
 
   freshTestDB         step
 
@@ -726,18 +733,18 @@ migrationTest2 connSource =
   assertNoException "checkDatabaseAllowUnknownTables runs fine \
                     \for consistent DB" $
     checkDatabaseAllowUnknownTables extrasOptions [] currentSchema
-  assertException "checkDatabase should throw exception for wrong scheme" $
+  assertException "checkDatabase should throw exception for wrong schema" $
     checkDatabase extrasOptions [] differentSchema
-  assertException ("checkDatabaseAllowUnknownTables "
-                   ++ "should throw exception for wrong scheme") $
+  assertException ("checkDatabaseAllowUnknownTables \
+                   \should throw exception for wrong scheme") $
     checkDatabaseAllowUnknownTables extrasOptions [] differentSchema
 
   runSQL_ "INSERT INTO table_versions (name, version) \
           \VALUES ('unknown_table', 0)"
   assertException "checkDatabase throw when extra entry in 'table_versions'" $
     checkDatabase extrasOptions [] currentSchema
-  assertNoException ("checkDatabaseAllowUnknownTables "
-                     ++ "accepts extra entry in 'table_versions'") $
+  assertNoException ("checkDatabaseAllowUnknownTables \
+                     \accepts extra entry in 'table_versions'") $
     checkDatabaseAllowUnknownTables extrasOptions [] currentSchema
   runSQL_ "DELETE FROM table_versions where name='unknown_table'"
 
@@ -751,8 +758,8 @@ migrationTest2 connSource =
           \VALUES ('unknown_table', 0)"
   assertException "checkDatabase should throw with unknown table" $
     checkDatabase extrasOptions [] currentSchema
-  assertNoException ("checkDatabaseAllowUnknownTables "
-                     ++ "accepts unknown tables with version") $
+  assertNoException ("checkDatabaseAllowUnknownTables \
+                     \accepts unknown tables with version") $
     checkDatabaseAllowUnknownTables extrasOptions [] currentSchema
 
   freshTestDB    step
@@ -792,9 +799,24 @@ migrationTest3 connSource =
   migrateDBToSchema2  step
   testDBSchema2       step badGuyIds robberyIds
 
-  assertException ( "Trying to run the same migration twice should fail, "
-                    ++ "when starting with a createTable migration" ) $
+  assertException ( "Trying to run the same migration twice should fail, \
+                     \when starting with a createTable migration" ) $
     migrateDBToSchema2Hacky  step
+
+  freshTestDB         step
+
+-- | Test that running the same migrations twice doesn't result in
+-- unexpected errors.
+migrationTest4 :: ConnectionSourceM (LogT IO) -> TestTree
+migrationTest4 connSource =
+  testCaseSteps' "Migration test 4" connSource $ \step -> do
+  freshTestDB         step
+
+  migrationTest1Body  step
+
+  -- Here we run step 5 for the second time. This should be a no-op.
+  migrateDBToSchema5  step
+  testDBSchema5       step
 
   freshTestDB         step
 
@@ -834,6 +856,7 @@ main = do
     testGroup "DB tests" [ migrationTest1 connSource
                          , migrationTest2 connSource
                          , migrationTest3 connSource
+                         , migrationTest4 connSource
                          ]
   where
     ings =
