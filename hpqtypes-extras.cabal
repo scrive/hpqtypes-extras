@@ -1,6 +1,6 @@
 cabal-version:       1.18
 name:                hpqtypes-extras
-version:             1.6.3.0
+version:             1.6.4.0
 synopsis:            Extra utilities for hpqtypes library
 description:         The following extras for hpqtypes library:
                      .
@@ -20,7 +20,7 @@ maintainer:          Andrzej Rybczak <andrzej@rybczak.net>,
 copyright:           Scrive AB
 category:            Database
 build-type:          Simple
-tested-with:         GHC == 8.0.2, GHC == 8.2.2, GHC == 8.4.4, GHC == 8.6.2
+tested-with:         GHC == 8.0.2, GHC == 8.2.2, GHC == 8.4.4, GHC == 8.6.3
 
 Source-repository head
   Type:     git
