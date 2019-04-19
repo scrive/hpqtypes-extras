@@ -15,7 +15,7 @@ import Prelude
 data Check = Check {
   chkName      :: RawSQL ()
 , chkCondition :: RawSQL ()
-, chkValidated :: Bool -- ^ Set to 'True' if check is created as NOT VALID and
+, chkValidated :: Bool -- ^ Set to 'False' if check is created as NOT VALID and
                        -- not validated afterwards.
 } deriving (Eq, Ord, Show)
 

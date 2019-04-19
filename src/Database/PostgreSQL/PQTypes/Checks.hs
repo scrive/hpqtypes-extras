@@ -12,6 +12,7 @@ module Database.PostgreSQL.PQTypes.Checks (
   , migrateDatabase
   ) where
 
+import Control.Arrow ((&&&))
 import Control.Applicative ((<$>))
 import Control.Monad.Catch
 import Control.Monad.Reader
@@ -29,6 +30,8 @@ import Log
 import Prelude
 import TextShow
 import qualified Data.List as L
+import qualified Data.Map as M
+import qualified Data.Set as S
 import qualified Data.Text as T
 
 import Database.PostgreSQL.PQTypes.ExtrasOptions
@@ -47,15 +50,21 @@ headExc _ (x:_) = x
 -- | Run migrations and check the database structure.
 migrateDatabase
   :: (MonadDB m, MonadLog m, MonadThrow m)
-  => ExtrasOptions -> [Extension] -> [Domain] -> [Table] -> [Migration m]
+  => ExtrasOptions
+  -> [Extension]
+  -> [CompositeType]
+  -> [Domain]
+  -> [Table]
+  -> [Migration m]
   -> m ()
 migrateDatabase options@ExtrasOptions{..}
-  extensions domains tables migrations = do
+  extensions composites domains tables migrations = do
   setDBTimeZoneToUTC
   mapM_ checkExtension extensions
   tablesWithVersions <- getTableVersions (tableVersions : tables)
   -- 'checkDBConsistency' also performs migrations.
   checkDBConsistency options domains tablesWithVersions migrations
+  resultCheck =<< checkCompositesStructure True composites
   resultCheck =<< checkDomainsStructure domains
   resultCheck =<< checkDBStructure options tablesWithVersions
   resultCheck =<< checkTablesWereDropped migrations
@@ -69,22 +78,23 @@ migrateDatabase options@ExtrasOptions{..}
 -- needs to be migrated. Will do a full check of DB structure.
 checkDatabase
   :: forall m . (MonadDB m, MonadLog m, MonadThrow m)
-  => ExtrasOptions -> [Domain] -> [Table] -> m ()
+  => ExtrasOptions -> [CompositeType] -> [Domain] -> [Table] -> m ()
 checkDatabase options = checkDatabase_ options False
 
 -- | Same as 'checkDatabase', but will not failed if there are
 -- additional tables in database.
 checkDatabaseAllowUnknownTables
   :: forall m . (MonadDB m, MonadLog m, MonadThrow m)
-  => ExtrasOptions -> [Domain] -> [Table] -> m ()
+  => ExtrasOptions -> [CompositeType] -> [Domain] -> [Table] -> m ()
 checkDatabaseAllowUnknownTables options = checkDatabase_ options True
 
 checkDatabase_
   :: forall m . (MonadDB m, MonadLog m, MonadThrow m)
-  => ExtrasOptions -> Bool -> [Domain] -> [Table] -> m ()
-checkDatabase_ options allowUnknownTables domains tables = do
+  => ExtrasOptions -> Bool -> [CompositeType] -> [Domain] -> [Table] -> m ()
+checkDatabase_ options allowUnknownTables composites domains tables = do
   tablesWithVersions <- getTableVersions (tableVersions : tables)
   resultCheck $ checkVersions tablesWithVersions
+  resultCheck =<< checkCompositesStructure False composites
   resultCheck =<< checkDomainsStructure domains
   resultCheck =<< checkDBStructure options tablesWithVersions
   when (not $ allowUnknownTables) $ do
@@ -297,6 +307,64 @@ checkTablesWereDropped mgrs = do
                     <> "' that must have been dropped"
                     <> " is still present in the database."
 
+-- | Check that there is 1 to 1 correspondence between composite types in the
+-- database and the list of their code definitions.
+checkCompositesStructure
+  :: MonadDB m
+  => Bool -- ^ Create types if none are present in the database
+  -> [CompositeType]
+  -> m ValidationResult
+checkCompositesStructure createTypes compositeList = getDBCompositeTypes >>= \case
+  [] | createTypes -> do -- if there are no composite types in the database,
+                         -- create them (if there are any as code definitions).
+    mapM_ (runQuery_ . sqlCreateComposite) compositeList
+    return mempty
+  dbCompositeTypes -> pure $ mconcat
+    [ checkNotPresentComposites
+    , checkDatabaseComposites
+    ]
+    where
+      compositeMap = M.fromList $
+        map ((unRawSQL . ctName) &&& ctColumns) compositeList
+
+      checkNotPresentComposites =
+        let notPresent = S.toList $ M.keysSet compositeMap
+              S.\\ S.fromList (map (unRawSQL . ctName) dbCompositeTypes)
+        in validateIsNull "Composite types not present in the database:" notPresent
+
+      checkDatabaseComposites = mconcat . (`map` dbCompositeTypes) $ \dbComposite ->
+        let cname = unRawSQL $ ctName dbComposite
+        in case cname `M.lookup` compositeMap of
+          Just columns -> topMessage "composite type" cname $
+            checkColumns 1 columns (ctColumns dbComposite)
+          Nothing -> validationError $ "Composite type '" <> T.pack (show dbComposite)
+            <> "' from the database doesn't have a corresponding code definition"
+        where
+          checkColumns
+            :: Int -> [CompositeColumn] -> [CompositeColumn] -> ValidationResult
+          checkColumns _ [] [] = mempty
+          checkColumns _ rest [] = validationError $
+            objectHasLess "Composite type" "columns" rest
+          checkColumns _ [] rest = validationError $
+            objectHasMore "Composite type" "columns" rest
+          checkColumns !n (d:defs) (c:cols) = mconcat [
+              validateNames $ ccName d == ccName c
+            , validateTypes $ ccType d == ccType c
+            , checkColumns (n+1) defs cols
+            ]
+            where
+              validateNames True  = mempty
+              validateNames False = validationError $
+                errorMsg ("no. " <> showt n) "names" (unRawSQL . ccName)
+
+              validateTypes True  = mempty
+              validateTypes False = validationError $
+                errorMsg (unRawSQL $ ccName d) "types" (T.pack . show . ccType)
+
+              errorMsg ident attr f =
+                "Column '" <> ident <> "' differs in"
+                <+> attr <+> "(database:" <+> f c <> ", definition:" <+> f d <> ")."
+
 -- | Checks whether the database is consistent.
 checkDBStructure
   :: forall m. (MonadDB m, MonadThrow m)
@@ -360,8 +428,10 @@ checkDBStructure options tables = fmap mconcat .
         checkColumns
           :: Int -> [TableColumn] -> [TableColumn] -> ValidationResult
         checkColumns _ [] [] = mempty
-        checkColumns _ rest [] = validationError $ tableHasLess "columns" rest
-        checkColumns _ [] rest = validationError $ tableHasMore "columns" rest
+        checkColumns _ rest [] = validationError $
+          objectHasLess "Table" "columns" rest
+        checkColumns _ [] rest = validationError $
+          objectHasMore "Table" "columns" rest
         checkColumns !n (d:defs) (c:cols) = mconcat [
             validateNames $ colName d == colName c
           -- bigserial == bigint + autoincrement and there is no
