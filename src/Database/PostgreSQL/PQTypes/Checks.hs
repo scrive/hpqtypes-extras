@@ -49,7 +49,7 @@ headExc _ (x:_) = x
 
 -- | Run migrations and check the database structure.
 migrateDatabase
-  :: (MonadDB m, MonadLog m, MonadThrow m)
+  :: (MonadDB m, MonadLog m, MonadMask m)
   => ExtrasOptions
   -> [Extension]
   -> [CompositeType]
@@ -529,10 +529,13 @@ checkDBStructure options tables = fmap mconcat .
 --   * all 'mgrFrom' are less than table version number of the table in
 --     the 'tables' list
 checkDBConsistency
-  :: forall m. (MonadDB m, MonadLog m, MonadThrow m)
+  :: forall m. (MonadDB m, MonadLog m, MonadMask m)
   => ExtrasOptions -> [Domain] -> [(Table, Int32)] -> [Migration m]
   -> m ()
 checkDBConsistency options domains tablesWithVersions migrations = do
+  autoTransaction <- tsAutoTransaction <$> getTransactionSettings
+  unless autoTransaction $ do
+    error "checkDBConsistency: tsAutoTransaction setting needs to be True"
   -- Check the validity of the migrations list.
   validateMigrations
   validateDropTableMigrations
@@ -752,18 +755,41 @@ checkDBConsistency options domains tablesWithVersions migrations = do
     runMigration Migration{..} = do
       case mgrAction of
         StandardMigration mgrDo -> do
-          logInfo_ $ arrListTable mgrTableName <> showt mgrFrom <+> "->"
-            <+> showt (succ mgrFrom)
+          logMigration
           mgrDo
-          runQuery_ $ sqlUpdate "table_versions" $ do
-            sqlSet "version"  (succ mgrFrom)
-            sqlWhereEq "name" (T.unpack . unRawSQL $ mgrTableName)
+          updateTableVersion
 
         DropTableMigration mgrDropTableMode -> do
           logInfo_ $ arrListTable mgrTableName <> "drop table"
           runQuery_ $ sqlDropTable mgrTableName
             mgrDropTableMode
           runQuery_ $ sqlDelete "table_versions" $ do
+            sqlWhereEq "name" (T.unpack . unRawSQL $ mgrTableName)
+
+        CreateIndexConcurrentlyMigration tname idx -> do
+          logMigration
+          -- If migration was run before but creation of an index failed, index
+          -- will be left in the database in an inactive state, so when we
+          -- rerun, we need to remove it first (see
+          -- https://www.postgresql.org/docs/9.6/sql-createindex.html for more
+          -- information).
+          runQuery_ $ "DROP INDEX IF EXISTS" <+> indexName tname idx
+          -- We're in auto transaction mode (as ensured at the beginning of
+          -- 'checkDBConsistency'), so we need to issue explicit SQL commit,
+          -- because using 'commit' function automatically starts another
+          -- transaction. We don't want that as concurrent creation of index
+          -- won't run inside a transaction.
+          runSQL_ "COMMIT"
+          runQuery_ (sqlCreateIndexConcurrently tname idx) `finally` begin
+          updateTableVersion
+      where
+        logMigration = do
+          logInfo_ $ arrListTable mgrTableName
+            <> showt mgrFrom <+> "->" <+> showt (succ mgrFrom)
+
+        updateTableVersion = do
+          runQuery_ $ sqlUpdate "table_versions" $ do
+            sqlSet "version"  (succ mgrFrom)
             sqlWhereEq "name" (T.unpack . unRawSQL $ mgrTableName)
 
     runMigrations :: [(Text, Int32)] -> m ()

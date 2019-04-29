@@ -15,6 +15,7 @@ import Database.PostgreSQL.PQTypes
 import Database.PostgreSQL.PQTypes.Checks
 import Database.PostgreSQL.PQTypes.Model.ColumnType
 import Database.PostgreSQL.PQTypes.Model.ForeignKey
+import Database.PostgreSQL.PQTypes.Model.Index
 import Database.PostgreSQL.PQTypes.Model.Migration
 import Database.PostgreSQL.PQTypes.Model.PrimaryKey
 import Database.PostgreSQL.PQTypes.Model.Table
@@ -105,8 +106,8 @@ tableBankSchema4 = tableBankSchema3 {
   }
 
 
-tableBankMigration5 :: (MonadDB m) => Migration m
-tableBankMigration5 = Migration
+tableBankMigration5fst :: (MonadDB m) => Migration m
+tableBankMigration5fst = Migration
   { mgrTableName = tblName tableBankSchema3
   , mgrFrom      = 2
   , mgrAction    = StandardMigration $ do
@@ -115,12 +116,21 @@ tableBankMigration5 = Migration
         ]
   }
 
+tableBankMigration5snd :: (MonadDB m) => Migration m
+tableBankMigration5snd = Migration
+  { mgrTableName = tblName tableBankSchema3
+  , mgrFrom      = 3
+  , mgrAction    = CreateIndexConcurrentlyMigration
+                     (tblName tableBankSchema3)
+                     (indexOnColumn "name")
+  }
 
 tableBankSchema5 :: Table
 tableBankSchema5 = tableBankSchema4 {
-    tblVersion = (tblVersion tableBankSchema4)  + 1
+    tblVersion = (tblVersion tableBankSchema4) + 2
   , tblColumns = filter (\c -> colName c /= "cash")
       (tblColumns tableBankSchema4)
+  , tblIndexes = [indexOnColumn "name"]
   }
 
 tableBadGuySchema1 :: Table
@@ -394,7 +404,8 @@ schema5Tables = [ tableBankSchema5
 schema5Migrations :: (MonadDB m) => [Migration m]
 schema5Migrations = schema4Migrations
                  ++ [ createTableMigration tableFlash
-                    , tableBankMigration5
+                    , tableBankMigration5fst
+                    , tableBankMigration5snd
                     , dropTableMigration tableFlash
                     ]
 
