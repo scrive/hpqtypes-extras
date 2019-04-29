@@ -1,6 +1,7 @@
 module Database.PostgreSQL.PQTypes.Model.CompositeType (
     CompositeType(..)
   , CompositeColumn(..)
+  , compositeTypePqFormat
   , sqlCreateComposite
   , sqlDropComposite
   , getDBCompositeTypes
@@ -9,6 +10,8 @@ module Database.PostgreSQL.PQTypes.Model.CompositeType (
 import Data.Int
 import Data.Monoid.Utils
 import Database.PostgreSQL.PQTypes
+import qualified Data.ByteString as BS
+import qualified Data.Text.Encoding as T
 
 import Database.PostgreSQL.PQTypes.Model.ColumnType
 import Database.PostgreSQL.PQTypes.SQL.Builder
@@ -22,6 +25,11 @@ data CompositeColumn = CompositeColumn {
   ccName :: !(RawSQL ())
 , ccType :: ColumnType
 } deriving (Eq, Ord, Show)
+
+-- | Convenience function for converting CompositeType definition to
+-- corresponding 'pqFormat' definition.
+compositeTypePqFormat :: CompositeType -> BS.ByteString
+compositeTypePqFormat ct = "%" <> T.encodeUtf8 (unRawSQL $ ctName ct)
 
 -- | Make SQL query that creates a composite type.
 sqlCreateComposite :: CompositeType -> RawSQL ()
