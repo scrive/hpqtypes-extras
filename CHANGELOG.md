@@ -1,6 +1,8 @@
 # hpqtypes-extras-1.8.0.0 (2019-04-30)
 * Make composite types subject to migration process
+  ([#21](https://github.com/scrive/hpqtypes-extras/pull/21)).
 * Add migration type for concurrent creation of an index
+  ([#21](https://github.com/scrive/hpqtypes-extras/pull/21)).
 
 # hpqtypes-extras-1.7.1.0 (2019-02-04)
 * Fix an issue where unnecessary migrations were run sometimes
