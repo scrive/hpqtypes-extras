@@ -16,7 +16,7 @@ data Check = Check {
   chkName      :: RawSQL ()
 , chkCondition :: RawSQL ()
 , chkValidated :: Bool -- ^ Set to 'False' if check is created as NOT VALID and
-                       -- not validated afterwards.
+                       -- left in such state (for whatever reason).
 } deriving (Eq, Ord, Show)
 
 tblCheck :: Check
