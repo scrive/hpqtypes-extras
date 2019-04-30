@@ -150,12 +150,13 @@ sqlCreateIndexConcurrently = sqlCreateIndex_ True
 
 sqlCreateIndex_ :: Bool -> RawSQL () -> TableIndex -> RawSQL ()
 sqlCreateIndex_ concurrently tname idx@TableIndex{..} = mconcat [
-    "CREATE "
-  , if idxUnique then "UNIQUE " else ""
-  , "INDEX " <+> indexName tname idx
-  , if concurrently then " CONCURRENTLY" else ""
-  , " ON" <+> tname <+> ""
-  , "USING" <+> (rawSQL (T.pack . show $ idxMethod) ()) <+> "("
+    "CREATE"
+  , if idxUnique then " UNIQUE" else ""
+  , " INDEX "
+  , if concurrently then "CONCURRENTLY " else ""
+  , indexName tname idx
+  , " ON" <+> tname
+  , " USING" <+> (rawSQL (T.pack . show $ idxMethod) ()) <+> "("
   , mintercalate ", " idxColumns
   , ")"
   , maybe "" (" WHERE" <+>) idxWhere

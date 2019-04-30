@@ -25,8 +25,8 @@ data ForeignKey = ForeignKey {
 , fkOnDelete   :: ForeignKeyAction
 , fkDeferrable :: Bool
 , fkDeferred   :: Bool
-, fkValidated  :: Bool -- ^ Set to 'True' if foreign key is created as NOT VALID
-                       -- and not validated afterwards.
+, fkValidated  :: Bool -- ^ Set to 'False' if foreign key is created as NOT
+                       -- VALID and left in such state (for whatever reason).
 } deriving (Eq, Ord, Show)
 
 data ForeignKeyAction

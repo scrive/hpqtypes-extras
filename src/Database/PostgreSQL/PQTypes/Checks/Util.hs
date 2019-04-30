@@ -12,8 +12,8 @@ module Database.PostgreSQL.PQTypes.Checks.Util (
   checkEquality,
   checkNames,
   checkPKPresence,
-  tableHasLess,
-  tableHasMore,
+  objectHasLess,
+  objectHasMore,
   arrListTable
   ) where
 
@@ -152,15 +152,14 @@ checkPKPresence tableName mdef mpk =
         , " has no primary key defined "
         , " (" <> (mintercalate ", " msgs) <> ")"]
 
-
-tableHasLess :: Show t => Text -> t -> Text
-tableHasLess ptype missing =
-  "Table in the database has *less*" <+> ptype <+>
+objectHasLess :: Show t => Text -> Text -> t -> Text
+objectHasLess otype ptype missing =
+  otype <+> "in the database has *less*" <+> ptype <+>
   "than its definition (missing:" <+> T.pack (show missing) <> ")"
 
-tableHasMore :: Show t => Text -> t -> Text
-tableHasMore ptype extra =
-  "Table in the database has *more*" <+> ptype <+>
+objectHasMore :: Show t => Text -> Text -> t -> Text
+objectHasMore otype ptype extra =
+  otype <+> "in the database has *more*" <+> ptype <+>
   "than its definition (extra:" <+> T.pack (show extra) <> ")"
 
 arrListTable :: RawSQL () -> Text

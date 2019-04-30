@@ -1,14 +1,20 @@
 module Database.PostgreSQL.PQTypes.Model.CompositeType (
     CompositeType(..)
   , CompositeColumn(..)
-  , defineComposites
+  , compositeTypePqFormat
+  , sqlCreateComposite
+  , sqlDropComposite
+  , getDBCompositeTypes
   ) where
 
+import Data.Int
 import Data.Monoid.Utils
 import Database.PostgreSQL.PQTypes
-import Prelude
+import qualified Data.ByteString as BS
+import qualified Data.Text.Encoding as T
 
 import Database.PostgreSQL.PQTypes.Model.ColumnType
+import Database.PostgreSQL.PQTypes.SQL.Builder
 
 data CompositeType = CompositeType {
   ctName    :: !(RawSQL ())
@@ -20,24 +26,50 @@ data CompositeColumn = CompositeColumn {
 , ccType :: ColumnType
 } deriving (Eq, Ord, Show)
 
--- | Composite types are static in a sense that they can either
--- be created or dropped, altering them is not possible. Therefore
--- they are not part of the migration process. This is not a problem
--- since their exclusive usage is for intermediate representation
--- of complex nested data structures fetched from the database.
-defineComposites :: MonadDB m => [CompositeType] -> m ()
-defineComposites ctypes = do
-  mapM_ (runQuery_ . sqlDropComposite)   $ reverse ctypes
-  mapM_ (runQuery_ . sqlCreateComposite) $ ctypes
-  where
-    sqlCreateComposite CompositeType{..} = smconcat [
-        "CREATE TYPE"
-      , ctName
-      , "AS ("
-      , mintercalate ", " $ map columnToSQL ctColumns
-      , ")"
-      ]
-      where
-        columnToSQL CompositeColumn{..} = ccName <+> columnTypeToSQL ccType
+-- | Convenience function for converting CompositeType definition to
+-- corresponding 'pqFormat' definition.
+compositeTypePqFormat :: CompositeType -> BS.ByteString
+compositeTypePqFormat ct = "%" `BS.append` T.encodeUtf8 (unRawSQL $ ctName ct)
 
-    sqlDropComposite = ("DROP TYPE IF EXISTS" <+>) . ctName
+-- | Make SQL query that creates a composite type.
+sqlCreateComposite :: CompositeType -> RawSQL ()
+sqlCreateComposite CompositeType{..} = smconcat [
+    "CREATE TYPE"
+  , ctName
+  , "AS ("
+  , mintercalate ", " $ map columnToSQL ctColumns
+  , ")"
+  ]
+  where
+    columnToSQL CompositeColumn{..} = ccName <+> columnTypeToSQL ccType
+
+-- | Make SQL query that drops a composite type.
+sqlDropComposite :: RawSQL () -> RawSQL ()
+sqlDropComposite = ("DROP TYPE" <+>)
+
+----------------------------------------
+
+-- | Get composite types defined in the database.
+getDBCompositeTypes :: forall m. MonadDB m => m [CompositeType]
+getDBCompositeTypes = do
+  runQuery_ . sqlSelect "pg_catalog.pg_class c" $ do
+    sqlResult "c.relname::text"
+    sqlResult "c.oid::int4"
+    sqlWhere "pg_catalog.pg_table_is_visible(c.oid)"
+    sqlWhereEq "c.relkind" 'c'
+    sqlOrderBy "c.relname"
+  mapM getComposite =<< fetchMany id
+  where
+    getComposite :: (String, Int32) -> m CompositeType
+    getComposite (name, oid) = do
+      runQuery_ . sqlSelect "pg_catalog.pg_attribute a" $ do
+        sqlResult "a.attname::text"
+        sqlResult "pg_catalog.format_type(a.atttypid, a.atttypmod)"
+        sqlWhereEq "a.attrelid" oid
+        sqlOrderBy "a.attnum"
+      columns <- fetchMany fetch
+      return CompositeType { ctName = unsafeSQL name, ctColumns = columns }
+      where
+        fetch :: (String, ColumnType) -> CompositeColumn
+        fetch (cname, ctype) =
+          CompositeColumn { ccName = unsafeSQL cname, ccType = ctype }

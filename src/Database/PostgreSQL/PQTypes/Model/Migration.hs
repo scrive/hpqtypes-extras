@@ -30,6 +30,7 @@ module Database.PostgreSQL.PQTypes.Model.Migration (
 
 import Data.Int
 
+import Database.PostgreSQL.PQTypes.Model.Index
 import Database.PostgreSQL.PQTypes.Model.Table
 import Database.PostgreSQL.PQTypes.SQL.Raw
 
@@ -44,6 +45,11 @@ data MigrationAction m =
   -- (@RESTRICT@/@CASCADE@). The 'Migration' record holds the name of
   -- the table to drop.
   | DropTableMigration DropTableMode
+
+  -- | Migration for creating an index concurrently.
+  | CreateIndexConcurrentlyMigration
+      (RawSQL ()) -- ^ Table name
+      TableIndex  -- ^ Index
 
 -- | Migration object.
 data Migration m =
@@ -62,11 +68,13 @@ data Migration m =
 isStandardMigration :: Migration m -> Bool
 isStandardMigration Migration{..} =
   case mgrAction of
-    StandardMigration _  -> True
-    DropTableMigration _ -> False
+    StandardMigration{}                -> True
+    DropTableMigration{}               -> False
+    CreateIndexConcurrentlyMigration{} -> False
 
 isDropTableMigration :: Migration m -> Bool
 isDropTableMigration Migration{..} =
   case mgrAction of
-    StandardMigration _  -> False
-    DropTableMigration _ -> True
+    StandardMigration{}                -> False
+    DropTableMigration{}               -> True
+    CreateIndexConcurrentlyMigration{} -> False
