@@ -29,7 +29,7 @@ data CompositeColumn = CompositeColumn {
 -- | Convenience function for converting CompositeType definition to
 -- corresponding 'pqFormat' definition.
 compositeTypePqFormat :: CompositeType -> BS.ByteString
-compositeTypePqFormat ct = "%" <> T.encodeUtf8 (unRawSQL $ ctName ct)
+compositeTypePqFormat ct = "%" `BS.append` T.encodeUtf8 (unRawSQL $ ctName ct)
 
 -- | Make SQL query that creates a composite type.
 sqlCreateComposite :: CompositeType -> RawSQL ()
