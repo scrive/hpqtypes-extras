@@ -1,3 +1,7 @@
+# hpqtypes-extras-1.9.0.0 (2019-05-22)
+* Extend checkDatabaseAllowUnknownTables to allow unknown composite types and
+  rename it to checkDatabaseAllowUnknownObjects.
+
 # hpqtypes-extras-1.8.0.0 (2019-04-30)
 * Make composite types subject to migration process
   ([#21](https://github.com/scrive/hpqtypes-extras/pull/21)).
