@@ -7,6 +7,7 @@ module Database.PostgreSQL.PQTypes.Checks (
 
   -- * Options
   , ExtrasOptions(..)
+  , defaultExtrasOptions
 
   -- * Migrations
   , migrateDatabase
@@ -57,7 +58,7 @@ migrateDatabase
   -> [Table]
   -> [Migration m]
   -> m ()
-migrateDatabase options@ExtrasOptions{..}
+migrateDatabase options
   extensions composites domains tables migrations = do
   setDBTimeZoneToUTC
   mapM_ checkExtension extensions

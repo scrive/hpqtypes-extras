@@ -56,7 +56,6 @@ library
                , bytestring
                , containers
                , cryptohash
-               , data-default
                , exceptions
                , fields-json
                , lifted-base

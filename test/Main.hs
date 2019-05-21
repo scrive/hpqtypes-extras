@@ -5,7 +5,6 @@ import Control.Exception.Lifted as E
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Control
 
-import Data.Default
 import Data.Monoid
 import Prelude
 import Data.Int
@@ -439,14 +438,13 @@ type TestM a = DBT (LogT IO) a
 
 createTablesSchema1 :: (String -> TestM ()) -> TestM ()
 createTablesSchema1 step = do
-  let extrasOptions = def
-      extensions    = []
+  let extensions    = []
       composites    = []
       domains       = []
   step "Creating the database (schema version 1)..."
-  migrateDatabase extrasOptions extensions domains
+  migrateDatabase defaultExtrasOptions extensions domains
     composites schema1Tables schema1Migrations
-  checkDatabase extrasOptions composites domains schema1Tables
+  checkDatabase defaultExtrasOptions composites domains schema1Tables
 
 testDBSchema1 :: (String -> TestM ()) -> TestM ([Int64], [Int64])
 testDBSchema1 step = do
@@ -530,27 +528,25 @@ testDBSchema1 step = do
 
 migrateDBToSchema2 :: (String -> TestM ()) -> TestM ()
 migrateDBToSchema2 step = do
-  let extrasOptions = def
-      extensions    = []
+  let extensions    = []
       composites    = []
       domains       = []
   step "Migrating the database (schema version 1 -> schema version 2)..."
-  migrateDatabase extrasOptions extensions composites domains
+  migrateDatabase defaultExtrasOptions extensions composites domains
     schema2Tables schema2Migrations
-  checkDatabase extrasOptions composites domains schema2Tables
+  checkDatabase defaultExtrasOptions composites domains schema2Tables
 
 -- | Hacky version of 'migrateDBToSchema2' used by 'migrationTest3'.
 migrateDBToSchema2Hacky :: (String -> TestM ()) -> TestM ()
 migrateDBToSchema2Hacky step = do
-  let extrasOptions = def
-      extensions    = []
+  let extensions    = []
       composites    = []
       domains       = []
   step "Hackily migrating the database (schema version 1 \
        \-> schema version 2)..."
-  migrateDatabase extrasOptions extensions composites domains
+  migrateDatabase defaultExtrasOptions extensions composites domains
     schema2Tables schema2Migrations'
-  checkDatabase extrasOptions composites domains schema2Tables
+  checkDatabase defaultExtrasOptions composites domains schema2Tables
     where
       schema2Migrations' = createTableMigration tableFlash : schema2Migrations
 
@@ -592,14 +588,13 @@ testDBSchema2 step badGuyIds robberyIds = do
 
 migrateDBToSchema3 :: (String -> TestM ()) -> TestM ()
 migrateDBToSchema3 step = do
-  let extrasOptions = def
-      extensions    = []
+  let extensions    = []
       composites    = []
       domains       = []
   step "Migrating the database (schema version 2 -> schema version 3)..."
-  migrateDatabase extrasOptions extensions composites domains
+  migrateDatabase defaultExtrasOptions extensions composites domains
     schema3Tables schema3Migrations
-  checkDatabase extrasOptions composites domains schema3Tables
+  checkDatabase defaultExtrasOptions composites domains schema3Tables
 
 testDBSchema3 :: (String -> TestM ()) -> [Int64] -> [Int64] -> TestM ()
 testDBSchema3 step badGuyIds robberyIds = do
@@ -644,14 +639,13 @@ testDBSchema3 step badGuyIds robberyIds = do
 
 migrateDBToSchema4 :: (String -> TestM ()) -> TestM ()
 migrateDBToSchema4 step = do
-  let extrasOptions = def
-      extensions    = []
+  let extensions    = []
       composites    = []
       domains       = []
   step "Migrating the database (schema version 3 -> schema version 4)..."
-  migrateDatabase extrasOptions extensions composites domains
+  migrateDatabase defaultExtrasOptions extensions composites domains
     schema4Tables schema4Migrations
-  checkDatabase extrasOptions composites domains schema4Tables
+  checkDatabase defaultExtrasOptions composites domains schema4Tables
 
 testDBSchema4 :: (String -> TestM ()) -> TestM ()
 testDBSchema4 step = do
@@ -670,14 +664,13 @@ testDBSchema4 step = do
 
 migrateDBToSchema5 :: (String -> TestM ()) -> TestM ()
 migrateDBToSchema5 step = do
-  let extrasOptions = def
-      extensions    = []
+  let extensions    = []
       composites    = []
       domains       = []
   step "Migrating the database (schema version 4 -> schema version 5)..."
-  migrateDatabase extrasOptions extensions composites domains
+  migrateDatabase defaultExtrasOptions extensions composites domains
     schema5Tables schema5Migrations
-  checkDatabase extrasOptions composites domains schema5Tables
+  checkDatabase defaultExtrasOptions composites domains schema5Tables
 
 testDBSchema5 :: (String -> TestM ()) -> TestM ()
 testDBSchema5 step = do
@@ -754,7 +747,7 @@ migrationTest2 connSource =
         }
       currentSchema   = schema1Tables
       differentSchema = schema5Tables
-      extrasOptions = def { eoEnforcePKs = True }
+      extrasOptions   = defaultExtrasOptions { eoEnforcePKs = True }
 
   runQuery_ $ sqlCreateComposite composite
 
@@ -799,11 +792,13 @@ migrationTest2 connSource =
 
   freshTestDB    step
 
-  let schema1TablesWithMissingPK = schema6Tables
+  let schema1TablesWithMissingPK     = schema6Tables
       schema1MigrationsWithMissingPK = schema6Migrations
-      withMissingPKSchema = schema1TablesWithMissingPK
-      optionsNoPKCheck = def { eoEnforcePKs = False }
-      optionsWithPKCheck = def { eoEnforcePKs = True }
+      withMissingPKSchema            = schema1TablesWithMissingPK
+      optionsNoPKCheck               = defaultExtrasOptions
+                                       { eoEnforcePKs = False }
+      optionsWithPKCheck             = defaultExtrasOptions
+                                       { eoEnforcePKs = True }
 
   step "Recreating the database (schema version 1, one table is missing PK)..."
 
@@ -886,8 +881,7 @@ main = do
   defaultMainWithIngredients ings $
     askOption $ \(ConnectionString connectionString) ->
     let connSettings = defaultConnectionSettings
-          { csConnInfo = T.pack connectionString
-          }
+                       { csConnInfo = T.pack connectionString }
         ConnectionSource connSource = simpleSource connSettings
     in
     testGroup "DB tests" [ migrationTest1 connSource
