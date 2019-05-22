@@ -5,6 +5,7 @@ import Control.Exception.Lifted as E
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Control
 
+import Data.Default
 import Data.Monoid
 import Prelude
 import Data.Int
@@ -877,14 +878,16 @@ testCaseSteps' testName connSource f =
   let step s = liftIO $ step' s
   withSimpleStdOutLogger $ \logger ->
     runLogT "hpqtypes-extras-test" logger $
-    runDBT connSource {- transactionSettings -} def $
+    runDBT connSource defaultTransactionSettings $
     f step
 
 main :: IO ()
 main = do
   defaultMainWithIngredients ings $
     askOption $ \(ConnectionString connectionString) ->
-    let connSettings = def { csConnInfo = T.pack connectionString }
+    let connSettings = defaultConnectionSettings
+          { csConnInfo = T.pack connectionString
+          }
         ConnectionSource connSource = simpleSource connSettings
     in
     testGroup "DB tests" [ migrationTest1 connSource

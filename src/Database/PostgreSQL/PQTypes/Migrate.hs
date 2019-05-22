@@ -7,7 +7,7 @@ module Database.PostgreSQL.PQTypes.Migrate (
 import Control.Monad
 import qualified Data.Foldable as F
 
-import Database.PostgreSQL.PQTypes hiding (def)
+import Database.PostgreSQL.PQTypes
 import Database.PostgreSQL.PQTypes.Checks.Util
 import Database.PostgreSQL.PQTypes.Model
 import Database.PostgreSQL.PQTypes.SQL.Builder

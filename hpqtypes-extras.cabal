@@ -51,7 +51,7 @@ library
                  , Database.PostgreSQL.PQTypes.Utils.NubList
 
   build-depends: base > 4 && < 4.13
-               , hpqtypes >= 1.6.0.0
+               , hpqtypes >= 1.7.0.0
                , base16-bytestring
                , bytestring
                , containers
@@ -101,6 +101,7 @@ test-suite  hpqtypes-extras-tests
                     , ScopedTypeVariables
   ghc-options:        -Wall
   build-depends:      base,
+                      data-default,
                       exceptions,
                       hpqtypes,
                       hpqtypes-extras,

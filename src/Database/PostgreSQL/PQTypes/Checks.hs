@@ -24,7 +24,7 @@ import Data.Monoid.Utils
 import Data.Ord (comparing)
 import qualified Data.String
 import Data.Text (Text)
-import Database.PostgreSQL.PQTypes hiding (def)
+import Database.PostgreSQL.PQTypes
 import GHC.Stack (HasCallStack)
 import Log
 import Prelude
