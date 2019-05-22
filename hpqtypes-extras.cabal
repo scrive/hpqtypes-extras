@@ -50,23 +50,22 @@ library
   other-modules:   Database.PostgreSQL.PQTypes.Checks.Util
                  , Database.PostgreSQL.PQTypes.Utils.NubList
 
-  build-depends: base > 4 && < 4.13
-               , hpqtypes >= 1.7.0.0
-               , base16-bytestring
-               , bytestring
-               , containers
-               , cryptohash
-               , data-default
-               , exceptions
-               , fields-json
-               , lifted-base
-               , log-base >= 0.7
-               , monad-control >= 1.0.0.0
-               , mtl
-               , safe
-               , semigroups >= 0.16
-               , text
-               , text-show
+  build-depends: base              >= 4       && < 4.13
+               , hpqtypes          >= 1.7.0.0 && < 1.8.0.0
+               , base16-bytestring >= 0.1     && < 0.2
+               , bytestring        >= 0.10    && < 0.11
+               , containers        >= 0.5     && < 0.7
+               , cryptohash        >= 0.11    && < 0.12
+               , exceptions        >= 0.10    && < 0.11
+               , mtl               >= 2.2     && < 2.3
+               , fields-json       >= 0.2     && < 0.3
+               , text              >= 1.2     && < 1.3
+               , lifted-base       >= 0.2     && < 0.3
+               , monad-control     >= 1.0     && < 1.1
+               , semigroups        >= 0.16    && < 0.20
+               , text-show         >= 3.8     && < 3.9
+               , log-base          >= 0.8     && < 0.9
+               , safe              >= 0.3     && < 0.4
 
   default-language: Haskell2010
   default-extensions: BangPatterns
@@ -101,7 +100,6 @@ test-suite  hpqtypes-extras-tests
                     , ScopedTypeVariables
   ghc-options:        -Wall
   build-depends:      base,
-                      data-default,
                       exceptions,
                       hpqtypes,
                       hpqtypes-extras,

@@ -1,16 +1,18 @@
-module Database.PostgreSQL.PQTypes.ExtrasOptions (
-  ExtrasOptions(..)
+module Database.PostgreSQL.PQTypes.ExtrasOptions
+  ( ExtrasOptions(..)
+  , defaultExtrasOptions
   ) where
-import Data.Default
 
 data ExtrasOptions =
     ExtrasOptions
-    {
-      eoForceCommit :: Bool
-    -- ^ Force commit after every migration
+    { eoForceCommit :: Bool
+      -- ^ Force commit after every migration
     , eoEnforcePKs :: Bool
-    -- ^ Validate that every handled table has a primary key
+      -- ^ Validate that every handled table has a primary key
     } deriving Eq
 
-instance Default ExtrasOptions where
-    def = ExtrasOptions False False
+defaultExtrasOptions :: ExtrasOptions
+defaultExtrasOptions = ExtrasOptions
+  { eoForceCommit = False
+  , eoEnforcePKs  = False
+  }

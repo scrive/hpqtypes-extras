@@ -1,11 +1,15 @@
 # hpqtypes-extras-1.9.0.0 (2019-05-22)
-* Extend checkDatabaseAllowUnknownTables to allow unknown composite types and
-  rename it to checkDatabaseAllowUnknownObjects.
+* Extend `checkDatabaseAllowUnknownTables` to allow unknown composite
+  types and rename it to `checkDatabaseAllowUnknownObjects`
+  ([#22](https://github.com/scrive/hpqtypes-extras/pull/22)).
+* Remove the `Default` instance for `ExtrasOptions`; use
+  `defaultExtrasOptions` instead
+  ([#23](https://github.com/scrive/hpqtypes-extras/pull/23)).
 
 # hpqtypes-extras-1.8.0.0 (2019-04-30)
 * Make composite types subject to migration process
   ([#21](https://github.com/scrive/hpqtypes-extras/pull/21)).
-* Add migration type for concurrent creation of an index
+* Add a migration type for concurrent creation of an index
   ([#21](https://github.com/scrive/hpqtypes-extras/pull/21)).
 
 # hpqtypes-extras-1.7.1.0 (2019-02-04)
