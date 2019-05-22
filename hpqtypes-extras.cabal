@@ -63,7 +63,7 @@ library
                , lifted-base       >= 0.2     && < 0.3
                , monad-control     >= 1.0     && < 1.1
                , semigroups        >= 0.16    && < 0.20
-               , text-show         >= 3.8     && < 3.9
+               , text-show         >= 3.7     && < 3.9
                , log-base          >= 0.7     && < 0.9
                , safe              >= 0.3     && < 0.4
 
