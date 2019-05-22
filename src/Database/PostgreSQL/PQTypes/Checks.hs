@@ -1,7 +1,7 @@
 module Database.PostgreSQL.PQTypes.Checks (
   -- * Checks
     checkDatabase
-  , checkDatabaseAllowUnknownTables
+  , checkDatabaseAllowUnknownObjects
   , createTable
   , createDomain
 
@@ -24,7 +24,7 @@ import Data.Monoid.Utils
 import Data.Ord (comparing)
 import qualified Data.String
 import Data.Text (Text)
-import Database.PostgreSQL.PQTypes hiding (def)
+import Database.PostgreSQL.PQTypes
 import GHC.Stack (HasCallStack)
 import Log
 import Prelude
@@ -64,7 +64,9 @@ migrateDatabase options@ExtrasOptions{..}
   tablesWithVersions <- getTableVersions (tableVersions : tables)
   -- 'checkDBConsistency' also performs migrations.
   checkDBConsistency options domains tablesWithVersions migrations
-  resultCheck =<< checkCompositesStructure True composites
+  resultCheck =<< checkCompositesStructure CreateCompositesIfDatabaseEmpty
+                                           DontAllowUnknownObjects
+                                           composites
   resultCheck =<< checkDomainsStructure domains
   resultCheck =<< checkDBStructure options tablesWithVersions
   resultCheck =<< checkTablesWereDropped migrations
@@ -79,25 +81,33 @@ migrateDatabase options@ExtrasOptions{..}
 checkDatabase
   :: forall m . (MonadDB m, MonadLog m, MonadThrow m)
   => ExtrasOptions -> [CompositeType] -> [Domain] -> [Table] -> m ()
-checkDatabase options = checkDatabase_ options False
+checkDatabase options = checkDatabase_ options DontAllowUnknownObjects
 
--- | Same as 'checkDatabase', but will not failed if there are
--- additional tables in database.
-checkDatabaseAllowUnknownTables
+-- | Same as 'checkDatabase', but will not fail if there are additional tables
+-- and composite types in the database.
+checkDatabaseAllowUnknownObjects
   :: forall m . (MonadDB m, MonadLog m, MonadThrow m)
   => ExtrasOptions -> [CompositeType] -> [Domain] -> [Table] -> m ()
-checkDatabaseAllowUnknownTables options = checkDatabase_ options True
+checkDatabaseAllowUnknownObjects options = checkDatabase_ options AllowUnknownObjects
+
+data ObjectsValidationMode = AllowUnknownObjects | DontAllowUnknownObjects
+  deriving Eq
 
 checkDatabase_
   :: forall m . (MonadDB m, MonadLog m, MonadThrow m)
-  => ExtrasOptions -> Bool -> [CompositeType] -> [Domain] -> [Table] -> m ()
-checkDatabase_ options allowUnknownTables composites domains tables = do
+  => ExtrasOptions
+  -> ObjectsValidationMode
+  -> [CompositeType]
+  -> [Domain]
+  -> [Table]
+  -> m ()
+checkDatabase_ options ovm composites domains tables = do
   tablesWithVersions <- getTableVersions (tableVersions : tables)
   resultCheck $ checkVersions tablesWithVersions
-  resultCheck =<< checkCompositesStructure False composites
+  resultCheck =<< checkCompositesStructure DontCreateComposites ovm composites
   resultCheck =<< checkDomainsStructure domains
   resultCheck =<< checkDBStructure options tablesWithVersions
-  when (not $ allowUnknownTables) $ do
+  when (ovm == DontAllowUnknownObjects) $ do
     resultCheck =<< checkUnknownTables tables
     resultCheck =<< checkExistenceOfVersionsForTables (tableVersions : tables)
 
@@ -307,18 +317,23 @@ checkTablesWereDropped mgrs = do
                     <> "' that must have been dropped"
                     <> " is still present in the database."
 
+data CompositesCreationMode
+  = CreateCompositesIfDatabaseEmpty
+  | DontCreateComposites
+  deriving Eq
+
 -- | Check that there is 1 to 1 correspondence between composite types in the
 -- database and the list of their code definitions.
 checkCompositesStructure
   :: MonadDB m
-  => Bool -- ^ Create types if none are present in the database
+  => CompositesCreationMode
+  -> ObjectsValidationMode
   -> [CompositeType]
   -> m ValidationResult
-checkCompositesStructure createTypes compositeList = getDBCompositeTypes >>= \case
-  [] | createTypes -> do -- if there are no composite types in the database,
-                         -- create them (if there are any as code definitions).
-    mapM_ (runQuery_ . sqlCreateComposite) compositeList
-    return mempty
+checkCompositesStructure ccm ovm compositeList = getDBCompositeTypes >>= \case
+  [] | ccm == CreateCompositesIfDatabaseEmpty -> do
+         mapM_ (runQuery_ . sqlCreateComposite) compositeList
+         return mempty
   dbCompositeTypes -> pure $ mconcat
     [ checkNotPresentComposites
     , checkDatabaseComposites
@@ -337,8 +352,13 @@ checkCompositesStructure createTypes compositeList = getDBCompositeTypes >>= \ca
         in case cname `M.lookup` compositeMap of
           Just columns -> topMessage "composite type" cname $
             checkColumns 1 columns (ctColumns dbComposite)
-          Nothing -> validationError $ "Composite type '" <> T.pack (show dbComposite)
-            <> "' from the database doesn't have a corresponding code definition"
+          Nothing -> case ovm of
+            AllowUnknownObjects     -> mempty
+            DontAllowUnknownObjects -> validationError $ mconcat
+              [ "Composite type '"
+              , T.pack $ show dbComposite
+              , "' from the database doesn't have a corresponding code definition"
+              ]
         where
           checkColumns
             :: Int -> [CompositeColumn] -> [CompositeColumn] -> ValidationResult

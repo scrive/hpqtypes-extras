@@ -5,6 +5,7 @@ import Control.Exception.Lifted as E
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Control
 
+import Data.Default
 import Data.Monoid
 import Prelude
 import Data.Int
@@ -14,6 +15,7 @@ import Data.Typeable
 import Database.PostgreSQL.PQTypes
 import Database.PostgreSQL.PQTypes.Checks
 import Database.PostgreSQL.PQTypes.Model.ColumnType
+import Database.PostgreSQL.PQTypes.Model.CompositeType
 import Database.PostgreSQL.PQTypes.Model.ForeignKey
 import Database.PostgreSQL.PQTypes.Model.Index
 import Database.PostgreSQL.PQTypes.Model.Migration
@@ -735,49 +737,65 @@ migrationTest1 connSource =
 
   freshTestDB         step
 
--- | Test for behaviour of 'checkDatabase' and 'checkDatabaseAllowUnknownTables'
+-- | Test for behaviour of 'checkDatabase' and 'checkDatabaseAllowUnknownObjects'
 migrationTest2 :: ConnectionSourceM (LogT IO) -> TestTree
 migrationTest2 connSource =
   testCaseSteps' "Migration test 2" connSource $ \step -> do
   freshTestDB    step
 
   createTablesSchema1 step
-  let currentSchema   = schema1Tables
+
+  let composite = CompositeType
+        { ctName = "composite"
+        , ctColumns =
+          [ CompositeColumn { ccName = "cint",  ccType = BigIntT }
+          , CompositeColumn { ccName = "ctext", ccType = TextT }
+          ]
+        }
+      currentSchema   = schema1Tables
       differentSchema = schema5Tables
       extrasOptions = def { eoEnforcePKs = True }
+
+  runQuery_ $ sqlCreateComposite composite
+
   assertNoException "checkDatabase should run fine for consistent DB" $
+    checkDatabase extrasOptions [composite] [] currentSchema
+  assertException "checkDatabase fails if composite type definition is not provided" $
     checkDatabase extrasOptions [] [] currentSchema
   assertNoException "checkDatabaseAllowUnknownTables runs fine \
                     \for consistent DB" $
-    checkDatabaseAllowUnknownTables extrasOptions [] [] currentSchema
+    checkDatabaseAllowUnknownObjects extrasOptions [composite] [] currentSchema
+  assertNoException "checkDatabaseAllowUnknownTables runs fine \
+                    \for consistent DB with unknown composite type in the database" $
+    checkDatabaseAllowUnknownObjects extrasOptions [] [] currentSchema
   assertException "checkDatabase should throw exception for wrong schema" $
     checkDatabase extrasOptions [] [] differentSchema
-  assertException ("checkDatabaseAllowUnknownTables \
+  assertException ("checkDatabaseAllowUnknownObjects \
                    \should throw exception for wrong scheme") $
-    checkDatabaseAllowUnknownTables extrasOptions [] [] differentSchema
+    checkDatabaseAllowUnknownObjects extrasOptions [] [] differentSchema
 
   runSQL_ "INSERT INTO table_versions (name, version) \
           \VALUES ('unknown_table', 0)"
   assertException "checkDatabase throw when extra entry in 'table_versions'" $
     checkDatabase extrasOptions [] [] currentSchema
-  assertNoException ("checkDatabaseAllowUnknownTables \
+  assertNoException ("checkDatabaseAllowUnknownObjects \
                      \accepts extra entry in 'table_versions'") $
-    checkDatabaseAllowUnknownTables extrasOptions [] [] currentSchema
+    checkDatabaseAllowUnknownObjects extrasOptions [] [] currentSchema
   runSQL_ "DELETE FROM table_versions where name='unknown_table'"
 
   runSQL_ "CREATE TABLE unknown_table (title text)"
   assertException "checkDatabase should throw with unknown table" $
     checkDatabase extrasOptions [] [] currentSchema
-  assertNoException "checkDatabaseAllowUnknownTables accepts unknown table" $
-    checkDatabaseAllowUnknownTables extrasOptions [] [] currentSchema
+  assertNoException "checkDatabaseAllowUnknownObjects accepts unknown table" $
+    checkDatabaseAllowUnknownObjects extrasOptions [] [] currentSchema
 
   runSQL_ "INSERT INTO table_versions (name, version) \
           \VALUES ('unknown_table', 0)"
   assertException "checkDatabase should throw with unknown table" $
     checkDatabase extrasOptions [] [] currentSchema
-  assertNoException ("checkDatabaseAllowUnknownTables \
+  assertNoException ("checkDatabaseAllowUnknownObjects \
                      \accepts unknown tables with version") $
-    checkDatabaseAllowUnknownTables extrasOptions [] [] currentSchema
+    checkDatabaseAllowUnknownObjects extrasOptions [] [] currentSchema
 
   freshTestDB    step
 
@@ -860,14 +878,16 @@ testCaseSteps' testName connSource f =
   let step s = liftIO $ step' s
   withSimpleStdOutLogger $ \logger ->
     runLogT "hpqtypes-extras-test" logger $
-    runDBT connSource {- transactionSettings -} def $
+    runDBT connSource defaultTransactionSettings $
     f step
 
 main :: IO ()
 main = do
   defaultMainWithIngredients ings $
     askOption $ \(ConnectionString connectionString) ->
-    let connSettings = def { csConnInfo = T.pack connectionString }
+    let connSettings = defaultConnectionSettings
+          { csConnInfo = T.pack connectionString
+          }
         ConnectionSource connSource = simpleSource connSettings
     in
     testGroup "DB tests" [ migrationTest1 connSource
