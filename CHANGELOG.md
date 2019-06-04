@@ -1,3 +1,6 @@
+# hpqtypes-extras-1.9.0.1 (2019-06-04)
+* Create composite types automatically only if database is empty.
+
 # hpqtypes-extras-1.9.0.0 (2019-05-22)
 * Extend checkDatabaseAllowUnknownTables to allow unknown composite types and
   rename it to checkDatabaseAllowUnknownObjects.

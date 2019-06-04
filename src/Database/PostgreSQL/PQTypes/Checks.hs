@@ -64,7 +64,8 @@ migrateDatabase options@ExtrasOptions{..}
   tablesWithVersions <- getTableVersions (tableVersions : tables)
   -- 'checkDBConsistency' also performs migrations.
   checkDBConsistency options domains tablesWithVersions migrations
-  resultCheck =<< checkCompositesStructure CreateCompositesIfDatabaseEmpty
+  resultCheck =<< checkCompositesStructure tablesWithVersions
+                                           CreateCompositesIfDatabaseEmpty
                                            DontAllowUnknownObjects
                                            composites
   resultCheck =<< checkDomainsStructure domains
@@ -104,7 +105,7 @@ checkDatabase_
 checkDatabase_ options ovm composites domains tables = do
   tablesWithVersions <- getTableVersions (tableVersions : tables)
   resultCheck $ checkVersions tablesWithVersions
-  resultCheck =<< checkCompositesStructure DontCreateComposites ovm composites
+  resultCheck =<< checkCompositesStructure tablesWithVersions DontCreateComposites ovm composites
   resultCheck =<< checkDomainsStructure domains
   resultCheck =<< checkDBStructure options tablesWithVersions
   when (ovm == DontAllowUnknownObjects) $ do
@@ -116,7 +117,7 @@ checkDatabase_ options ovm composites domains tables = do
   resultCheck =<< checkInitialSetups tables
 
   where
-    checkVersions :: [(Table, Int32)] -> ValidationResult
+    checkVersions :: TablesWithVersions -> ValidationResult
     checkVersions vs = mconcat . map checkVersion $ vs
 
     checkVersion :: (Table, Int32) -> ValidationResult
@@ -326,12 +327,14 @@ data CompositesCreationMode
 -- database and the list of their code definitions.
 checkCompositesStructure
   :: MonadDB m
-  => CompositesCreationMode
+  => TablesWithVersions
+  -> CompositesCreationMode
   -> ObjectsValidationMode
   -> [CompositeType]
   -> m ValidationResult
-checkCompositesStructure ccm ovm compositeList = getDBCompositeTypes >>= \case
-  [] | ccm == CreateCompositesIfDatabaseEmpty -> do
+checkCompositesStructure tablesWithVersions ccm ovm compositeList = getDBCompositeTypes >>= \case
+  [] | noTablesPresent tablesWithVersions && ccm == CreateCompositesIfDatabaseEmpty -> do
+         -- DB is not initialized, create composites if there are any defined.
          mapM_ (runQuery_ . sqlCreateComposite) compositeList
          return mempty
   dbCompositeTypes -> pure $ mconcat
@@ -389,7 +392,7 @@ checkCompositesStructure ccm ovm compositeList = getDBCompositeTypes >>= \case
 checkDBStructure
   :: forall m. (MonadDB m, MonadThrow m)
   => ExtrasOptions
-  -> [(Table, Int32)]
+  -> TablesWithVersions
   -> m ValidationResult
 checkDBStructure options tables = fmap mconcat .
                                   forM tables $ \(table, version) ->
@@ -550,7 +553,7 @@ checkDBStructure options tables = fmap mconcat .
 --     the 'tables' list
 checkDBConsistency
   :: forall m. (MonadDB m, MonadLog m, MonadMask m)
-  => ExtrasOptions -> [Domain] -> [(Table, Int32)] -> [Migration m]
+  => ExtrasOptions -> [Domain] -> TablesWithVersions -> [Migration m]
   -> m ()
 checkDBConsistency options domains tablesWithVersions migrations = do
   autoTransaction <- tsAutoTransaction <$> getTransactionSettings
@@ -563,7 +566,7 @@ checkDBConsistency options domains tablesWithVersions migrations = do
   -- Load version numbers of the tables that actually exist in the DB.
   dbTablesWithVersions <- getDBTableVersions
 
-  if all ((==) 0 . snd) tablesWithVersions
+  if noTablesPresent tablesWithVersions
 
     -- No tables are present, create everything from scratch.
     then do
@@ -916,14 +919,21 @@ checkDBConsistency options domains tablesWithVersions migrations = do
           $ object [ "tables" .=  map unRawSQL tnms ]
         errorInvalidMigrations tnms
 
+-- | Type synonym for a list of tables along with their database versions.
+type TablesWithVersions = [(Table, Int32)]
 
 -- | Associate each table in the list with its version as it exists in
 -- the DB, or 0 if it's missing from the DB.
-getTableVersions :: (MonadDB m, MonadThrow m) => [Table] -> m [(Table, Int32)]
+getTableVersions :: (MonadDB m, MonadThrow m) => [Table] -> m TablesWithVersions
 getTableVersions tbls =
   sequence
   [ (\mver -> (tbl, fromMaybe 0 mver)) <$> checkTableVersion (tblNameString tbl)
   | tbl <- tbls ]
+
+-- | Given a result of 'getTableVersions' check if no tables are present in the
+-- database.
+noTablesPresent :: TablesWithVersions -> Bool
+noTablesPresent = all ((==) 0 . snd)
 
 -- | Like 'getTableVersions', but for all user-defined tables that
 -- actually exist in the DB.
