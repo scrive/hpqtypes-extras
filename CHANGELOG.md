@@ -3,7 +3,8 @@
 * Fix sqlValidateCheck and sqlValidateFK
 
 # hpqtypes-extras-1.9.0.1 (2019-06-04)
-* Create composite types automatically only if database is empty.
+* Create composite types automatically only if database is empty
+  ([#24](https://github.com/scrive/hpqtypes-extras/pull/24)).
 
 # hpqtypes-extras-1.9.0.0 (2019-05-22)
 * Extend `checkDatabaseAllowUnknownTables` to allow unknown composite
