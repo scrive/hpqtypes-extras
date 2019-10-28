@@ -7,9 +7,9 @@ import Control.Monad.Trans.Control
 
 import Data.Monoid
 import Prelude
-import Data.Int
 import qualified Data.Text as T
 import Data.Typeable
+import Data.UUID
 
 import Database.PostgreSQL.PQTypes
 import Database.PostgreSQL.PQTypes.Checks
@@ -39,7 +39,7 @@ instance IsOption ConnectionString where
   optionHelp   = return "Postgres connection string"
 
 -- Simple example schemata inspired by the one in
--- <http://www.databaseanswers.org/data_models/bank_robberies/index.htm>
+-- <  http://www.databaseanswers.org/data_models/bank_robberies/index.htm>
 --
 -- Schema 1: Bank robberies, tables:
 --           bank, bad_guy, robbery, participated_in_robbery, witness,
@@ -63,8 +63,9 @@ tableBankSchema1 =
   { tblName = "bank"
   , tblVersion = 1
   , tblColumns =
-    [ tblColumn { colName = "id",       colType = BigSerialT
-                , colNullable = False }
+    [ tblColumn { colName = "id",       colType = UuidT
+                , colNullable = False
+                , colDefault = Just "gen_random_uuid()" }
     , tblColumn { colName = "name",     colType = TextT
                 , colNullable = False }
     , tblColumn { colName = "location", colType = TextT
@@ -140,8 +141,9 @@ tableBadGuySchema1 =
   { tblName = "bad_guy"
   , tblVersion = 1
   , tblColumns =
-    [ tblColumn { colName = "id",        colType = BigSerialT
-                , colNullable = False }
+    [ tblColumn { colName = "id",        colType = UuidT
+                , colNullable = False
+                , colDefault = Just "gen_random_uuid()" }
     , tblColumn { colName = "firstname", colType = TextT
                 , colNullable = False }
     , tblColumn { colName = "lastname",  colType = TextT
@@ -167,9 +169,10 @@ tableRobberySchema1 =
   { tblName = "robbery"
   , tblVersion = 1
   , tblColumns =
-    [ tblColumn { colName = "id",      colType = BigSerialT
-                , colNullable = False }
-    , tblColumn { colName = "bank_id", colType = BigIntT
+    [ tblColumn { colName = "id",      colType = UuidT
+                , colNullable = False
+                , colDefault = Just "gen_random_uuid()" }
+    , tblColumn { colName = "bank_id", colType = UuidT
                 , colNullable = False }
     , tblColumn { colName = "date",    colType = DateT
                 , colNullable = False, colDefault = Just "now()" }
@@ -195,9 +198,9 @@ tableParticipatedInRobberySchema1 =
   { tblName = "participated_in_robbery"
   , tblVersion = 1
   , tblColumns =
-    [ tblColumn { colName = "bad_guy_id", colType = BigIntT
+    [ tblColumn { colName = "bad_guy_id", colType = UuidT
                 , colNullable = False }
-    , tblColumn { colName = "robbery_id", colType = BigIntT
+    , tblColumn { colName = "robbery_id", colType = UuidT
                 , colNullable = False }
     ]
   , tblPrimaryKey  = pkOnColumns ["bad_guy_id", "robbery_id"]
@@ -225,8 +228,9 @@ tableWitnessSchema1 =
   { tblName = tableWitnessName
   , tblVersion = 1
   , tblColumns =
-    [ tblColumn { colName = "id",        colType = BigSerialT
-                , colNullable = False }
+    [ tblColumn { colName = "id",        colType = UuidT
+                , colNullable = False
+                , colDefault = Just "gen_random_uuid()" }
     , tblColumn { colName = "firstname", colType = TextT
                 , colNullable = False }
     , tblColumn { colName = "lastname",  colType = TextT
@@ -243,9 +247,9 @@ tableWitnessedRobberySchema1 =
   { tblName = tableWitnessedRobberyName
   , tblVersion = 1
   , tblColumns =
-    [ tblColumn { colName = "witness_id", colType = BigIntT
+    [ tblColumn { colName = "witness_id", colType = UuidT
                 , colNullable = False }
-    , tblColumn { colName = "robbery_id", colType = BigIntT
+    , tblColumn { colName = "robbery_id", colType = UuidT
                 , colNullable = False }
     ]
   , tblPrimaryKey  = pkOnColumns ["witness_id", "robbery_id"]
@@ -261,9 +265,9 @@ tableUnderArrestSchema2 =
   { tblName = tableUnderArrestName
   , tblVersion = 1
   , tblColumns =
-    [ tblColumn { colName = "bad_guy_id", colType = BigIntT
+    [ tblColumn { colName = "bad_guy_id", colType = UuidT
                 , colNullable = False }
-    , tblColumn { colName = "robbery_id", colType = BigIntT
+    , tblColumn { colName = "robbery_id", colType = UuidT
                 , colNullable = False }
     , tblColumn { colName = "court_date", colType = DateT
                 , colNullable = False
@@ -282,9 +286,9 @@ tablePrisonSentenceSchema3 =
   { tblName = tablePrisonSentenceName
   , tblVersion = 1
   , tblColumns =
-    [ tblColumn { colName = "bad_guy_id", colType = BigIntT
+    [ tblColumn { colName = "bad_guy_id", colType = UuidT
                 , colNullable = False }
-    , tblColumn { colName = "robbery_id", colType = BigIntT
+    , tblColumn { colName = "robbery_id", colType = UuidT
                 , colNullable = False }
     , tblColumn { colName = "sentence_start"
                 , colType = DateT
@@ -317,7 +321,7 @@ tableFlash =
   { tblName = tableFlashName
   , tblVersion = 1
   , tblColumns =
-    [ tblColumn { colName = "flash_id", colType = BigIntT, colNullable = False }
+    [ tblColumn { colName = "flash_id", colType = UuidT, colNullable = False }
     ]
   }
 
@@ -438,7 +442,7 @@ type TestM a = DBT (LogT IO) a
 
 createTablesSchema1 :: (String -> TestM ()) -> TestM ()
 createTablesSchema1 step = do
-  let extensions    = []
+  let extensions    = ["pgcrypto"]
       composites    = []
       domains       = []
   step "Creating the database (schema version 1)..."
@@ -446,7 +450,7 @@ createTablesSchema1 step = do
     composites schema1Tables schema1Migrations
   checkDatabase defaultExtrasOptions composites domains schema1Tables
 
-testDBSchema1 :: (String -> TestM ()) -> TestM ([Int64], [Int64])
+testDBSchema1 :: (String -> TestM ()) -> TestM ([UUID], [UUID])
 testDBSchema1 step = do
   step "Running test queries (schema version 1)..."
 
@@ -460,7 +464,7 @@ testDBSchema1 step = do
                           , "2/3 Quux Ave., Milton Keynes, UK"
                           , "6600 Sunset Blvd., Los Angeles, CA, USA"]
     sqlResult "id"
-  (bankIds :: [Int64]) <- fetchMany runIdentity
+  (bankIds :: [UUID]) <- fetchMany runIdentity
   liftIO $ assertEqual "INSERT into 'bank' table" 5 (length bankIds)
 
   -- Populate the 'bad_guy' table.
@@ -470,14 +474,14 @@ testDBSchema1 step = do
     sqlSetList "lastname" ["Hetzel"::T.Text, "Murray", "Foreman", "Fraser"
                           ,"Crosbie", "Shaw"]
     sqlResult "id"
-  (badGuyIds :: [Int64]) <- fetchMany runIdentity
+  (badGuyIds :: [UUID]) <- fetchMany runIdentity
   liftIO $ assertEqual "INSERT into 'bad_guy' table" 6 (length badGuyIds)
 
   -- Populate the 'robbery' table.
   runQuery_ . sqlInsert "robbery" $ do
     sqlSetList "bank_id" [bankIds !! idx | idx <- [0,3]]
     sqlResult "id"
-  (robberyIds :: [Int64]) <- fetchMany runIdentity
+  (robberyIds :: [UUID]) <- fetchMany runIdentity
   liftIO $ assertEqual "INSERT into 'robbery' table" 2 (length robberyIds)
 
   -- Populate the 'participated_in_robbery' table.
@@ -485,7 +489,7 @@ testDBSchema1 step = do
     sqlSetList "bad_guy_id" [badGuyIds  !! idx | idx <- [0,2]]
     sqlSet "robbery_id" (robberyIds !! 0)
     sqlResult "bad_guy_id"
-  (participatorIds :: [Int64]) <- fetchMany runIdentity
+  (participatorIds :: [UUID]) <- fetchMany runIdentity
   liftIO $ assertEqual "INSERT into 'participated_in_robbery' table" 2
     (length participatorIds)
 
@@ -493,7 +497,7 @@ testDBSchema1 step = do
     sqlSetList "bad_guy_id" [badGuyIds  !! idx | idx <- [3,4]]
     sqlSet "robbery_id" (robberyIds !! 1)
     sqlResult "bad_guy_id"
-  (participatorIds' :: [Int64]) <- fetchMany runIdentity
+  (participatorIds' :: [UUID]) <- fetchMany runIdentity
   liftIO $ assertEqual "INSERT into 'participated_in_robbery' table" 2
     (length participatorIds')
 
@@ -504,7 +508,7 @@ testDBSchema1 step = do
     sqlSetList "lastname" ["Vickers"::T.Text, "Holloway", "Weyland", "Eliott"
                           ,"Wong"]
     sqlResult "id"
-  (witnessIds :: [Int64]) <- fetchMany runIdentity
+  (witnessIds :: [UUID]) <- fetchMany runIdentity
   liftIO $ assertEqual "INSERT into 'witness' table" 5 (length witnessIds)
 
   -- Populate the 'witnessed_robbery' table.
@@ -512,7 +516,7 @@ testDBSchema1 step = do
     sqlSetList "witness_id" [witnessIds  !! idx | idx <- [0,1]]
     sqlSet "robbery_id" (robberyIds !! 0)
     sqlResult "witness_id"
-  (robberyWitnessIds :: [Int64]) <- fetchMany runIdentity
+  (robberyWitnessIds :: [UUID]) <- fetchMany runIdentity
   liftIO $ assertEqual "INSERT into 'witnessed_robbery' table" 2
     (length robberyWitnessIds)
 
@@ -520,7 +524,7 @@ testDBSchema1 step = do
     sqlSetList "witness_id" [witnessIds  !! idx | idx <- [2,3,4]]
     sqlSet "robbery_id" (robberyIds !! 1)
     sqlResult "witness_id"
-  (robberyWitnessIds' :: [Int64]) <- fetchMany runIdentity
+  (robberyWitnessIds' :: [UUID]) <- fetchMany runIdentity
   liftIO $ assertEqual "INSERT into 'witnessed_robbery' table" 3
     (length robberyWitnessIds')
 
@@ -528,7 +532,7 @@ testDBSchema1 step = do
 
 migrateDBToSchema2 :: (String -> TestM ()) -> TestM ()
 migrateDBToSchema2 step = do
-  let extensions    = []
+  let extensions    = ["pgcrypto"]
       composites    = []
       domains       = []
   step "Migrating the database (schema version 1 -> schema version 2)..."
@@ -539,7 +543,7 @@ migrateDBToSchema2 step = do
 -- | Hacky version of 'migrateDBToSchema2' used by 'migrationTest3'.
 migrateDBToSchema2Hacky :: (String -> TestM ()) -> TestM ()
 migrateDBToSchema2Hacky step = do
-  let extensions    = []
+  let extensions    = ["pgcrypto"]
       composites    = []
       domains       = []
   step "Hackily migrating the database (schema version 1 \
@@ -550,7 +554,7 @@ migrateDBToSchema2Hacky step = do
     where
       schema2Migrations' = createTableMigration tableFlash : schema2Migrations
 
-testDBSchema2 :: (String -> TestM ()) -> [Int64] -> [Int64] -> TestM ()
+testDBSchema2 :: (String -> TestM ()) -> [UUID] -> [UUID] -> TestM ()
 testDBSchema2 step badGuyIds robberyIds = do
   step "Running test queries (schema version 2)..."
 
@@ -572,7 +576,7 @@ testDBSchema2 step badGuyIds robberyIds = do
     sqlSetList "bad_guy_id" [badGuyIds  !! idx | idx <- [0,2]]
     sqlSet "robbery_id" (robberyIds !! 0)
     sqlResult "bad_guy_id"
-  (arrestedIds :: [Int64]) <- fetchMany runIdentity
+  (arrestedIds :: [UUID]) <- fetchMany runIdentity
   liftIO $ assertEqual "INSERT into 'under_arrest' table" 2
     (length arrestedIds)
 
@@ -580,7 +584,7 @@ testDBSchema2 step badGuyIds robberyIds = do
     sqlSetList "bad_guy_id" [badGuyIds  !! idx | idx <- [3,4]]
     sqlSet "robbery_id" (robberyIds !! 1)
     sqlResult "bad_guy_id"
-  (arrestedIds' :: [Int64]) <- fetchMany runIdentity
+  (arrestedIds' :: [UUID]) <- fetchMany runIdentity
   liftIO $ assertEqual "INSERT into 'under_arrest' table" 2
     (length arrestedIds')
 
@@ -588,7 +592,7 @@ testDBSchema2 step badGuyIds robberyIds = do
 
 migrateDBToSchema3 :: (String -> TestM ()) -> TestM ()
 migrateDBToSchema3 step = do
-  let extensions    = []
+  let extensions    = ["pgcrypto"]
       composites    = []
       domains       = []
   step "Migrating the database (schema version 2 -> schema version 3)..."
@@ -596,7 +600,7 @@ migrateDBToSchema3 step = do
     schema3Tables schema3Migrations
   checkDatabase defaultExtrasOptions composites domains schema3Tables
 
-testDBSchema3 :: (String -> TestM ()) -> [Int64] -> [Int64] -> TestM ()
+testDBSchema3 :: (String -> TestM ()) -> [UUID] -> [UUID] -> TestM ()
 testDBSchema3 step badGuyIds robberyIds = do
   step "Running test queries (schema version 3)..."
 
@@ -621,7 +625,7 @@ testDBSchema3 step badGuyIds robberyIds = do
     sqlSet "sentence_length" (12::Int)
     sqlSet "prison_name" ("Long Kesh"::T.Text)
     sqlResult "bad_guy_id"
-  (sentencedIds :: [Int64]) <- fetchMany runIdentity
+  (sentencedIds :: [UUID]) <- fetchMany runIdentity
   liftIO $ assertEqual "INSERT into 'prison_sentence' table" 2
     (length sentencedIds)
 
@@ -631,7 +635,7 @@ testDBSchema3 step badGuyIds robberyIds = do
     sqlSet "sentence_length" (9::Int)
     sqlSet "prison_name" ("Wormwood Scrubs"::T.Text)
     sqlResult "bad_guy_id"
-  (sentencedIds' :: [Int64]) <- fetchMany runIdentity
+  (sentencedIds' :: [UUID]) <- fetchMany runIdentity
   liftIO $ assertEqual "INSERT into 'prison_sentence' table" 2
     (length sentencedIds')
 
@@ -639,7 +643,7 @@ testDBSchema3 step badGuyIds robberyIds = do
 
 migrateDBToSchema4 :: (String -> TestM ()) -> TestM ()
 migrateDBToSchema4 step = do
-  let extensions    = []
+  let extensions    = ["pgcrypto"]
       composites    = []
       domains       = []
   step "Migrating the database (schema version 3 -> schema version 4)..."
@@ -664,7 +668,7 @@ testDBSchema4 step = do
 
 migrateDBToSchema5 :: (String -> TestM ()) -> TestM ()
 migrateDBToSchema5 step = do
-  let extensions    = []
+  let extensions    = ["pgcrypto"]
       composites    = []
       domains       = []
   step "Migrating the database (schema version 4 -> schema version 5)..."
@@ -728,7 +732,7 @@ migrationTest1 connSource =
 
   migrationTest1Body  step
 
-  freshTestDB         step
+  -- freshTestDB         step
 
 -- | Test for behaviour of 'checkDatabase' and 'checkDatabaseAllowUnknownObjects'
 migrationTest2 :: ConnectionSourceM (LogT IO) -> TestTree
@@ -741,7 +745,7 @@ migrationTest2 connSource =
   let composite = CompositeType
         { ctName = "composite"
         , ctColumns =
-          [ CompositeColumn { ccName = "cint",  ccType = BigIntT }
+          [ CompositeColumn { ccName = "cint",  ccType = UuidT }
           , CompositeColumn { ccName = "ctext", ccType = TextT }
           ]
         }
@@ -802,7 +806,7 @@ migrationTest2 connSource =
 
   step "Recreating the database (schema version 1, one table is missing PK)..."
 
-  migrateDatabase optionsNoPKCheck [] [] []
+  migrateDatabase optionsNoPKCheck ["pgcrypto"] [] []
     schema1TablesWithMissingPK [schema1MigrationsWithMissingPK]
   checkDatabase optionsNoPKCheck [] [] withMissingPKSchema
 
