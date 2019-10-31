@@ -9,7 +9,7 @@ import Data.Monoid
 import Prelude
 import qualified Data.Text as T
 import Data.Typeable
-import Data.UUID
+import Data.UUID.Types
 
 import Database.PostgreSQL.PQTypes
 import Database.PostgreSQL.PQTypes.Checks
