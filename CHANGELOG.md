@@ -1,5 +1,6 @@
 # hpqtypes-extras-1.10.0.0 (2019-11-05)
 * Implement `UuidT` Column Type ([#28](https://github.com/scrive/hpqtypes-extras/pull/28)).
+* Fix sqlValidateCheck and sqlValidateFK
 
 # hpqtypes-extras-1.9.0.1 (2019-06-04)
 * Create composite types automatically only if database is empty.

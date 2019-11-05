@@ -87,7 +87,7 @@ sqlAddNotValidFK = sqlAddFK_ False
 
 -- | Validate foreign key previously created as NOT VALID.
 sqlValidateFK :: RawSQL () -> ForeignKey -> RawSQL ()
-sqlValidateFK tname fk = "VALIDATE" <+> fkName tname fk
+sqlValidateFK tname fk = "VALIDATE CONSTRAINT" <+> fkName tname fk
 
 sqlAddFK_ :: Bool -> RawSQL () -> ForeignKey -> RawSQL ()
 sqlAddFK_ valid tname fk@ForeignKey{..} = mconcat [

@@ -46,7 +46,7 @@ sqlAddNotValidCheck = sqlAddCheck_ False
 
 -- | Validate check previously created as NOT VALID.
 sqlValidateCheck :: Check -> RawSQL ()
-sqlValidateCheck Check{..} = "VALIDATE" <+> chkName
+sqlValidateCheck Check{..} = "VALIDATE CONSTRAINT" <+> chkName
 
 sqlAddCheck_ :: Bool -> Check -> RawSQL ()
 sqlAddCheck_ valid Check{..} = smconcat [
