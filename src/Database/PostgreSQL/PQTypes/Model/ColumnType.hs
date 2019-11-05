@@ -18,6 +18,7 @@ data ColumnType
   | DateT
   | DoubleT
   | IntegerT
+  | UuidT
   | IntervalT
   | JsonT
   | JsonbT
@@ -44,6 +45,7 @@ instance FromSQL ColumnType where
         "date" -> DateT
         "double precision" -> DoubleT
         "integer" -> IntegerT
+        "uuid" -> UuidT
         "interval" -> IntervalT
         "json" -> JsonT
         "jsonb" -> JsonbT
@@ -64,6 +66,7 @@ columnTypeToSQL BoolT              = "BOOLEAN"
 columnTypeToSQL DateT              = "DATE"
 columnTypeToSQL DoubleT            = "DOUBLE PRECISION"
 columnTypeToSQL IntegerT           = "INTEGER"
+columnTypeToSQL UuidT              = "UUID"
 columnTypeToSQL IntervalT          = "INTERVAL"
 columnTypeToSQL JsonT              = "JSON"
 columnTypeToSQL JsonbT             = "JSONB"
