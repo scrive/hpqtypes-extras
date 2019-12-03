@@ -5,6 +5,7 @@ import Control.Exception.Lifted as E
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Control
 
+import Data.Either
 import Data.Monoid
 import Prelude
 import qualified Data.Text as T
@@ -466,6 +467,57 @@ testDBSchema1 step = do
     sqlResult "id"
   (bankIds :: [UUID]) <- fetchMany runIdentity
   liftIO $ assertEqual "INSERT into 'bank' table" 5 (length bankIds)
+
+  -- Try to insert with existing ID to check that ON CONFLICT works properly
+  let bankId = head bankIds
+      name = "Santander" :: T.Text
+      location = "Spain" :: T.Text
+
+  runQuery_ . sqlInsert "bank" $ do
+    sqlSet "id" bankId
+    sqlSet "name" name
+    sqlSet "location" location
+    sqlOnConflictOnColumns ["id"] . sqlUpdate "" $ do
+      sqlSet "name" name
+      sqlSet "location" location
+  runQuery_ . sqlSelect "bank" $ do
+    sqlResult "name"
+    sqlResult "location"
+    sqlWhereEq "id" bankId
+  details1 <- fetchOne id
+  liftIO $ assertEqual "INSERT ON CONFLICT updates" (name, location) details1
+
+  runQuery_ . sqlInsert "bank" $ do
+    sqlSet "id" bankId
+    sqlSet "name" ("" :: T.Text)
+    sqlSet "location" ("" :: T.Text)
+    sqlOnConflictDoNothing
+  runQuery_ . sqlSelect "bank" $ do
+    sqlResult "name"
+    sqlResult "location"
+    sqlWhereEq "id" bankId
+  details3 <- fetchOne id
+  liftIO $ assertEqual "INSERT ON CONFLICT does nothing (1)" (name, location) details3
+
+  runQuery_ . sqlInsert "bank" $ do
+    sqlSet "id" bankId
+    sqlSet "name" ("" :: T.Text)
+    sqlSet "location" ("" :: T.Text)
+    sqlOnConflictOnColumnsDoNothing ["id"]
+  runQuery_ . sqlSelect "bank" $ do
+    sqlResult "name"
+    sqlResult "location"
+    sqlWhereEq "id" bankId
+  details4 <- fetchOne id
+  liftIO $ assertEqual "INSERT ON CONFLICT does nothing (2)" (name, location) details4
+
+  -- If NO CONFLICT is not specified, make sure we throw an exception.
+  eres :: Either DBException () <- E.try . withSavepoint "testDBSchema" $ do
+    runQuery_ . sqlInsert "bank " $ do
+      sqlSet "id" bankId
+      sqlSet "name" name
+      sqlSet "location" location
+  liftIO $ assertBool "If ON CONFLICT is not specified an exception is thrown" (isLeft eres)
 
   -- Populate the 'bad_guy' table.
   runQuery_ . sqlInsert "bad_guy" $ do

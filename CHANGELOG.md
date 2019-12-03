@@ -1,3 +1,6 @@
+# hpqtypes-extras-1.10.1.0 (2020-01-09)
+* Add support for ON CONFLICT clause
+
 # hpqtypes-extras-1.10.0.0 (2019-11-05)
 * Implement `UuidT` Column Type ([#28](https://github.com/scrive/hpqtypes-extras/pull/28)).
 * Fix sqlValidateCheck and sqlValidateFK
