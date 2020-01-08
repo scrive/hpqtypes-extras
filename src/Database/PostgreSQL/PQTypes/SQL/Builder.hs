@@ -180,6 +180,7 @@ module Database.PostgreSQL.PQTypes.SQL.Builder
   , sqlLimit
   , sqlDistinct
   , sqlWith
+  , sqlUnion
 
   , SqlTurnIntoSelect
   , sqlTurnIntoSelect
@@ -321,6 +322,7 @@ instance Sqlable SqlCondition where
 
 data SqlSelect = SqlSelect
   { sqlSelectFrom     :: SQL
+  , sqlSelectUnion    :: [SQL]
   , sqlSelectDistinct :: Bool
   , sqlSelectResult   :: [SQL]
   , sqlSelectWhere    :: [SqlCondition]
@@ -426,21 +428,24 @@ instance IsSQL SqlDelete where
   withSQL = withSQL . toSQLCommand
 
 instance Sqlable SqlSelect where
-  toSQLCommand cmd =
-        emitClausesSepComma "WITH" (map (\(name,command) -> name <+> "AS" <+> parenthesize command) (sqlSelectWith cmd)) <+>
-        "SELECT" <+> (if sqlSelectDistinct cmd then "DISTINCT" else mempty) <+>
-        sqlConcatComma (sqlSelectResult cmd) <+>
-        emitClause "FROM" (sqlSelectFrom cmd) <+>
-        emitClausesSep "WHERE" "AND" (map toSQLCommand $ sqlSelectWhere cmd) <+>
-        emitClausesSepComma "GROUP BY" (sqlSelectGroupBy cmd) <+>
-        emitClausesSep "HAVING" "AND" (sqlSelectHaving cmd) <+>
-        emitClausesSepComma "ORDER BY" (sqlSelectOrderBy cmd) <+>
-        (if sqlSelectOffset cmd > 0
-           then unsafeSQL ("OFFSET " ++ show (sqlSelectOffset cmd))
-           else "") <+>
-        (if sqlSelectLimit cmd >= 0
-           then unsafeSQL ("LIMIT " ++ show (sqlSelectLimit cmd))
-           else "")
+  toSQLCommand cmd = smconcat
+    [ emitClausesSepComma "WITH" $
+      map (\(name,command) -> name <+> "AS" <+> parenthesize command) (sqlSelectWith cmd)
+    , "SELECT" <+> (if sqlSelectDistinct cmd then "DISTINCT" else mempty)
+    , sqlConcatComma (sqlSelectResult cmd)
+    , emitClause "FROM" (sqlSelectFrom cmd)
+    , emitClausesSep "WHERE" "AND" (map toSQLCommand $ sqlSelectWhere cmd)
+    , emitClausesSep "UNION" "UNION" (sqlSelectUnion cmd)
+    , emitClausesSepComma "GROUP BY" (sqlSelectGroupBy cmd)
+    , emitClausesSep "HAVING" "AND" (sqlSelectHaving cmd)
+    , emitClausesSepComma "ORDER BY" (sqlSelectOrderBy cmd)
+    , if sqlSelectOffset cmd > 0
+      then unsafeSQL ("OFFSET " ++ show (sqlSelectOffset cmd))
+      else ""
+    , if sqlSelectLimit cmd >= 0
+      then unsafeSQL ("LIMIT " ++ show (sqlSelectLimit cmd))
+      else ""
+    ]
 
 instance Sqlable SqlInsert where
   toSQLCommand cmd =
@@ -468,6 +473,7 @@ instance Sqlable SqlInsertSelect where
     "INSERT INTO" <+> sqlInsertSelectWhat cmd <+>
     parenthesize (sqlConcatComma (map fst (sqlInsertSelectSet cmd))) <+>
     parenthesize (toSQLCommand (SqlSelect { sqlSelectFrom    = sqlInsertSelectFrom cmd
+                                          , sqlSelectUnion   = []
                                           , sqlSelectDistinct = sqlInsertSelectDistinct cmd
                                           , sqlSelectResult  = fmap snd $ sqlInsertSelectSet cmd
                                           , sqlSelectWhere   = sqlInsertSelectWhere cmd
@@ -505,11 +511,11 @@ instance Sqlable SqlAll where
 
 sqlSelect :: SQL -> State SqlSelect () -> SqlSelect
 sqlSelect table refine =
-  execState refine (SqlSelect table False [] [] [] [] [] 0 (-1) [])
+  execState refine (SqlSelect table [] False [] [] [] [] [] 0 (-1) [])
 
 sqlSelect2 :: SQL -> State SqlSelect () -> SqlSelect
 sqlSelect2 from refine =
-  execState refine (SqlSelect from False [] [] [] [] [] 0 (-1) [])
+  execState refine (SqlSelect from [] False [] [] [] [] [] 0 (-1) [])
 
 sqlInsert :: SQL -> State SqlInsert () -> SqlInsert
 sqlInsert table refine =
@@ -564,7 +570,10 @@ instance SqlWith SqlDelete where
 sqlWith :: (MonadState v m, SqlWith v, Sqlable s) => SQL -> s -> m ()
 sqlWith name sql = modify (\cmd -> sqlWith1 cmd name (toSQLCommand sql))
 
-
+-- | Note: WHERE clause of the main SELECT is treated specially, i.e. it only
+-- applies to the main SELECT, not the whole union.
+sqlUnion :: (MonadState SqlSelect m, Sqlable sql) => [sql] -> m ()
+sqlUnion sqls = modify (\cmd -> cmd { sqlSelectUnion = map toSQLCommand sqls })
 
 class SqlWhere a where
   sqlWhere1 :: a -> SqlCondition -> a
@@ -1046,6 +1055,7 @@ instance SqlTurnIntoSelect SqlUpdate where
                                              if isSqlEmpty (sqlUpdateFrom s)
                                              then ""
                                              else "," <+> sqlUpdateFrom s
+                        , sqlSelectUnion    = []
                         , sqlSelectDistinct = False
                         , sqlSelectResult  = if null (sqlUpdateResult s)
                                              then ["TRUE"]
@@ -1065,6 +1075,7 @@ instance SqlTurnIntoSelect SqlDelete where
                                              if isSqlEmpty (sqlDeleteUsing s)
                                              then ""
                                              else "," <+> sqlDeleteUsing s
+                        , sqlSelectUnion    = []
                         , sqlSelectDistinct = False
                         , sqlSelectResult  = if null (sqlDeleteResult s)
                                              then ["TRUE"]
@@ -1081,6 +1092,7 @@ instance SqlTurnIntoSelect SqlDelete where
 instance SqlTurnIntoSelect SqlInsertSelect where
   sqlTurnIntoSelect s = SqlSelect
                         { sqlSelectFrom    = sqlInsertSelectFrom s
+                        , sqlSelectUnion   = []
                         , sqlSelectDistinct = False
                         , sqlSelectResult  = sqlInsertSelectResult s
                         , sqlSelectWhere   = sqlInsertSelectWhere s

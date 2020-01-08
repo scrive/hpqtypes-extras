@@ -1,6 +1,6 @@
 cabal-version:       1.18
 name:                hpqtypes-extras
-version:             1.10.1.0
+version:             1.10.2.0
 synopsis:            Extra utilities for hpqtypes library
 description:         The following extras for hpqtypes library:
                      .
@@ -20,7 +20,7 @@ maintainer:          Andrzej Rybczak <andrzej@rybczak.net>,
 copyright:           Scrive AB
 category:            Database
 build-type:          Simple
-tested-with:         GHC == 8.0.2, GHC == 8.2.2, GHC == 8.4.4, GHC == 8.6.5
+tested-with:         GHC ==8.0.2 || ==8.2.2 || ==8.4.4 || ==8.6.5 || ==8.8.2
 
 Source-repository head
   Type:     git
@@ -50,7 +50,7 @@ library
   other-modules:   Database.PostgreSQL.PQTypes.Checks.Util
                  , Database.PostgreSQL.PQTypes.Utils.NubList
 
-  build-depends: base              >= 4.9     && < 4.13
+  build-depends: base              >= 4.9     && < 4.14
                , hpqtypes          >= 1.8.0.0 && < 1.9.0.0
                , base16-bytestring >= 0.1     && < 0.2
                , bytestring        >= 0.10    && < 0.11
