@@ -162,6 +162,9 @@ module Database.PostgreSQL.PQTypes.SQL.Builder
   , sqlLeftJoinOn
   , sqlRightJoinOn
   , sqlFullJoinOn
+  , sqlOnConflictDoNothing
+  , sqlOnConflictOnColumns
+  , sqlOnConflictOnColumnsDoNothing
   , sqlSet
   , sqlSetInc
   , sqlSetList
@@ -339,10 +342,11 @@ data SqlUpdate = SqlUpdate
   }
 
 data SqlInsert = SqlInsert
-  { sqlInsertWhat   :: SQL
-  , sqlInsertSet    :: [(SQL, Multiplicity SQL)]
-  , sqlInsertResult :: [SQL]
-  , sqlInsertWith   :: [(SQL, SQL)]
+  { sqlInsertWhat       :: SQL
+  , sqlInsertOnConflict :: Maybe (SQL, Maybe SQL)
+  , sqlInsertSet        :: [(SQL, Multiplicity SQL)]
+  , sqlInsertResult     :: [SQL]
+  , sqlInsertWith       :: [(SQL, SQL)]
   }
 
 data SqlInsertSelect = SqlInsertSelect
@@ -444,14 +448,20 @@ instance Sqlable SqlInsert where
     "INSERT INTO" <+> sqlInsertWhat cmd <+>
     parenthesize (sqlConcatComma (map fst (sqlInsertSet cmd))) <+>
     emitClausesSep "VALUES" "," (map sqlConcatComma (transpose (map (makeLongEnough . snd) (sqlInsertSet cmd)))) <+>
+    emitClauseOnConflict (sqlInsertOnConflict cmd) <+>
     emitClausesSepComma "RETURNING" (sqlInsertResult cmd)
    where
-      -- this is the longest list of values
-      longest = maximum (1 : (map (lengthOfEither . snd) (sqlInsertSet cmd)))
-      lengthOfEither (Single _) = 1
-      lengthOfEither (Many x)   = length x
-      makeLongEnough (Single x) = take longest (repeat x)
-      makeLongEnough (Many x)   = take longest (x ++ repeat "DEFAULT")
+     emitClauseOnConflict = \case
+       Nothing                   -> ""
+       Just (condition, maction) -> emitClause "ON CONFLICT" $
+         condition <+> "DO" <+> fromMaybe "NOTHING" maction
+
+     -- this is the longest list of values
+     longest = maximum (1 : (map (lengthOfEither . snd) (sqlInsertSet cmd)))
+     lengthOfEither (Single _) = 1
+     lengthOfEither (Many x)   = length x
+     makeLongEnough (Single x) = take longest (repeat x)
+     makeLongEnough (Many x)   = take longest (x ++ repeat "DEFAULT")
 
 instance Sqlable SqlInsertSelect where
   toSQLCommand cmd =
@@ -503,7 +513,7 @@ sqlSelect2 from refine =
 
 sqlInsert :: SQL -> State SqlInsert () -> SqlInsert
 sqlInsert table refine =
-  execState refine (SqlInsert table mempty [] [])
+  execState refine (SqlInsert table Nothing mempty [] [])
 
 sqlInsertSelect :: SQL -> SQL -> State SqlInsertSelect () -> SqlInsertSelect
 sqlInsertSelect table from refine =
@@ -800,6 +810,22 @@ instance SqlSet SqlInsert where
 
 instance SqlSet SqlInsertSelect where
   sqlSet1 cmd name v = cmd { sqlInsertSelectSet = sqlInsertSelectSet cmd ++ [(name, v)] }
+
+sqlOnConflictDoNothing :: MonadState SqlInsert m => m ()
+sqlOnConflictDoNothing = modify $ \cmd -> cmd
+  { sqlInsertOnConflict = Just ("", Nothing)
+  }
+
+sqlOnConflictOnColumns
+  :: Sqlable sql => MonadState SqlInsert m => [SQL] -> sql -> m ()
+sqlOnConflictOnColumns columns sql = modify $ \cmd -> cmd
+  { sqlInsertOnConflict = Just (parenthesize $ sqlConcatComma columns, Just $ toSQLCommand sql)
+  }
+
+sqlOnConflictOnColumnsDoNothing :: MonadState SqlInsert m => [SQL] -> m ()
+sqlOnConflictOnColumnsDoNothing columns = modify $ \cmd -> cmd
+  { sqlInsertOnConflict = Just (parenthesize $ sqlConcatComma columns, Nothing)
+  }
 
 sqlSetCmd :: (MonadState v m, SqlSet v) => SQL -> SQL -> m ()
 sqlSetCmd name sql = modify (\cmd -> sqlSet1 cmd name sql)
