@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {- |
 
 Using migrations is fairly easy. After you've defined the lists of
@@ -48,8 +49,13 @@ data MigrationAction m =
 
   -- | Migration for creating an index concurrently.
   | CreateIndexConcurrentlyMigration
+#if __GLASGOW_HASKELL__ >= 806
       (RawSQL ()) -- ^ Table name
       TableIndex  -- ^ Index
+#else
+      (RawSQL ())
+      TableIndex
+#endif
 
 -- | Migration object.
 data Migration m =
