@@ -1,3 +1,6 @@
+# hpqtypes-extras-1.10.2.1 (2020-05-05)
+* Add support for GHC 8.10
+
 # hpqtypes-extras-1.10.2.0 (2020-01-20)
 * Add support for UNION clause
 * Add support for GHC 8.8
