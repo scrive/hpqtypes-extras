@@ -431,19 +431,9 @@ instance Sqlable SqlSelect where
   toSQLCommand cmd = smconcat
     [ emitClausesSepComma "WITH" $
       map (\(name,command) -> name <+> "AS" <+> parenthesize command) (sqlSelectWith cmd)
-    , if hasUnion then "(" else ""
-    , "SELECT" <+> (if sqlSelectDistinct cmd then "DISTINCT" else mempty)
-    , sqlConcatComma (sqlSelectResult cmd)
-    , emitClause "FROM" (sqlSelectFrom cmd)
-    , emitClausesSep "WHERE" "AND" (map toSQLCommand $ sqlSelectWhere cmd)
-    -- If there's a union, the result is sorted and has a limit, applying the
-    -- order and limit to the main subquery won't reduce the overall query
-    -- result, but might reduce its processing time.
-    , if hasUnion && not (null $ sqlSelectOrderBy cmd) && sqlSelectLimit cmd >= 0
-      then smconcat [orderByClause, limitClause]
-      else ""
-    , if hasUnion then ")" else ""
-    , emitClausesSep "UNION" "UNION" (sqlSelectUnion cmd)
+    , if hasUnion
+      then emitClausesSep "" "UNION" (mainSelectClause : sqlSelectUnion cmd)
+      else mainSelectClause
     , emitClausesSepComma "GROUP BY" (sqlSelectGroupBy cmd)
     , emitClausesSep "HAVING" "AND" (sqlSelectHaving cmd)
     , orderByClause
@@ -455,6 +445,19 @@ instance Sqlable SqlSelect where
       else ""
     ]
     where
+      mainSelectClause = smconcat
+        [ "SELECT" <+> (if sqlSelectDistinct cmd then "DISTINCT" else mempty)
+        , sqlConcatComma (sqlSelectResult cmd)
+        , emitClause "FROM" (sqlSelectFrom cmd)
+        , emitClausesSep "WHERE" "AND" (map toSQLCommand $ sqlSelectWhere cmd)
+        -- If there's a union, the result is sorted and has a limit, applying
+        -- the order and limit to the main subquery won't reduce the overall
+        -- query result, but might reduce its processing time.
+        , if hasUnion && not (null $ sqlSelectOrderBy cmd) && sqlSelectLimit cmd >= 0
+          then smconcat [orderByClause, limitClause]
+          else ""
+        ]
+
       hasUnion      = not . null $ sqlSelectUnion cmd
       orderByClause = emitClausesSepComma "ORDER BY" $ sqlSelectOrderBy cmd
       limitClause   = unsafeSQL $ "LIMIT" <+> show (sqlSelectLimit cmd)
