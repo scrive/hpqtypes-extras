@@ -1,3 +1,6 @@
+# hpqtypes-extra-1.10.3.0 (2020-11-16)
+* Include LIMIT clause in UNION subqueries of the select
+
 # hpqtypes-extras-1.10.2.1 (2020-05-05)
 * Add support for GHC 8.10
 
