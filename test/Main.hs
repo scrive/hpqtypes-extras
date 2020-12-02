@@ -7,10 +7,10 @@ import Control.Monad.Trans.Control
 
 import Data.Either
 import Data.Monoid
-import Prelude
 import qualified Data.Text as T
 import Data.Typeable
 import Data.UUID.Types
+import Prelude
 
 import Database.PostgreSQL.PQTypes
 import Database.PostgreSQL.PQTypes.Checks
@@ -29,7 +29,7 @@ import Test.Tasty
 import Test.Tasty.HUnit
 import Test.Tasty.Options
 
-data ConnectionString = ConnectionString String
+newtype ConnectionString = ConnectionString String
   deriving Typeable
 
 instance IsOption ConnectionString where
@@ -906,6 +906,57 @@ migrationTest4 connSource =
 
   freshTestDB         step
 
+migrationTest5 :: ConnectionSourceM (LogT IO) -> TestTree
+migrationTest5 connSource =
+  testCaseSteps' "Test unique partial expression indexes" connSource $ \step -> do
+    freshTestDB step
+    migrateDatabase defaultExtrasOptions [] [] [] [table] []
+    testDBSchema6 step
+  where table = tblTable
+                    { tblName        = "roles"
+                    , tblVersion     = 1
+                    , tblColumns     =
+                      [ tblColumn { colName = "id", colType = BigSerialT, colNullable = False }
+                      , tblColumn { colName = "role", colType = SmallIntT, colNullable = False }
+                      , tblColumn { colName = "src_id", colType = BigIntT, colNullable = True }
+                      , tblColumn { colName = "trg_id", colType = BigIntT, colNullable = True }
+                      ]
+                    , tblPrimaryKey  = pkOnColumn "id"
+                    , tblIndexes     = [indexOnColumn "src_id"
+                                      , indexOnColumn "trg_id"
+                                      , uniqueIndex6
+                                      ]
+                    , tblForeignKeys = []
+                    , tblChecks      = []
+                    }
+
+uniqueIndex6 :: TableIndex
+uniqueIndex6 = uniqueIndexOnColumns [ "role", "(COALESCE(src_id, - 1::bigint))", "(COALESCE(trg_id, - 1::bigint))" ]
+
+testDBSchema6 :: (String -> TestM ()) -> TestM ()
+testDBSchema6 step = do
+  step "Running test queries (schema version 5)..."
+
+  liftIO . assertBool "INSERT into 'roles' table" =<< runQuery01 (sqlInsert "roles" duplicateRole)
+  liftIO . assertBool "INSERT into 'roles' table" =<< runQuery01 (sqlInsert "roles" differentRole)
+
+  assertException "Unique constraint violation should fail" . runQuery_ . sqlInsert "access_control" $ duplicateRole
+  commit -- to prevent the ERROR: current transaction is aborted, commands ignored until end of transaction block
+
+  runQuery_ $ sqlDropIndex "roles" uniqueIndex6
+
+  where
+    duplicateRole = do
+      sqlSet "role" (0 :: Int)
+      sqlSet "src_id" (1 :: Int)
+      sqlSet "trg_id" (2 :: Int)
+
+    differentRole = do
+      sqlSet "role" (0 :: Int)
+      sqlSet "src_id" (1 :: Int)
+      sqlSet "trg_id" (3 :: Int)
+
+
 eitherExc :: MonadBaseControl IO m =>
              (SomeException -> m ()) -> (a -> m ()) -> m a -> m ()
 eitherExc left right c = (E.try c) >>= either left right
@@ -944,6 +995,7 @@ main = do
                          , migrationTest2 connSource
                          , migrationTest3 connSource
                          , migrationTest4 connSource
+                         , migrationTest5 connSource
                          ]
   where
     ings =

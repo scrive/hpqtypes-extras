@@ -14,6 +14,7 @@ module Database.PostgreSQL.PQTypes.Model.ForeignKey (
 import Data.Monoid
 import Data.Monoid.Utils
 import Database.PostgreSQL.PQTypes
+import Database.PostgreSQL.PQTypes.SQL.Builder
 import Prelude
 import qualified Data.Text as T
 
@@ -53,8 +54,8 @@ fkOnColumns columns reftable refcolumns = ForeignKey {
 , fkValidated  = True
 }
 
-fkName :: RawSQL () -> ForeignKey -> RawSQL ()
-fkName tname ForeignKey{..} = shorten $ mconcat [
+fkName :: RawSQL () -> ForeignKey -> SqlIdentifier
+fkName tname ForeignKey{..} = sqlIdentifier $ mconcat [
     "fk__"
   , tname
   , "__"
@@ -62,9 +63,6 @@ fkName tname ForeignKey{..} = shorten $ mconcat [
   , "__"
   , fkRefTable
   ]
-  where
-    -- PostgreSQL's limit for identifier is 63 characters
-    shorten = flip rawSQL () . T.take 63 . unRawSQL
 
 {-# DEPRECATED sqlAddFK "Use sqlAddValidFK instead" #-}
 -- | Deprecated version of sqlAddValidFK.
@@ -87,11 +85,11 @@ sqlAddNotValidFK = sqlAddFK_ False
 
 -- | Validate foreign key previously created as NOT VALID.
 sqlValidateFK :: RawSQL () -> ForeignKey -> RawSQL ()
-sqlValidateFK tname fk = "VALIDATE CONSTRAINT" <+> fkName tname fk
+sqlValidateFK tname fk = "VALIDATE CONSTRAINT" <+> quoted (fkName tname fk)
 
 sqlAddFK_ :: Bool -> RawSQL () -> ForeignKey -> RawSQL ()
 sqlAddFK_ valid tname fk@ForeignKey{..} = mconcat [
-    "ADD CONSTRAINT" <+> fkName tname fk <+> "FOREIGN KEY ("
+    "ADD CONSTRAINT" <+> quoted (fkName tname fk) <+> "FOREIGN KEY ("
   , mintercalate ", " fkColumns
   , ") REFERENCES" <+> fkRefTable <+> "("
   , mintercalate ", " fkRefColumns
@@ -109,4 +107,4 @@ sqlAddFK_ valid tname fk@ForeignKey{..} = mconcat [
     foreignKeyActionToSQL ForeignKeySetDefault = "SET DEFAULT"
 
 sqlDropFK :: RawSQL () -> ForeignKey -> RawSQL ()
-sqlDropFK tname fk = "DROP CONSTRAINT" <+> fkName tname fk
+sqlDropFK tname fk = "DROP CONSTRAINT" <+> quoted (fkName tname fk)

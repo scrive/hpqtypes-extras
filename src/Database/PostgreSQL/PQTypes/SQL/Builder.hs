@@ -182,6 +182,11 @@ module Database.PostgreSQL.PQTypes.SQL.Builder
   , sqlWith
   , sqlUnion
 
+  , sqlIdentifier
+  , SqlIdentifier
+  , quoted
+  , unquoted
+
   , SqlTurnIntoSelect
   , sqlTurnIntoSelect
   , sqlTurnIntoWhyNotSelect
@@ -247,6 +252,7 @@ import Data.Maybe
 import Data.Monoid
 import Data.Monoid.Utils
 import Data.String
+import qualified Data.Text as T
 import Data.Typeable
 import Database.PostgreSQL.PQTypes
 import Prelude
@@ -276,6 +282,18 @@ sqlConcatOR = smintercalate "OR" . map parenthesize
 
 parenthesize :: SQL -> SQL
 parenthesize s = "(" <> s <> ")"
+
+quoted :: SqlIdentifier -> RawSQL ()
+quoted (SqlIdentifier ident) = flip rawSQL () $ mconcat [ "\"", ident, "\"" ]
+
+unquoted :: SqlIdentifier -> RawSQL ()
+unquoted = flip rawSQL () . unSqlIdentifier
+
+sqlIdentifier :: RawSQL () -> SqlIdentifier
+sqlIdentifier = SqlIdentifier . T.take 63 . unRawSQL -- PostgreSQL's limit for identifier is 63 characters
+
+newtype SqlIdentifier = SqlIdentifier { unSqlIdentifier :: T.Text }
+  deriving (Eq, Show)
 
 -- | 'AscDesc' marks ORDER BY order as ascending or descending.
 -- Conversion to SQL adds DESC marker to descending and no marker

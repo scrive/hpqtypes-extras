@@ -510,8 +510,8 @@ checkDBStructure options tables = fmap mconcat .
                         -> ValidationResult
         checkPrimaryKey mdef mpk = mconcat [
             checkEquality "PRIMARY KEY" def (map fst pk)
-          , checkNames (const (pkName tblName)) pk
-          , if (eoEnforcePKs options)
+          , checkNames (const (unquoted $ pkName tblName)) pk
+          , if eoEnforcePKs options
             then checkPKPresence tblName mdef mpk
             else mempty
           ]
@@ -534,14 +534,14 @@ checkDBStructure options tables = fmap mconcat .
                      -> ValidationResult
         checkIndexes defs indexes = mconcat [
             checkEquality "INDEXes" defs (map fst indexes)
-          , checkNames (indexName tblName) indexes
+          , checkNames (unquoted . indexName tblName) indexes
           ]
 
         checkForeignKeys :: [ForeignKey] -> [(ForeignKey, RawSQL ())]
                          -> ValidationResult
         checkForeignKeys defs fkeys = mconcat [
             checkEquality "FOREIGN KEYs" defs (map fst fkeys)
-          , checkNames (fkName tblName) fkeys
+          , checkNames (unquoted . fkName tblName) fkeys
           ]
 
 -- | Checks whether database is consistent, performing migrations if
@@ -797,7 +797,7 @@ checkDBConsistency options domains tablesWithVersions migrations = do
           -- rerun, we need to remove it first (see
           -- https://www.postgresql.org/docs/9.6/sql-createindex.html for more
           -- information).
-          runQuery_ $ "DROP INDEX IF EXISTS" <+> indexName tname idx
+          runQuery_ $ "DROP INDEX IF EXISTS" <+> quoted (indexName tname idx)
           -- We're in auto transaction mode (as ensured at the beginning of
           -- 'checkDBConsistency'), so we need to issue explicit SQL commit,
           -- because using 'commit' function automatically starts another
