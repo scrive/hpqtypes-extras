@@ -1,4 +1,4 @@
 branches:       master
-doctest:        False
+doctest:        True
 tests:          True
 postgresql:     True
