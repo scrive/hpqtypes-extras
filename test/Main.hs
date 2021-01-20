@@ -34,7 +34,8 @@ data ConnectionString = ConnectionString String
 
 instance IsOption ConnectionString where
   defaultValue = ConnectionString
-                 "postgresql://postgres@localhost/travis_ci_test"
+    -- For GitHub Actions CI
+    "host=postgres user=postgres password=postgres"
   parseValue   = Just . ConnectionString
   optionName   = return "connection-string"
   optionHelp   = return "Postgres connection string"
