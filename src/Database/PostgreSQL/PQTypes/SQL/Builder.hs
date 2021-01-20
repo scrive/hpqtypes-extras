@@ -4,27 +4,28 @@ Module "Database.PostgreSQL.PQTypes.SQL.Builder" offers a nice
 monadic DSL for building SQL statements on the fly. Some examples:
 
 >>> :{
->>> | sqlSelect "documents" $ do
->>> |  sqlResult "id"
->>> |  sqlResult "title"
->>> |  sqlResult "mtime"
->>> |  sqlOrderBy "documents.mtime DESC"
->>> |  sqlWhereILike "documents.title" "%pattern%"
->>> :}
-SQL " SELECT  id, title, mtime FROM documents WHERE (documents.title ILIKE <\"%pattern%\">)   ORDER BY documents.mtime DESC  "
+sqlSelect "documents" $ do
+  sqlResult "id"
+  sqlResult "title"
+  sqlResult "mtime"
+  sqlOrderBy "documents.mtime DESC"
+  sqlWhereILike "documents.title" "%pattern%"
+:}
+SQL " SELECT  id, title, mtime FROM documents WHERE (documents.title ILIKE <\"%pattern%\">)    ORDER BY documents.mtime DESC  "
 
 @SQL.Builder@ supports SELECT as 'sqlSelect' and data manipulation using
 'sqlInsert', 'sqlInsertSelect', 'sqlDelete' and 'sqlUpdate'.
 
->>> import Data.Time.Clock
->>> now <- getCurrentTime
+>>> import Data.Time
+>>> let title = "title" :: String
+>>> let ctime  = read "2020-01-01 00:00:00 UTC" :: UTCTime
 >>> :{
->>> | sqlInsert "documents" $ do
->>> |   sqlSet "title" title
->>> |   sqlSet "ctime" now
->>> |   sqlResult "id"
->>> :}
-SQL " INSERT INTO documents (title, ctime) VALUES (<\"title\">, <\"2017-02-01 17:56:20.324894547 UTC\">) RETURNING id"
+sqlInsert "documents" $ do
+  sqlSet "title" title
+  sqlSet "ctime" ctime
+  sqlResult "id"
+:}
+SQL " INSERT INTO documents (title, ctime) VALUES (<\"title\">, <2020-01-01 00:00:00 UTC>)  RETURNING id"
 
 The 'sqlInsertSelect' is particulary interesting as it supports INSERT
 of values taken from a SELECT clause from same or even different
@@ -38,12 +39,12 @@ lists will be made equal in length by appending @DEFAULT@ as fill
 element.
 
 >>> :{
->>> | sqlInsert "documents" $ do
->>> |   sqlSet "ctime" now
->>> |   sqlSetList "title" ["title1", "title2", "title3"]
->>> |   sqlResult "id"
->>> :}
-SQL " INSERT INTO documents (ctime, title) VALUES (<\"2017-02-01 17:56:20.324894547 UTC\">, <\"title1\">) , (<\"2017-02-01 17:56:20.324894547 UTC\">, <\"title2\">) , (<\"2017-02-01 17:56:20.324894547 UTC\">, <\"title3\">) RETURNING id"
+sqlInsert "documents" $ do
+  sqlSet "ctime" ctime
+  sqlSetList "title" ["title1", "title2", "title3"]
+  sqlResult "id"
+:}
+SQL " INSERT INTO documents (ctime, title) VALUES (<2020-01-01 00:00:00 UTC>, <\"title1\">) , (<2020-01-01 00:00:00 UTC>, <\"title2\">) , (<2020-01-01 00:00:00 UTC>, <\"title3\">)  RETURNING id"
 
 The above will insert 3 new documents.
 
@@ -51,17 +52,17 @@ The above will insert 3 new documents.
 'sqlOrderBy', @GROUP BY@ as 'sqlGroupBy'.
 
 >>> :{
->>> | sqlSelect "documents" $ do
->>> |   sqlResult "id"
->>> |   sqlResult "title"
->>> |   sqlResult "mtime"
->>> |   sqlOrderBy "documents.mtime DESC"
->>> |   sqlOrderBy "documents.title"
->>> |   sqlGroupBy "documents.status"
->>> |   sqlJoinOn "users" "documents.user_id = users.id"
->>> |   sqlWhere $ mkSQL "documents.title ILIKE" <?> "%pattern%"
->>> :}
-SQL " SELECT  id, title, mtime FROM documents  JOIN  users  ON  documents.user_id = users.id WHERE (documents.title ILIKE <\"%pattern%\">) GROUP BY documents.status  ORDER BY documents.mtime DESC, documents.title  "
+sqlSelect "documents" $ do
+  sqlResult "id"
+  sqlResult "title"
+  sqlResult "mtime"
+  sqlOrderBy "documents.mtime DESC"
+  sqlOrderBy "documents.title"
+  sqlGroupBy "documents.status"
+  sqlJoinOn "users" "documents.user_id = users.id"
+  sqlWhere $ mkSQL "documents.title ILIKE" <?> "%pattern%"
+:}
+SQL " SELECT  id, title, mtime FROM documents  JOIN  users  ON  documents.user_id = users.id WHERE (documents.title ILIKE <\"%pattern%\">)  GROUP BY documents.status  ORDER BY documents.mtime DESC, documents.title  "
 
 Joins are done by 'sqlJoinOn', 'sqlLeftJoinOn', 'sqlRightJoinOn',
 'sqlJoinOn', 'sqlFullJoinOn'. If everything fails use 'sqlJoin' and
@@ -69,16 +70,16 @@ Joins are done by 'sqlJoinOn', 'sqlLeftJoinOn', 'sqlRightJoinOn',
 some kind of abstract syntax data type is lacking.
 
 >>> :{
->>> | sqlDelete "mails" $ do
->>> |   sqlWhere "id > 67"
->>> :}
+sqlDelete "mails" $ do
+  sqlWhere "id > 67"
+:}
 SQL " DELETE FROM mails  WHERE (id > 67) "
 
 >>> :{
->>> | sqlUpdate "document_tags" $ do
->>> |   sqlSet "value" (123 :: Int)
->>> |   sqlWhere "name = 'abc'"
->>> :}
+sqlUpdate "document_tags" $ do
+  sqlSet "value" (123 :: Int)
+  sqlWhere "name = 'abc'"
+:}
 SQL " UPDATE document_tags SET value=<123>  WHERE (name = 'abc') "
 
 Exception returning and 'kWhyNot' are a subsystem for querying why a
@@ -123,8 +124,7 @@ returns a single exception.
 
 -}
 
--- TODO: clean this up and fix the mess with
--- "randomly" wrapping stuff in parentheses.
+-- TODO: clean this up, add more documentation.
 
 module Database.PostgreSQL.PQTypes.SQL.Builder
   ( sqlWhere
