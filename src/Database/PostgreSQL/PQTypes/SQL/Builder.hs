@@ -484,22 +484,27 @@ instance Sqlable SqlInsert where
      makeLongEnough (Many x)   = take longest (x ++ repeat "DEFAULT")
 
 instance Sqlable SqlInsertSelect where
-  toSQLCommand cmd =
-    "INSERT INTO" <+> sqlInsertSelectWhat cmd <+>
-    parenthesize (sqlConcatComma (map fst (sqlInsertSelectSet cmd))) <+>
-    parenthesize (toSQLCommand (SqlSelect { sqlSelectFrom    = sqlInsertSelectFrom cmd
-                                          , sqlSelectUnion   = []
-                                          , sqlSelectDistinct = sqlInsertSelectDistinct cmd
-                                          , sqlSelectResult  = fmap snd $ sqlInsertSelectSet cmd
-                                          , sqlSelectWhere   = sqlInsertSelectWhere cmd
-                                          , sqlSelectOrderBy = sqlInsertSelectOrderBy cmd
-                                          , sqlSelectGroupBy = sqlInsertSelectGroupBy cmd
-                                          , sqlSelectHaving  = sqlInsertSelectHaving cmd
-                                          , sqlSelectOffset  = sqlInsertSelectOffset cmd
-                                          , sqlSelectLimit   = sqlInsertSelectLimit cmd
-                                          , sqlSelectWith    = sqlInsertSelectWith cmd
-                                          })) <+>
-    emitClausesSepComma "RETURNING" (sqlInsertSelectResult cmd)
+  toSQLCommand cmd = smconcat
+    -- WITH clause needs to be at the top level, so we emit it here and not
+    -- include it in the SqlSelect below.
+    [ emitClausesSepComma "WITH" $
+      map (\(name,command) -> name <+> "AS" <+> parenthesize command) (sqlInsertSelectWith cmd)
+    , "INSERT INTO" <+> sqlInsertSelectWhat cmd
+    , parenthesize . sqlConcatComma . map fst $ sqlInsertSelectSet cmd
+    , parenthesize . toSQLCommand $ SqlSelect { sqlSelectFrom    = sqlInsertSelectFrom cmd
+                                              , sqlSelectUnion   = []
+                                              , sqlSelectDistinct = sqlInsertSelectDistinct cmd
+                                              , sqlSelectResult  = fmap snd $ sqlInsertSelectSet cmd
+                                              , sqlSelectWhere   = sqlInsertSelectWhere cmd
+                                              , sqlSelectOrderBy = sqlInsertSelectOrderBy cmd
+                                              , sqlSelectGroupBy = sqlInsertSelectGroupBy cmd
+                                              , sqlSelectHaving  = sqlInsertSelectHaving cmd
+                                              , sqlSelectOffset  = sqlInsertSelectOffset cmd
+                                              , sqlSelectLimit   = sqlInsertSelectLimit cmd
+                                              , sqlSelectWith    = []
+                                              }
+    , emitClausesSepComma "RETURNING" $ sqlInsertSelectResult cmd
+    ]
 
 instance Sqlable SqlUpdate where
   toSQLCommand cmd =
