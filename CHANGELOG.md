@@ -1,3 +1,6 @@
+# hpqtypes-extra-1.10.3.1 (2021-01-26)
+Generate valid INSERT SELECT query with data modifying WITH clauses
+
 # hpqtypes-extra-1.10.3.0 (2020-11-16)
 * Include LIMIT clause in UNION subqueries of the select
 
