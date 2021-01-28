@@ -20,7 +20,7 @@ maintainer:          Andrzej Rybczak <andrzej@rybczak.net>,
 copyright:           Scrive AB
 category:            Database
 build-type:          Simple
-tested-with:         GHC ==8.0.2 || ==8.2.2 || ==8.4.4 || ==8.6.5 || ==8.8.3 || ==8.10.1
+tested-with:         GHC ==8.0.2 || ==8.2.2 || ==8.4.4 || ==8.6.5 || ==8.8.4 || ==8.10.3
 
 Source-repository head
   Type:     git
@@ -66,6 +66,7 @@ library
                , monad-control     >= 1.0     && < 1.1
                , semigroups        >= 0.16    && < 0.20
                , text-show         >= 3.7     && < 3.9
+               , time
                , log-base          >= 0.7     && < 0.10
                , safe              >= 0.3     && < 0.4
 
