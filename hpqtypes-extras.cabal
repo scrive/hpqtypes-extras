@@ -32,7 +32,7 @@ library
   ghc-options: -Wall
 
   exposed-modules: Database.PostgreSQL.PQTypes.Checks
-                 , Database.PostgreSQL.PQTypes.DerivingVia
+                 , Database.PostgreSQL.PQTypes.Deriving
                  , Database.PostgreSQL.PQTypes.ExtrasOptions
                  , Database.PostgreSQL.PQTypes.Migrate
                  , Database.PostgreSQL.PQTypes.Model
