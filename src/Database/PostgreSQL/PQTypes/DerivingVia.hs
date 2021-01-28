@@ -1,11 +1,12 @@
 {-# LANGUAGE AllowAmbiguousTypes, TypeApplications #-}
 module Database.PostgreSQL.PQTypes.DerivingVia (
-  -- | Helpers, to be used with `deriving via`.
+  -- * Helpers, to be used with `deriving via`.
     SQLEnum(..)
   , SQLEnumEncoding(..)
   , SQLEnumAsText(..)
   , SQLEnumAsTextEncoding(..)
-  , isInjective  -- ^ for doctests
+    -- * For use in doctests:
+  , isInjective
   ) where
 
 import Control.Exception (SomeException(..), throwIO)
@@ -17,8 +18,23 @@ import Database.PostgreSQL.PQTypes
 import qualified Data.Map.Strict as Map
 
 
--- | Helper newtype to be used with `deriving via` to derive
--- `(PQFormat, ToSQL, FromSQL)` instances for enums.
+-- | Helper newtype to be used with `deriving via` to derive `(PQFormat, ToSQL,
+-- FromSQL)` instances for enums, given an instance of `SQLEnumEncoding`.
+--
+-- Example use:
+-- >>> :{
+-- data Colours = Blue | Black | Red | Mauve
+--   deriving (Enum, Bounded)
+--   deriving (PQFormat, ToSQL, FromSQL) via SQLEnum Colours
+--
+-- instance SQLEnumEncoding Colours where
+--   type SQLEnumType = Int16
+--   encodeEnum = \case
+--     Blue -> 1
+--     Black -> 42
+--     Red -> 1337
+--     Mauve -> -1
+-- :}
 newtype SQLEnum a = SQLEnum a
 
 class
@@ -37,6 +53,9 @@ class
   ) => SQLEnumEncoding a where
   type SQLEnumType a
   encodeEnum :: a -> SQLEnumType a
+
+  -- | We include the definition of the inverse map as part of `SQLEnumEncoding`
+  -- to ensure it is only computed once.
   decodeEnumMap :: Map (SQLEnumType a) a
   decodeEnumMap = Map.fromList [ (encodeEnum a, a) | a <- enumerate ]
 
@@ -60,11 +79,27 @@ instance SQLEnumEncoding a => FromSQL (SQLEnum a) where
 
 
 -- | A special case of `SQLEnum`, where the enum is to be encoded as text (and
--- SQLEnum can't be used because of the `Enum (SQLEnumType)` constraint).
+-- SQLEnum can't be used because of the `Enum` constraint).
+--
+-- Example use:
+-- >>> :{
+-- data Person = Alfred | Bertrand | Charles
+--   deriving (Enum, Bounded)
+--   deriving (PQFormat, ToSQL, FromSQL) via SQLEnumText Person
+--
+-- instance SQLEnumTextEncoding Person where
+--   encodeEnumAsText = \case
+--     Alfred -> "alfred"
+--     Bertrand -> "bertrand"
+--     Charles -> "charles"
+-- :}
 newtype SQLEnumAsText a = SQLEnumAsText a
 
 class (Enum a , Bounded a) => SQLEnumAsTextEncoding a where
   encodeEnumAsText :: a -> Text
+
+  -- | We include the inverse map as part of `SQLEnumTextEncoding` to ensure it
+  -- is only computed once.
   decodeEnumAsTextMap :: Map Text a
   decodeEnumAsTextMap = Map.fromList [ (encodeEnumAsText a, a) | a <- enumerate ]
 
