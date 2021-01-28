@@ -1,5 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes, TypeApplications #-}
-module Database.PostgreSQL.PQTypes.DerivingVia (
+module Database.PostgreSQL.PQTypes.Deriving (
   -- * Helpers, to be used with `deriving via`.
     SQLEnum(..)
   , SQLEnumEncoding(..)
@@ -23,6 +23,8 @@ import qualified Data.Map.Strict as Map
 --
 -- Example use:
 -- >>> :{
+-- import Data.Int
+--
 -- data Colours = Blue | Black | Red | Mauve
 --   deriving (Enum, Bounded)
 --   deriving (PQFormat, ToSQL, FromSQL) via SQLEnum Colours
@@ -34,7 +36,10 @@ import qualified Data.Map.Strict as Map
 --     Black -> 42
 --     Red -> 1337
 --     Mauve -> -1
+--
+-- isInjective (encodeEnum :: Colours -> Int16)
 -- :}
+-- True
 newtype SQLEnum a = SQLEnum a
 
 class
@@ -92,7 +97,10 @@ instance SQLEnumEncoding a => FromSQL (SQLEnum a) where
 --     Alfred -> "alfred"
 --     Bertrand -> "bertrand"
 --     Charles -> "charles"
+--
+-- isInjective (encodeEnumAsText :: Person -> Text)
 -- :}
+-- True
 newtype SQLEnumAsText a = SQLEnumAsText a
 
 class (Enum a , Bounded a) => SQLEnumAsTextEncoding a where
