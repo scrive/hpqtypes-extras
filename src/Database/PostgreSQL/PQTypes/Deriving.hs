@@ -23,21 +23,21 @@ import qualified Data.Map.Strict as Map
 --
 -- Example use:
 -- >>> :{
--- import Data.Int
+--  import Data.Int
 --
--- data Colours = Blue | Black | Red | Mauve
---   deriving (Enum, Bounded)
---   deriving (PQFormat, ToSQL, FromSQL) via SQLEnum Colours
+--  data Colours = Blue | Black | Red | Mauve
+--    deriving (Enum, Bounded)
+--    deriving (PQFormat, ToSQL, FromSQL) via SQLEnum Colours
 --
--- instance SQLEnumEncoding Colours where
---   type SQLEnumType = Int16
---   encodeEnum = \case
---     Blue -> 1
---     Black -> 42
---     Red -> 1337
+--  instance SQLEnumEncoding Colours where
+--    type SQLEnumType = Int16
+--    encodeEnum = \case
+--      Blue -> 1
+--      Black -> 42
+--      Red -> 1337
 --     Mauve -> -1
 --
--- isInjective (encodeEnum :: Colours -> Int16)
+--  isInjective (encodeEnum :: Colours -> Int16)
 -- :}
 -- True
 newtype SQLEnum a = SQLEnum a
@@ -88,17 +88,17 @@ instance SQLEnumEncoding a => FromSQL (SQLEnum a) where
 --
 -- Example use:
 -- >>> :{
--- data Person = Alfred | Bertrand | Charles
---   deriving (Enum, Bounded)
---   deriving (PQFormat, ToSQL, FromSQL) via SQLEnumText Person
+--  data Person = Alfred | Bertrand | Charles
+--    deriving (Enum, Bounded)
+--    deriving (PQFormat, ToSQL, FromSQL) via SQLEnumText Person
 --
--- instance SQLEnumTextEncoding Person where
---   encodeEnumAsText = \case
---     Alfred -> "alfred"
---     Bertrand -> "bertrand"
---     Charles -> "charles"
+--  instance SQLEnumTextEncoding Person where
+--    encodeEnumAsText = \case
+--      Alfred -> "alfred"
+--      Bertrand -> "bertrand"
+--      Charles -> "charles"
 --
--- isInjective (encodeEnumAsText :: Person -> Text)
+--   isInjective (encodeEnumAsText :: Person -> Text)
 -- :}
 -- True
 newtype SQLEnumAsText a = SQLEnumAsText a

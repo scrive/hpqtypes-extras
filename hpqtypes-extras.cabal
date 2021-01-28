@@ -108,6 +108,8 @@ test-suite  hpqtypes-extras-tests
                       lifted-base,
                       log-base,
                       monad-control,
+                      -- QuickCheck for prop> doctests
+                      QuickCheck,
                       tasty,
                       tasty-hunit,
                       text,
