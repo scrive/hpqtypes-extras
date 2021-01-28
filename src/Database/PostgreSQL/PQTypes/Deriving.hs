@@ -22,11 +22,20 @@ import qualified Data.Map.Strict as Map
 -- FromSQL)` instances for enums, given an instance of `SQLEnumEncoding`.
 --
 -- Example use:
--- >>> import Data.Int
--- >>> data Colours = Blue | Red | Mauve deriving (Enum, Bounded) deriving (PQFormat, ToSQL, FromSQL) via SQLEnum Colours
--- >>> instance SQLEnumEncoding Colours where type SQLEnumType = Int16; encodeEnum = \case  Blue -> 1; Red -> 1337; Mauve -> -1
--- >>> isInjective (encodeEnum :: Colours -> Int16)
--- True
+-- > data Colours = Blue | Red | Black | Mauve
+-- >   deriving (Enum, Bounded)
+-- >   deriving (PQFormat, ToSQL, FromSQL) via SQLEnum Colours
+-- >
+-- > -- |
+-- > -- >>> isInjective (encodeEnum :: Colours -> Int16)
+-- > -- -- True
+-- > instance SQLEnumEncoding Colours where
+-- >   type SQLEnumType = Int16
+-- >   encodeEnum = \case
+-- >     Blue -> 1
+-- >     Red -> 1337
+-- >     Black -> 42
+-- >     Mauve -> -1
 newtype SQLEnum a = SQLEnum a
 
 class
@@ -74,10 +83,18 @@ instance SQLEnumEncoding a => FromSQL (SQLEnum a) where
 -- SQLEnum can't be used because of the `Enum` constraint).
 --
 -- Example use:
--- >>> data Person = Alfred | Bertrand deriving (Enum, Bounded) deriving (PQFormat, ToSQL, FromSQL) via SQLEnumText Person
--- >>> instance SQLEnumTextEncoding Person where encodeEnumAsText = \case Alfred -> "alfred"; Bertrand -> "bertrand"
--- >>> isInjective (encodeEnumAsText :: Person -> Text)
--- True
+-- > data Person = Alfred | Bertrand | Charlie
+-- >   deriving (Enum, Bounded)
+-- >   deriving (PQFormat, ToSQL, FromSQL) via SQLEnumAsText Person
+-- >
+-- > -- |
+-- > -- >>> isInjective (encodeEnumAsText :: Person -> Text)
+-- > -- -- True
+-- > instance SQLEnumAsTextEncoding Person where
+-- >   encodeEnumAsText = \case
+-- >     Alfred -> "alfred"
+-- >     Bertrand -> "bertrand"
+-- >     Charlie -> "charlie"
 newtype SQLEnumAsText a = SQLEnumAsText a
 
 class (Enum a , Bounded a) => SQLEnumAsTextEncoding a where
