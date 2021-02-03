@@ -1,4 +1,4 @@
-cabal-version:       1.18
+cabal-version:       2.2
 name:                hpqtypes-extras
 version:             1.10.3.0
 synopsis:            Extra utilities for hpqtypes library
@@ -10,7 +10,7 @@ description:         The following extras for hpqtypes library:
                        of a database schema.
 
 homepage:            https://github.com/scrive/hpqtypes-extras
-license:             BSD3
+license:             BSD-3-Clause
 license-file:        LICENSE
 extra-source-files:  CHANGELOG.md, README.md
 author:              Scrive AB
@@ -26,7 +26,28 @@ Source-repository head
   Type:     git
   Location: https://github.com/scrive/hpqtypes-extras.git
 
+common common-stanza
+  Default-Language: Haskell2010
+  Default-Extensions: BangPatterns
+                    , DeriveDataTypeable
+                    , ExistentialQuantification
+                    , FlexibleContexts
+                    , GeneralizedNewtypeDeriving
+                    , LambdaCase
+                    , MultiWayIf
+                    , OverloadedStrings
+                    , RankNTypes
+                    , RecordWildCards
+                    , ScopedTypeVariables
+                    , StandaloneDeriving
+                    , TupleSections
+                    , TypeApplications
+                    , TypeFamilies
+                    , UndecidableInstances
+                    , ViewPatterns
+
 library
+  Import: common-stanza
   hs-source-dirs: src
 
   ghc-options: -Wall
@@ -70,26 +91,11 @@ library
                , safe              >= 0.3     && < 0.4
 
   default-language: Haskell2010
-  default-extensions: BangPatterns
-                    , DeriveDataTypeable
-                    , ExistentialQuantification
-                    , FlexibleContexts
-                    , GeneralizedNewtypeDeriving
-                    , LambdaCase
-                    , MultiWayIf
-                    , OverloadedStrings
-                    , RankNTypes
-                    , RecordWildCards
-                    , ScopedTypeVariables
-                    , StandaloneDeriving
-                    , TupleSections
-                    , TypeApplications
-                    , TypeFamilies
-                    , UndecidableInstances
-                    , ViewPatterns
+  default-extensions:
   other-extensions:   CPP
 
 test-suite  hpqtypes-extras-tests
+  Import:             common-stanza
   type:               exitcode-stdio-1.0
   hs-source-dirs:     test
   main-is:            Main.hs
@@ -115,3 +121,15 @@ test-suite  hpqtypes-extras-tests
                       time,
                       transformers,
                       uuid-types
+
+benchmark bench
+  Import:             common-stanza
+  type:               exitcode-stdio-1.0
+  hs-source-dirs:     benchmark
+  main-is:            Main.hs
+
+  ghc-options:        -Wall
+  build-depends:      base
+                    , deepseq
+                    , hpqtypes-extras
+                    , tasty-bench

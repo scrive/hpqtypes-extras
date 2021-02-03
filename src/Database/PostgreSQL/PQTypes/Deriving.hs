@@ -23,29 +23,34 @@ import qualified Data.Map.Strict as Map
 -- /Hint:/ non-trivial 'Enum' instances can be derived using the 'generic-data'
 -- package!
 --
--- Example use:
---
 -- >>> :{
 -- data Colours = Blue | Black | Red | Mauve
 --   deriving (Eq, Show, Enum, Bounded)
---   deriving (PQFormat, ToSQL, FromSQL) via SQLEnum Colours
 -- instance SQLEnumEncoding Colours where
 --   type SQLEnumType Colours = Int16
 --   encodeEnum = \case
 --     Blue  -> 1
---     Black -> 42
---     Red   -> 1337
---     Mauve -> -1
+--     Black -> 7
+--     Red   -> 2
+--     Mauve -> 6
 -- :}
+--
+-- /Note:/ To get SQL-specific instances use @DerivingVia@:
+--
+-- @
+-- data Colours = ...
+--   ...
+--   deriving (PQFormat, ToSQL, FromSQL) via SQLEnum Colours
+-- @
 --
 -- >>> isInjective (encodeEnum @Colours)
 -- True
 --
--- >>> decodeEnum @Colours 42
--- Just Black
+-- >>> decodeEnum @Colours 7
+-- Right Black
 --
--- >>> decodeEnum @Colours 666
--- Nothing
+-- >>> decodeEnum @Colours 42
+-- Left [(1,2),(6,7)]
 newtype SQLEnum a = SQLEnum a
 
 class
@@ -63,10 +68,17 @@ class
   , Typeable (SQLEnumType a)
   ) => SQLEnumEncoding a where
   type SQLEnumType a
+  -- | Encode @a@ as an SQL compatible type.
   encodeEnum :: a -> SQLEnumType a
 
-  decodeEnum :: SQLEnumType a -> Maybe a
-  decodeEnum b = Map.lookup b (decodeEnumMap @a)
+  -- | Decode SQL compatible type to an @a@. If the conversion fails, a list of
+  -- valid ranges is returned instead.
+  --
+  -- /Note:/ The default implementation looks up the value in 'decodeEnumMap'
+  -- and can be overwritten for performance if necessary.
+  decodeEnum :: SQLEnumType a -> Either [(SQLEnumType a, SQLEnumType a)] a
+  decodeEnum b = maybe (Left . intervals $ Map.keys (decodeEnumMap @a)) Right
+               $ Map.lookup b (decodeEnumMap @a)
 
   -- | We include the definition of the inverse map as part of the
   -- 'SQLEnumEncoding' instance to ensure it is only computed once.
@@ -85,22 +97,19 @@ instance SQLEnumEncoding a => FromSQL (SQLEnum a) where
   fromSQL base = do
     b <- fromSQL base
     case decodeEnum b of
-      Nothing -> throwIO $ SomeException RangeError
-        { reRange = intervals $ Map.keys (decodeEnumMap @a)
+      Left validRange -> throwIO $ SomeException RangeError
+        { reRange = validRange
         , reValue = b
         }
-      Just a -> return $ SQLEnum a
+      Right a -> return $ SQLEnum a
 
 -- | A special case of 'SQLEnum', where the enum is to be encoded as text
 -- ('SQLEnum' can't be used because of the 'Enum' constraint on the domain of
 -- 'encodeEnum').
 --
--- Example use:
---
 -- >>> :{
 -- data Person = Alfred | Bertrand | Charles
 --   deriving (Eq, Show, Enum, Bounded)
---   deriving (PQFormat, ToSQL, FromSQL) via SQLEnumAsText Person
 -- instance SQLEnumAsTextEncoding Person where
 --   encodeEnumAsText = \case
 --     Alfred -> "alfred"
@@ -108,21 +117,36 @@ instance SQLEnumEncoding a => FromSQL (SQLEnum a) where
 --     Charles -> "charles"
 -- :}
 --
+-- /Note:/ To get SQL-specific instances use @DerivingVia@:
+--
+-- @
+-- data Person = ...
+--   ...
+--   deriving (PQFormat, ToSQL, FromSQL) via SQLEnumAsText Person
+-- @
+--
 -- >>> isInjective (encodeEnumAsText @Person)
 -- True
 --
 -- >>> decodeEnumAsText @Person "bertrand"
--- Just Bertrand
+-- Right Bertrand
 --
 -- >>> decodeEnumAsText @Person "batman"
--- Nothing
+-- Left ["alfred","bertrand","charles"]
 newtype SQLEnumAsText a = SQLEnumAsText a
 
 class (Enum a , Bounded a) => SQLEnumAsTextEncoding a where
+  -- | Encode @a@ as 'Text'.
   encodeEnumAsText :: a -> Text
 
-  decodeEnumAsText :: Text -> Maybe a
-  decodeEnumAsText text = Map.lookup text (decodeEnumAsTextMap @a)
+  -- | Decode 'Text' to an @a@. If the conversion fails, a list of valid values
+  -- is returned instead.
+  --
+  -- /Note:/ The default implementation looks up the value in
+  -- 'decodeEnumAsTextMap' and can be overwritten for performance if necessary.
+  decodeEnumAsText :: Text -> Either [Text] a
+  decodeEnumAsText text = maybe (Left $ Map.keys (decodeEnumAsTextMap @a)) Right
+                        $ Map.lookup text (decodeEnumAsTextMap @a)
 
   -- | We include the inverse map as part of the 'SQLEnumTextEncoding' instance
   -- to ensure it is only computed once.
@@ -141,11 +165,11 @@ instance SQLEnumAsTextEncoding a => FromSQL (SQLEnumAsText a) where
   fromSQL base = do
     text <- fromSQL base
     case decodeEnumAsText text of
-      Nothing -> throwIO $ SomeException InvalidValue
+      Left validValues -> throwIO $ SomeException InvalidValue
         { ivValue       = text
-        , ivValidValues = Just $ Map.keys (decodeEnumAsTextMap @a)
+        , ivValidValues = Just validValues
         }
-      Just a -> return $ SQLEnumAsText a
+      Right a -> return $ SQLEnumAsText a
 
 -- | To be used in doctests to prove injectivity of encoding functions.
 --
@@ -177,4 +201,3 @@ intervals as = case nubSort as of
 
 -- $setup
 -- >>> import Data.Int
--- >>> :set -XDerivingStrategies -XDerivingVia

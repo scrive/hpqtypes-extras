@@ -180,7 +180,7 @@ jobs:
       - name: doctest
         run: |
           cd ${PKGDIR_hpqtypes_extras} || false
-          doctest  -XBangPatterns -XDeriveDataTypeable -XExistentialQuantification -XFlexibleContexts -XGeneralizedNewtypeDeriving -XLambdaCase -XMultiWayIf -XOverloadedStrings -XRankNTypes -XRecordWildCards -XScopedTypeVariables -XStandaloneDeriving -XTupleSections -XTypeFamilies -XUndecidableInstances -XViewPatterns src
+          doctest  -XBangPatterns -XDeriveDataTypeable -XExistentialQuantification -XFlexibleContexts -XGeneralizedNewtypeDeriving -XLambdaCase -XMultiWayIf -XOverloadedStrings -XRankNTypes -XRecordWildCards -XScopedTypeVariables -XStandaloneDeriving -XTupleSections -XTypeApplications -XTypeFamilies -XUndecidableInstances -XViewPatterns src
       - name: cabal check
         run: |
           cd ${PKGDIR_hpqtypes_extras} || false
