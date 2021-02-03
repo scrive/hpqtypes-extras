@@ -66,7 +66,6 @@ library
                , monad-control     >= 1.0     && < 1.1
                , semigroups        >= 0.16    && < 0.20
                , text-show         >= 3.7     && < 3.9
-               , time
                , log-base          >= 0.7     && < 0.10
                , safe              >= 0.3     && < 0.4
 
@@ -84,11 +83,11 @@ library
                     , ScopedTypeVariables
                     , StandaloneDeriving
                     , TupleSections
+                    , TypeApplications
                     , TypeFamilies
                     , UndecidableInstances
                     , ViewPatterns
   other-extensions:   CPP
-                    , TypeApplications
 
 test-suite  hpqtypes-extras-tests
   type:               exitcode-stdio-1.0
@@ -103,6 +102,7 @@ test-suite  hpqtypes-extras-tests
                     , ScopedTypeVariables
   ghc-options:        -Wall
   build-depends:      base,
+                      QuickCheck,
                       exceptions,
                       hpqtypes,
                       hpqtypes-extras,
@@ -112,5 +112,6 @@ test-suite  hpqtypes-extras-tests
                       tasty,
                       tasty-hunit,
                       text,
+                      time,
                       transformers,
                       uuid-types

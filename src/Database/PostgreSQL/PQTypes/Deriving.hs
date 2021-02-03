@@ -1,4 +1,4 @@
-{-# LANGUAGE AllowAmbiguousTypes, TypeApplications #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
 module Database.PostgreSQL.PQTypes.Deriving (
   -- * Helpers, to be used with @deriving via@ (@-XDerivingVia@).
     SQLEnum(..)
@@ -18,28 +18,34 @@ import Database.PostgreSQL.PQTypes
 import qualified Data.Map.Strict as Map
 
 -- | Helper newtype to be used with @deriving via@ to derive @(PQFormat, ToSQL,
--- FromSQL)@ instances for enums, given an instance of 'SQLEnumEncoding'. Hint:
--- non-trivial 'Enum' instances can be derived using the 'generic-data' package!
+-- FromSQL)@ instances for enums, given an instance of 'SQLEnumEncoding'.
+--
+-- /Hint:/ non-trivial 'Enum' instances can be derived using the 'generic-data'
+-- package!
 --
 -- Example use:
+--
 -- >>> :{
--- import Data.Int
---
 -- data Colours = Blue | Black | Red | Mauve
---   deriving (Enum, Bounded)
+--   deriving (Eq, Show, Enum, Bounded)
 --   deriving (PQFormat, ToSQL, FromSQL) via SQLEnum Colours
---
 -- instance SQLEnumEncoding Colours where
---   type SQLEnumType = Int16
+--   type SQLEnumType Colours = Int16
 --   encodeEnum = \case
---     Blue -> 1
+--     Blue  -> 1
 --     Black -> 42
---     Red -> 1337
+--     Red   -> 1337
 --     Mauve -> -1
---
--- isInjective (encodeEnum @Colours)
 -- :}
+--
+-- >>> isInjective (encodeEnum @Colours)
 -- True
+--
+-- >>> decodeEnum @Colours 42
+-- Just Black
+--
+-- >>> decodeEnum @Colours 666
+-- Nothing
 newtype SQLEnum a = SQLEnum a
 
 class
@@ -59,6 +65,9 @@ class
   type SQLEnumType a
   encodeEnum :: a -> SQLEnumType a
 
+  decodeEnum :: SQLEnumType a -> Maybe a
+  decodeEnum b = Map.lookup b (decodeEnumMap @a)
+
   -- | We include the definition of the inverse map as part of the
   -- 'SQLEnumEncoding' instance to ensure it is only computed once.
   decodeEnumMap :: Map (SQLEnumType a) a
@@ -75,37 +84,45 @@ instance SQLEnumEncoding a => FromSQL (SQLEnum a) where
   type PQBase (SQLEnum a) = PQBase (SQLEnumType a)
   fromSQL base = do
     b <- fromSQL base
-    case Map.lookup b decodeEnumMap of
+    case decodeEnum b of
       Nothing -> throwIO $ SomeException RangeError
         { reRange = intervals $ Map.keys (decodeEnumMap @a)
         , reValue = b
         }
       Just a -> return $ SQLEnum a
 
-
 -- | A special case of 'SQLEnum', where the enum is to be encoded as text
 -- ('SQLEnum' can't be used because of the 'Enum' constraint on the domain of
 -- 'encodeEnum').
 --
 -- Example use:
+--
 -- >>> :{
 -- data Person = Alfred | Bertrand | Charles
---   deriving (Enum, Bounded)
---   deriving (PQFormat, ToSQL, FromSQL) via SQLEnumText Person
---
--- instance SQLEnumTextEncoding Person where
+--   deriving (Eq, Show, Enum, Bounded)
+--   deriving (PQFormat, ToSQL, FromSQL) via SQLEnumAsText Person
+-- instance SQLEnumAsTextEncoding Person where
 --   encodeEnumAsText = \case
 --     Alfred -> "alfred"
 --     Bertrand -> "bertrand"
 --     Charles -> "charles"
---
--- isInjective (encodeEnumAsText @Person)
 -- :}
+--
+-- >>> isInjective (encodeEnumAsText @Person)
 -- True
+--
+-- >>> decodeEnumAsText @Person "bertrand"
+-- Just Bertrand
+--
+-- >>> decodeEnumAsText @Person "batman"
+-- Nothing
 newtype SQLEnumAsText a = SQLEnumAsText a
 
 class (Enum a , Bounded a) => SQLEnumAsTextEncoding a where
   encodeEnumAsText :: a -> Text
+
+  decodeEnumAsText :: Text -> Maybe a
+  decodeEnumAsText text = Map.lookup text (decodeEnumAsTextMap @a)
 
   -- | We include the inverse map as part of the 'SQLEnumTextEncoding' instance
   -- to ensure it is only computed once.
@@ -123,7 +140,7 @@ instance SQLEnumAsTextEncoding a => FromSQL (SQLEnumAsText a) where
   type PQBase (SQLEnumAsText a) = PQBase Text
   fromSQL base = do
     text <- fromSQL base
-    case Map.lookup text decodeEnumAsTextMap of
+    case decodeEnumAsText text of
       Nothing -> throwIO $ SomeException InvalidValue
         { ivValue       = text
         , ivValidValues = Just $ Map.keys (decodeEnumAsTextMap @a)
@@ -157,3 +174,7 @@ intervals as = case nubSort as of
     accumIntervals (lower, upper) (first' : ascendingRest') = if succ upper == first'
       then accumIntervals (lower, first') ascendingRest'
       else (lower, upper) : accumIntervals (first', first') ascendingRest'
+
+-- $setup
+-- >>> import Data.Int
+-- >>> :set -XDerivingStrategies -XDerivingVia
