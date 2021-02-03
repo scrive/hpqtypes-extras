@@ -28,12 +28,12 @@ data T = T01 | T02 | T03 | T04 | T05 | T06 | T07 | T08 | T09 | T10
 instance NFData T where
   rnf = (`seq` ())
 
--- | SQL encoding for 'T'.
+-- | Enum encoding for 'T'.
 --
 -- >>> isInjective (encodeEnum @T)
 -- True
-instance SQLEnumEncoding T where
-   type SQLEnumType T = Int16
+instance EnumEncoding T where
+   type EnumBase T = Int16
    encodeEnum = \case
      T01 -> 1;  T02 -> 2;  T03 -> 3;  T04 -> 4;  T05 -> 5
      T06 -> 6;  T07 -> 7;  T08 -> 8;  T09 -> 9;  T10 -> 10
@@ -58,11 +58,11 @@ data S = S01 | S02 | S03 | S04 | S05 | S06 | S07 | S08 | S09 | S10
 instance NFData S where
   rnf = (`seq` ())
 
--- | SQL encoding for 'S'.
+-- | Enum encoding for 'S'.
 --
 -- >>> isInjective (encodeEnumAsText @S)
 -- True
-instance SQLEnumAsTextEncoding S where
+instance EnumAsTextEncoding S where
   encodeEnumAsText = \case
     S01 -> "text_01"; S02 -> "text_02"; S03 -> "text_03"; S04 -> "text_04"
     S05 -> "text_05"; S06 -> "text_06"; S07 -> "text_07"; S08 -> "text_08"

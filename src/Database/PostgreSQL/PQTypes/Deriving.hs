@@ -2,9 +2,9 @@
 module Database.PostgreSQL.PQTypes.Deriving (
   -- * Helpers, to be used with @deriving via@ (@-XDerivingVia@).
     SQLEnum(..)
-  , SQLEnumEncoding(..)
+  , EnumEncoding(..)
   , SQLEnumAsText(..)
-  , SQLEnumAsTextEncoding(..)
+  , EnumAsTextEncoding(..)
     -- * For use in doctests.
   , isInjective
   ) where
@@ -18,21 +18,22 @@ import Database.PostgreSQL.PQTypes
 import qualified Data.Map.Strict as Map
 
 -- | Helper newtype to be used with @deriving via@ to derive @(PQFormat, ToSQL,
--- FromSQL)@ instances for enums, given an instance of 'SQLEnumEncoding'.
+-- FromSQL)@ instances for enums, given an instance of 'EnumEncoding'.
 --
 -- /Hint:/ non-trivial 'Enum' instances can be derived using the 'generic-data'
 -- package!
 --
 -- >>> :{
--- data Colours = Blue | Black | Red | Mauve
+-- data Colours = Blue | Black | Red | Mauve | Orange
 --   deriving (Eq, Show, Enum, Bounded)
--- instance SQLEnumEncoding Colours where
---   type SQLEnumType Colours = Int16
+-- instance EnumEncoding Colours where
+--   type EnumBase Colours = Int16
 --   encodeEnum = \case
---     Blue  -> 1
---     Black -> 7
---     Red   -> 2
---     Mauve -> 6
+--     Blue   -> 1
+--     Black  -> 7
+--     Red    -> 2
+--     Mauve  -> 6
+--     Orange -> 3
 -- :}
 --
 -- /Note:/ To get SQL-specific instances use @DerivingVia@:
@@ -50,50 +51,54 @@ import qualified Data.Map.Strict as Map
 -- Right Black
 --
 -- >>> decodeEnum @Colours 42
--- Left [(1,2),(6,7)]
+-- Left [(1,3),(6,7)]
 newtype SQLEnum a = SQLEnum a
 
 class
-  ( -- The semantic type needs to be finitely enumerable,
+  ( -- The semantic type needs to be finitely enumerable.
     Enum a
   , Bounded a
-  -- and the target type has to be an enum with an SQL representation.
-  , FromSQL (SQLEnumType a)
-  , ToSQL (SQLEnumType a)
-  , PQFormat (SQLEnumType a)
-  -- Miscellaneous constraints:
-  , Enum (SQLEnumType a)
-  , Ord (SQLEnumType a)
-  , Show (SQLEnumType a)
-  , Typeable (SQLEnumType a)
-  ) => SQLEnumEncoding a where
-  type SQLEnumType a
-  -- | Encode @a@ as an SQL compatible type.
-  encodeEnum :: a -> SQLEnumType a
+    -- The base type needs to be enumerable and ordered.
+  , Enum (EnumBase a)
+  , Ord (EnumBase a)
+  ) => EnumEncoding a where
+  type EnumBase a
+  -- | Encode @a@ as a base type.
+  encodeEnum :: a -> EnumBase a
 
-  -- | Decode SQL compatible type to an @a@. If the conversion fails, a list of
-  -- valid ranges is returned instead.
+  -- | Decode base type to an @a@. If the conversion fails, a list of valid
+  -- ranges is returned instead.
   --
-  -- /Note:/ The default implementation looks up the value in 'decodeEnumMap'
-  -- and can be overwritten for performance if necessary.
-  decodeEnum :: SQLEnumType a -> Either [(SQLEnumType a, SQLEnumType a)] a
+  -- /Note:/ The default implementation looks up values in 'decodeEnumMap' and
+  -- can be overwritten for performance if necessary.
+  decodeEnum :: EnumBase a -> Either [(EnumBase a, EnumBase a)] a
   decodeEnum b = maybe (Left . intervals $ Map.keys (decodeEnumMap @a)) Right
                $ Map.lookup b (decodeEnumMap @a)
 
-  -- | We include the definition of the inverse map as part of the
-  -- 'SQLEnumEncoding' instance to ensure it is only computed once.
-  decodeEnumMap :: Map (SQLEnumType a) a
+  -- | Include the inverse map as a top-level part of the 'EnumEncoding'
+  -- instance to ensure it is only computed once by GHC.
+  decodeEnumMap :: Map (EnumBase a) a
   decodeEnumMap = Map.fromList [ (encodeEnum a, a) | a <- enumerate ]
 
-instance SQLEnumEncoding a => PQFormat (SQLEnum a) where
-  pqFormat = pqFormat @(SQLEnumType a)
+instance PQFormat (EnumBase a) => PQFormat (SQLEnum a) where
+  pqFormat = pqFormat @(EnumBase a)
 
-instance SQLEnumEncoding a => ToSQL (SQLEnum a) where
-  type PQDest (SQLEnum a) = PQDest (SQLEnumType a)
+instance
+  ( EnumEncoding a
+  , PQFormat (EnumBase a)
+  , ToSQL (EnumBase a)
+  ) => ToSQL (SQLEnum a) where
+  type PQDest (SQLEnum a) = PQDest (EnumBase a)
   toSQL (SQLEnum a) = toSQL $ encodeEnum a
 
-instance SQLEnumEncoding a => FromSQL (SQLEnum a) where
-  type PQBase (SQLEnum a) = PQBase (SQLEnumType a)
+instance
+  ( EnumEncoding a
+  , PQFormat (EnumBase a)
+  , FromSQL (EnumBase a)
+  , Show (EnumBase a)
+  , Typeable (EnumBase a)
+  ) => FromSQL (SQLEnum a) where
+  type PQBase (SQLEnum a) = PQBase (EnumBase a)
   fromSQL base = do
     b <- fromSQL base
     case decodeEnum b of
@@ -110,11 +115,11 @@ instance SQLEnumEncoding a => FromSQL (SQLEnum a) where
 -- >>> :{
 -- data Person = Alfred | Bertrand | Charles
 --   deriving (Eq, Show, Enum, Bounded)
--- instance SQLEnumAsTextEncoding Person where
+-- instance EnumAsTextEncoding Person where
 --   encodeEnumAsText = \case
---     Alfred -> "alfred"
+--     Alfred   -> "alfred"
 --     Bertrand -> "bertrand"
---     Charles -> "charles"
+--     Charles  -> "charles"
 -- :}
 --
 -- /Note:/ To get SQL-specific instances use @DerivingVia@:
@@ -135,32 +140,32 @@ instance SQLEnumEncoding a => FromSQL (SQLEnum a) where
 -- Left ["alfred","bertrand","charles"]
 newtype SQLEnumAsText a = SQLEnumAsText a
 
-class (Enum a , Bounded a) => SQLEnumAsTextEncoding a where
+class (Enum a, Bounded a) => EnumAsTextEncoding a where
   -- | Encode @a@ as 'Text'.
   encodeEnumAsText :: a -> Text
 
   -- | Decode 'Text' to an @a@. If the conversion fails, a list of valid values
   -- is returned instead.
   --
-  -- /Note:/ The default implementation looks up the value in
-  -- 'decodeEnumAsTextMap' and can be overwritten for performance if necessary.
+  -- /Note:/ The default implementation looks up values in 'decodeEnumAsTextMap'
+  -- and can be overwritten for performance if necessary.
   decodeEnumAsText :: Text -> Either [Text] a
   decodeEnumAsText text = maybe (Left $ Map.keys (decodeEnumAsTextMap @a)) Right
                         $ Map.lookup text (decodeEnumAsTextMap @a)
 
-  -- | We include the inverse map as part of the 'SQLEnumTextEncoding' instance
-  -- to ensure it is only computed once.
+  -- | Include the inverse map as a top-level part of the 'SQLEnumTextEncoding'
+  -- instance to ensure it is only computed once by GHC.
   decodeEnumAsTextMap :: Map Text a
   decodeEnumAsTextMap = Map.fromList [ (encodeEnumAsText a, a) | a <- enumerate ]
 
-instance SQLEnumAsTextEncoding a => PQFormat (SQLEnumAsText a) where
+instance EnumAsTextEncoding a => PQFormat (SQLEnumAsText a) where
   pqFormat = pqFormat @Text
 
-instance SQLEnumAsTextEncoding a => ToSQL (SQLEnumAsText a) where
+instance EnumAsTextEncoding a => ToSQL (SQLEnumAsText a) where
   type PQDest (SQLEnumAsText a) = PQDest Text
   toSQL (SQLEnumAsText a) = toSQL $ encodeEnumAsText a
 
-instance SQLEnumAsTextEncoding a => FromSQL (SQLEnumAsText a) where
+instance EnumAsTextEncoding a => FromSQL (SQLEnumAsText a) where
   type PQBase (SQLEnumAsText a) = PQBase Text
   fromSQL base = do
     text <- fromSQL base
