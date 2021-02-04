@@ -1,3 +1,7 @@
+# hpqtypes-extra-1.10.4.0 (2021-02-04)
+* Generate valid INSERT SELECT query with data modifying WITH clauses
+* Add DerivingVia helpers for enums
+
 # hpqtypes-extra-1.10.3.0 (2020-11-16)
 * Include LIMIT clause in UNION subqueries of the select
 
