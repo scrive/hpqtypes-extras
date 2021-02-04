@@ -1,4 +1,3 @@
-{-# LANGUAGE TypeApplications #-}
 module Database.PostgreSQL.PQTypes.Model.ColumnType (
     ColumnType(..)
   , columnTypeToSQL
