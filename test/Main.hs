@@ -805,6 +805,7 @@ migrationTest2 connSource =
       currentSchema   = schema1Tables
       differentSchema = schema5Tables
       extrasOptions   = defaultExtrasOptions { eoEnforcePKs = True }
+      extrasOptionsWithUnknownObjects = extrasOptions { eoObjectsValidationMode = AllowUnknownObjects }
 
   runQuery_ $ sqlCreateComposite composite
 
@@ -814,15 +815,15 @@ migrationTest2 connSource =
     checkDatabase extrasOptions [] [] currentSchema
   assertNoException "checkDatabaseAllowUnknownTables runs fine \
                     \for consistent DB" $
-    checkDatabaseAllowUnknownObjects extrasOptions [composite] [] currentSchema
+    checkDatabase extrasOptionsWithUnknownObjects [composite] [] currentSchema
   assertNoException "checkDatabaseAllowUnknownTables runs fine \
                     \for consistent DB with unknown composite type in the database" $
-    checkDatabaseAllowUnknownObjects extrasOptions [] [] currentSchema
+    checkDatabase extrasOptionsWithUnknownObjects [] [] currentSchema
   assertException "checkDatabase should throw exception for wrong schema" $
     checkDatabase extrasOptions [] [] differentSchema
   assertException ("checkDatabaseAllowUnknownObjects \
                    \should throw exception for wrong scheme") $
-    checkDatabaseAllowUnknownObjects extrasOptions [] [] differentSchema
+    checkDatabase extrasOptionsWithUnknownObjects [] [] differentSchema
 
   runSQL_ "INSERT INTO table_versions (name, version) \
           \VALUES ('unknown_table', 0)"
@@ -830,14 +831,14 @@ migrationTest2 connSource =
     checkDatabase extrasOptions [] [] currentSchema
   assertNoException ("checkDatabaseAllowUnknownObjects \
                      \accepts extra entry in 'table_versions'") $
-    checkDatabaseAllowUnknownObjects extrasOptions [] [] currentSchema
+    checkDatabase extrasOptionsWithUnknownObjects [] [] currentSchema
   runSQL_ "DELETE FROM table_versions where name='unknown_table'"
 
   runSQL_ "CREATE TABLE unknown_table (title text)"
   assertException "checkDatabase should throw with unknown table" $
     checkDatabase extrasOptions [] [] currentSchema
   assertNoException "checkDatabaseAllowUnknownObjects accepts unknown table" $
-    checkDatabaseAllowUnknownObjects extrasOptions [] [] currentSchema
+    checkDatabase extrasOptionsWithUnknownObjects [] [] currentSchema
 
   runSQL_ "INSERT INTO table_versions (name, version) \
           \VALUES ('unknown_table', 0)"
@@ -845,7 +846,7 @@ migrationTest2 connSource =
     checkDatabase extrasOptions [] [] currentSchema
   assertNoException ("checkDatabaseAllowUnknownObjects \
                      \accepts unknown tables with version") $
-    checkDatabaseAllowUnknownObjects extrasOptions [] [] currentSchema
+    checkDatabase extrasOptionsWithUnknownObjects [] [] currentSchema
 
   freshTestDB    step
 
