@@ -1,20 +1,19 @@
 module Database.PostgreSQL.PQTypes.Checks (
   -- * Checks
     checkDatabase
-  , checkDatabaseAllowUnknownObjects
   , createTable
   , createDomain
 
   -- * Options
   , ExtrasOptions(..)
   , defaultExtrasOptions
+  , ObjectsValidationMode(..)
 
   -- * Migrations
   , migrateDatabase
   ) where
 
 import Control.Arrow ((&&&))
-import Control.Applicative ((<$>))
 import Control.Monad.Catch
 import Control.Monad.Reader
 import Data.Int
@@ -67,49 +66,41 @@ migrateDatabase options
   checkDBConsistency options domains tablesWithVersions migrations
   resultCheck =<< checkCompositesStructure tablesWithVersions
                                            CreateCompositesIfDatabaseEmpty
-                                           DontAllowUnknownObjects
+                                           (eoObjectsValidationMode options)
                                            composites
   resultCheck =<< checkDomainsStructure domains
   resultCheck =<< checkDBStructure options tablesWithVersions
   resultCheck =<< checkTablesWereDropped migrations
-  resultCheck =<< checkUnknownTables tables
-  resultCheck =<< checkExistenceOfVersionsForTables (tableVersions : tables)
+
+  when (eoObjectsValidationMode options == DontAllowUnknownObjects) $ do
+    resultCheck =<< checkUnknownTables tables
+    resultCheck =<< checkExistenceOfVersionsForTables (tableVersions : tables)
+
+  -- After migrations are done make sure the table versions are correct.
+  resultCheck . checkVersions options =<< getTableVersions (tableVersions : tables)
 
   -- everything is OK, commit changes
   commit
 
--- | Run checks on the database structure and whether the database
--- needs to be migrated. Will do a full check of DB structure.
+-- | Run checks on the database structure and whether the database needs to be
+-- migrated. Will do a full check of DB structure.
 checkDatabase
   :: forall m . (MonadDB m, MonadLog m, MonadThrow m)
-  => ExtrasOptions -> [CompositeType] -> [Domain] -> [Table] -> m ()
-checkDatabase options = checkDatabase_ options DontAllowUnknownObjects
-
--- | Same as 'checkDatabase', but will not fail if there are additional tables
--- and composite types in the database.
-checkDatabaseAllowUnknownObjects
-  :: forall m . (MonadDB m, MonadLog m, MonadThrow m)
-  => ExtrasOptions -> [CompositeType] -> [Domain] -> [Table] -> m ()
-checkDatabaseAllowUnknownObjects options = checkDatabase_ options AllowUnknownObjects
-
-data ObjectsValidationMode = AllowUnknownObjects | DontAllowUnknownObjects
-  deriving Eq
-
-checkDatabase_
-  :: forall m . (MonadDB m, MonadLog m, MonadThrow m)
   => ExtrasOptions
-  -> ObjectsValidationMode
   -> [CompositeType]
   -> [Domain]
   -> [Table]
   -> m ()
-checkDatabase_ options ovm composites domains tables = do
+checkDatabase options composites domains tables = do
   tablesWithVersions <- getTableVersions (tableVersions : tables)
-  resultCheck $ checkVersions tablesWithVersions
-  resultCheck =<< checkCompositesStructure tablesWithVersions DontCreateComposites ovm composites
+  resultCheck $ checkVersions options tablesWithVersions
+  resultCheck =<< checkCompositesStructure tablesWithVersions
+                                           DontCreateComposites
+                                           (eoObjectsValidationMode options)
+                                           composites
   resultCheck =<< checkDomainsStructure domains
   resultCheck =<< checkDBStructure options tablesWithVersions
-  when (ovm == DontAllowUnknownObjects) $ do
+  when (eoObjectsValidationMode options == DontAllowUnknownObjects) $ do
     resultCheck =<< checkUnknownTables tables
     resultCheck =<< checkExistenceOfVersionsForTables (tableVersions : tables)
 
@@ -118,24 +109,6 @@ checkDatabase_ options ovm composites domains tables = do
   resultCheck =<< checkInitialSetups tables
 
   where
-    checkVersions :: TablesWithVersions -> ValidationResult
-    checkVersions vs = mconcat . map checkVersion $ vs
-
-    checkVersion :: (Table, Int32) -> ValidationResult
-    checkVersion (t@Table{..}, v)
-      | tblVersion `elem` tblAcceptedDbVersions
-                  = validationError $
-                    "Table '" <> tblNameText t <>
-                    "' has its current table version in accepted db versions"
-      | tblVersion == v || v `elem` tblAcceptedDbVersions
-                  = mempty
-      | v == 0    = validationError $
-                    "Table '" <> tblNameText t <> "' must be created"
-      | otherwise = validationError $
-                    "Table '" <> tblNameText t
-                    <> "' must be migrated" <+> showt v <+> "->"
-                    <+> showt tblVersion
-
     checkInitialSetups :: [Table] -> m ValidationResult
     checkInitialSetups tbls =
       liftM mconcat . mapM checkInitialSetup' $ tbls
@@ -197,6 +170,21 @@ getDBTableNames = do
 
   dbTableNames <- fetchMany runIdentity
   return dbTableNames
+
+checkVersions :: ExtrasOptions -> TablesWithVersions -> ValidationResult
+checkVersions options = mconcat . map checkVersion
+  where
+    checkVersion :: (Table, Int32) -> ValidationResult
+    checkVersion (t@Table{..}, v)
+      | if eoAllowHigherTableVersions options
+        then tblVersion <= v
+        else tblVersion == v = mempty
+      | v == 0    = validationError $
+                    "Table '" <> tblNameText t <> "' must be created"
+      | otherwise = validationError $
+                    "Table '" <> tblNameText t
+                    <> "' must be migrated" <+> showt v <+> "->"
+                    <+> showt tblVersion
 
 -- | Check that there's a 1-to-1 correspondence between the list of
 -- 'Table's and what's actually in the database.
@@ -395,13 +383,11 @@ checkDBStructure
   => ExtrasOptions
   -> TablesWithVersions
   -> m ValidationResult
-checkDBStructure options tables = fmap mconcat .
-                                  forM tables $ \(table, version) ->
-  do
+checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version) -> do
   result <- topMessage "table" (tblNameText table) <$> checkTableStructure table
-  -- If one of the accepted versions defined for the table is the current table
-  -- version in the database, show inconsistencies as info messages only.
-  return $ if version `elem` tblAcceptedDbVersions table
+  -- If we allow higher table versions in the database, show inconsistencies as
+  -- info messages only.
+  return $ if eoAllowHigherTableVersions options && tblVersion table < version
            then validationErrorsToInfos result
            else result
   where
@@ -824,12 +810,9 @@ checkDBConsistency options domains tablesWithVersions migrations = do
         logInfo_ "Running migrations..."
         forM_ migrationsToRun $ \mgr -> do
           runMigration mgr
-
-          when (eoForceCommit options) $ do
+          when (eoCommitAfterEachMigration options) $ do
             logInfo_ $ "Committing migration changes..."
             commit
-            logInfo_ $ "Committing migration changes done."
-            logInfo_ "!IMPORTANT! Database has been permanently changed"
         logInfo_ "Running migrations... done."
 
     validateMigrationsToRun :: [Migration m] -> [(Text, Int32)] -> m ()
