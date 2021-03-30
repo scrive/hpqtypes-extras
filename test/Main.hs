@@ -3,7 +3,6 @@ module Main
 
 import Control.Exception.Lifted as E
 import Control.Monad.IO.Class
-import Control.Monad.Trans.Control
 
 import Data.Either
 import Data.Monoid
@@ -908,19 +907,53 @@ migrationTest4 connSource =
 
   freshTestDB         step
 
-eitherExc :: MonadBaseControl IO m =>
-             (SomeException -> m ()) -> (a -> m ()) -> m a -> m ()
-eitherExc left right c = (E.try c) >>= either left right
+data TestConditionFail = TestConditionFail
+  deriving (Show, Typeable, Eq)
+instance Exception TestConditionFail
+
+dbExtraExceptionCatchTest :: ConnectionSourceM (LogT IO) -> TestTree
+dbExtraExceptionCatchTest connSource =
+  testCaseSteps' "DbExtraException catch test" connSource $ \step -> do
+  freshTestDB         step
+  createTablesSchema1 step
+
+  let failingQuery = do
+        kRun1OrThrowWhyNot . sqlSelect "bank" $
+          sqlWhereE TestConditionFail "FALSE"
+        liftIO $ assertFailure "No exception thrown"
+
+  step "Trying DBException handler"
+  assertNoException "DBException handler"
+    . catch failingQuery $ \dbe@(DBException _ exc) -> do
+        let mExc = fromException $ toException exc
+        liftIO $ assertEqual ("DBException: " ++ show dbe)
+          (Just TestConditionFail) mExc
+
+  step "Trying DBExtraException handler"
+  assertNoException "DBExtraException handler"
+    $ catches failingQuery
+      [ Handler $ \(_ :: DBExtraException DBBaseLineConditionIsFalse)
+          -> liftIO $ assertFailure "Should not catch DBBaseLineConditionIsFalse"
+      , Handler $ \(DBExtraException _ exc)
+          -> liftIO $ exc @?= TestConditionFail
+      ]
 
 assertNoException :: String -> TestM () -> TestM ()
-assertNoException t c = eitherExc
-  (const $ liftIO $ assertFailure ("Exception thrown for: " ++ t))
-  (const $ return ()) c
+assertNoException t action = catches action
+  [ Handler $ \(e :: HUnitFailure) -> throwIO e -- always rethrow assertion failure
+  , Handler $ \(SomeException e) -> liftIO . assertFailure $
+      "Exception thrown for: " ++ t ++ "\nException: " ++ show e
+  ]
 
 assertException :: String -> TestM () -> TestM ()
-assertException   t c = eitherExc
-  (const $ return ())
-  (const $ liftIO $ assertFailure ("No exception thrown for: " ++ t)) c
+assertException t action = do
+  catches (action >> failed)
+    [ Handler $ \(e :: HUnitFailure) -> throwIO e -- always rethrow assertion failure
+    , Handler $ \(SomeException _) -> pure ()
+    ]
+  where
+    failed = liftIO $ assertFailure ("No exception thrown for: " ++ t)
+
 
 -- | A variant of testCaseSteps that works in TestM monad.
 testCaseSteps' :: TestName -> ConnectionSourceM (LogT IO)
@@ -946,6 +979,7 @@ main = do
                          , migrationTest2 connSource
                          , migrationTest3 connSource
                          , migrationTest4 connSource
+                         , dbExtraExceptionCatchTest connSource
                          ]
   where
     ings =

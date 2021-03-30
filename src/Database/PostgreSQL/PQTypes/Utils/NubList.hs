@@ -6,7 +6,6 @@ module Database.PostgreSQL.PQTypes.Utils.NubList
     ) where
 
 import Prelude
-import Data.Monoid (Monoid(..))
 import Data.Typeable
 
 import qualified Text.Read as R
