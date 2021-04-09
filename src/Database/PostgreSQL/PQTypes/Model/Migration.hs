@@ -57,6 +57,10 @@ data MigrationAction m =
       TableIndex
 #endif
 
+  -- | Migration for renaming a table.
+  | RenameTableMigration (RawSQL ()) -- ^ Table name
+
+
 -- | Migration object.
 data Migration m =
   Migration {
@@ -74,13 +78,11 @@ data Migration m =
 isStandardMigration :: Migration m -> Bool
 isStandardMigration Migration{..} =
   case mgrAction of
-    StandardMigration{}                -> True
-    DropTableMigration{}               -> False
-    CreateIndexConcurrentlyMigration{} -> False
+    StandardMigration{} -> True
+    _                   -> False
 
 isDropTableMigration :: Migration m -> Bool
 isDropTableMigration Migration{..} =
   case mgrAction of
-    StandardMigration{}                -> False
-    DropTableMigration{}               -> True
-    CreateIndexConcurrentlyMigration{} -> False
+    DropTableMigration{} -> True
+    _                    -> False

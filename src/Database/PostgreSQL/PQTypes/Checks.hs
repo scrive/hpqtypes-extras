@@ -792,15 +792,23 @@ checkDBConsistency options domains tablesWithVersions migrations = do
           runSQL_ "COMMIT"
           runQuery_ (sqlCreateIndexConcurrently tname idx) `finally` begin
           updateTableVersion
+
+        RenameTableMigration newName -> do
+          let newNameTxt = unRawSQL newName
+          logInfo_ $ arrListTable mgrTableName <+> "rename table to" <+> newNameTxt
+          runQuery_ $ smconcat ["ALTER TABLE", mgrTableName, "RENAME TO", newName]
+          updateTable $ sqlSet "name" newNameTxt
       where
         logMigration = do
           logInfo_ $ arrListTable mgrTableName
             <> showt mgrFrom <+> "->" <+> showt (succ mgrFrom)
 
-        updateTableVersion = do
+        updateTable setSql = do
           runQuery_ $ sqlUpdate "table_versions" $ do
-            sqlSet "version"  (succ mgrFrom)
+            setSql
             sqlWhereEq "name" (T.unpack . unRawSQL $ mgrTableName)
+
+        updateTableVersion = updateTable $ sqlSet "version" (succ mgrFrom)
 
     runMigrations :: [(Text, Int32)] -> m ()
     runMigrations dbTablesWithVersions = do
