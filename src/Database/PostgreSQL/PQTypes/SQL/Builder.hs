@@ -232,10 +232,14 @@ module Database.PostgreSQL.PQTypes.SQL.Builder
       `kWhyNot1` will return your exception as provided. Any other function (`kRun1OrThrowWhyNot`,
       `kRun1OrThrowWhyNotAllowIgnore`, `kRunManyOrThrowWhyNot`, `kRunAndFetch1OrThrowWhyNot`) will
       throw them using `DBException` to provide failing query context. This needs special awareness
-      during exception handling. You can use typed `DBExtraException` wrapper to catch such exception
-      with query context.
+      during exception handling. You can use typed `DBExtraException` or `MaybeDBExtraException` wrappers
+      to catch such exception with query context.
 
-      > action `catch` \(e :: DBExtraException DBBaseLineConditionIsFalse) -> ...
+      > action `catch` \(e :: DBExtraException MyException) -> ...
+
+      WARNING: Exception handler will not be able to catch just the raw exception! The following will not
+      work unless the exception itself is aware of possibility of being thrown with `throwDB`.
+      See `fromMaybeDBException` how to implement `throwDB` aware exceptions.
   -}
   , kWhyNot1
   , kRun1OrThrowWhyNot
@@ -243,6 +247,9 @@ module Database.PostgreSQL.PQTypes.SQL.Builder
   , kRunManyOrThrowWhyNot
   , kRunAndFetch1OrThrowWhyNot
   , DBExtraException(..)
+  , MaybeDBExtraException(..)
+  , fromMaybeDBException
+  , castSomeException
   , DBBaseLineConditionIsFalse(..)
   )
   where
@@ -250,6 +257,7 @@ module Database.PostgreSQL.PQTypes.SQL.Builder
 import Control.Exception.Lifted as E
 import Control.Monad.Catch
 import Control.Monad.State
+import Data.Foldable
 import Data.List
 import Data.Maybe
 import Data.Monoid
@@ -321,7 +329,7 @@ instance Eq SqlCondition where
   -}
 
 instance Show SqlWhyNot where
-  show (SqlWhyNot _important exc expr) = "SqlWhyNot " ++ show (typeOf (exc $undefined)) ++ " " ++ show expr
+  show (SqlWhyNot _important exc expr) = "SqlWhyNot " ++ show (typeOf (exc undefined)) ++ " " ++ show expr
 
 instance Sqlable SqlCondition where
   toSQLCommand (SqlPlainCondition a _) = a
@@ -1162,7 +1170,7 @@ kWhyNot cmd = do
 
 data ExceptionMaker = forall row. FromRow row => ExceptionMaker (row -> SomeException)
 
-data DBKwhyNotInternalError = DBKwhyNotInternalError String
+newtype DBKwhyNotInternalError = DBKwhyNotInternalError String
   deriving (Show, Typeable)
 
 instance Exception DBKwhyNotInternalError
@@ -1240,16 +1248,91 @@ data DBExtraException e = forall sql. Show sql => DBExtraException
 deriving instance (Show e) => Show (DBExtraException e)
 
 instance Exception e => Exception (DBExtraException e) where
-  toException (DBExtraException {..}) = toException $ DBException dbexQueryContext dbexError
+  toException DBExtraException {..} = toException $ DBException dbexQueryContext dbexError
   fromException e = do
     DBException {..} <- fromException e
-    flip DBExtraException dbeQueryContext <$> fromException (toException dbeError)
+    e' <- fromException $ toException dbeError
+    pure $ DBExtraException e' dbeQueryContext
+  displayException DBExtraException {..} =
+    "DBExtraException {\
+    \ dbexError = " <> displayException dbexError <> ",\
+    \ dbexQueryContext = " <> show dbexQueryContext <> "}"
+
+-- | Type wrapper for easier exception handling of `DBException`.
+--   Similar to `DBExtraException` but catches exception regardless whether it was thrown
+--   using `throwDB` or directly (e.g. `throw`, `throwIO`, `throwM`).
+--   The query context `mdbexQueryContext` can be `Nothing`.
+data MaybeDBExtraException e = forall sql. Show sql => MaybeDBExtraException
+  { mdbexError :: !e -- ^ Specific error.
+  , mdbexQueryContext :: !(Maybe sql) -- ^ Last executed SQL query if the exception was thrown by `throwDB`.
+  }
+  deriving (Typeable)
+
+deriving instance (Show e) => Show (MaybeDBExtraException e)
+
+instance Exception e => Exception (MaybeDBExtraException e) where
+  toException MaybeDBExtraException {..} = case mdbexQueryContext of
+    Just queryContext -> toException $ DBExtraException mdbexError queryContext
+    Nothing           -> toException mdbexError
+  fromException ex@(SomeException e) = asum
+    [ flip MaybeDBExtraException (Nothing @String) <$> cast e
+    , do
+        DBExtraException {..} <- fromException ex
+        pure . MaybeDBExtraException dbexError $ Just dbexQueryContext
+    , flip MaybeDBExtraException (Nothing @String) <$> fromException ex
+    ]
+  displayException MaybeDBExtraException {..} =
+    "MaybeDBExtraException {\
+    \ mdbexError = " <> displayException mdbexError <> ",\
+    \ mdbexQueryContext = " <> show mdbexQueryContext <> "}"
+
+
+-- | Helper function for `throwDB` aware exceptions.
+--
+--   Default implementation of `fromException` won't be able to catch
+--   exceptions raised by `throwDB`.
+--
+--   > instance Exception MyException
+--   >
+--   > -- The following won't work!
+--   > throwM MyException `catch` \(e :: MyException) -> ...
+--
+--   You can implement the `throwDB` awareness by using `fromMaybeDBException` in implementation
+--   of `fromException` method. Following example will work for exceptions with default
+--   `toException` implementation.
+--
+--   > instance Exception MyException where
+--   >   fromException = fromMaybeDBException castSomeException
+--   >
+--   > -- This will work now.
+--   > throwM MyException `catch` \(e :: MyException) -> ...
+--
+--   Of course, in case you have some exception hierarchy, you just replace `castSomeException`
+--   with your custom `fromException` implementation.
+--
+--   > instance Exception MyException where
+--   >   toException = toSomeMyException
+--   >   fromException = fromMaybeDBException fromSomeMyException
+fromMaybeDBException :: (Exception e) => (SomeException -> Maybe e) -> SomeException -> Maybe e
+fromMaybeDBException defaultFromException e = asum
+  [ do
+      DBExtraException {..} <- fromException e
+      pure dbexError
+  , defaultFromException e
+  ]
+
+-- | Default implementation of `fromException`.
+--   Indented to be used with `fromMaybeDBException` for
+--   exceptions with default `toException` implementation.
+castSomeException :: (Exception e) => SomeException -> Maybe e
+castSomeException (SomeException e) = cast e
 
 -- | Implicit exception for `sqlWhere` combinator family.
-data DBBaseLineConditionIsFalse = DBBaseLineConditionIsFalse SQL
+newtype DBBaseLineConditionIsFalse = DBBaseLineConditionIsFalse SQL
   deriving (Show, Typeable)
 
-instance Exception DBBaseLineConditionIsFalse
+instance Exception DBBaseLineConditionIsFalse where
+  fromException = fromMaybeDBException castSomeException
 
 -- | Runs query expecting one or more affected rows; throws exception otherwise.
 kRunManyOrThrowWhyNot :: (SqlTurnIntoSelect s, MonadDB m, MonadThrow m)

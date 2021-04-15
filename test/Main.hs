@@ -5,11 +5,12 @@ import Control.Exception.Lifted as E
 import Control.Monad.IO.Class
 
 import Data.Either
+import Data.Maybe
 import Data.Monoid
-import Prelude
-import qualified Data.Text as T
 import Data.Typeable
 import Data.UUID.Types
+import Prelude
+import qualified Data.Text as T
 
 import Database.PostgreSQL.PQTypes
 import Database.PostgreSQL.PQTypes.Checks
@@ -909,7 +910,8 @@ migrationTest4 connSource =
 
 data TestConditionFail = TestConditionFail
   deriving (Show, Typeable, Eq)
-instance Exception TestConditionFail
+instance Exception TestConditionFail where
+  fromException = fromMaybeDBException castSomeException
 
 dbExtraExceptionCatchTest :: ConnectionSourceM (LogT IO) -> TestTree
 dbExtraExceptionCatchTest connSource =
@@ -917,26 +919,52 @@ dbExtraExceptionCatchTest connSource =
   freshTestDB         step
   createTablesSchema1 step
 
-  let failingQuery = do
-        kRun1OrThrowWhyNot . sqlSelect "bank" $
-          sqlWhereE TestConditionFail "FALSE"
-        liftIO $ assertFailure "No exception thrown"
+  let dbExceptional = throwDB TestConditionFail
+  let ioExceptional = throwIO TestConditionFail
 
   step "Trying DBException handler"
   assertNoException "DBException handler"
-    . catch failingQuery $ \dbe@(DBException _ exc) -> do
+    . catch dbExceptional $ \dbe@(DBException _ exc) -> do
         let mExc = fromException $ toException exc
         liftIO $ assertEqual ("DBException: " ++ show dbe)
           (Just TestConditionFail) mExc
 
-  step "Trying DBExtraException handler"
+  step "Trying TestConditionFail handler with `throwDB`"
+  assertNoException "TestConditionFail handler"
+    $ catches dbExceptional
+      [ Handler $ \DBBaseLineConditionIsFalse {} -> liftIO $ assertFailure "Should not catch DBBaseLineConditionIsFalse"
+      , Handler $ \TestConditionFail -> pure ()
+      ]
+
+  step "Trying TestConditionFail handler with `throwIO`"
+  assertNoException "TestConditionFail handler"
+    $ catches ioExceptional
+      [ Handler $ \DBBaseLineConditionIsFalse {} -> liftIO $ assertFailure "Should not catch DBBaseLineConditionIsFalse"
+      , Handler $ \TestConditionFail -> pure ()
+      ]
+
+  step "Trying DBExtraException handler with `throwDB`"
   assertNoException "DBExtraException handler"
-    $ catches failingQuery
+    $ catches dbExceptional
       [ Handler $ \(_ :: DBExtraException DBBaseLineConditionIsFalse)
           -> liftIO $ assertFailure "Should not catch DBBaseLineConditionIsFalse"
-      , Handler $ \(DBExtraException _ exc)
-          -> liftIO $ exc @?= TestConditionFail
+      , Handler $ \(_ :: DBExtraException TestConditionFail) -> pure ()
       ]
+
+  step "Trying DBExtraException handler with `throwIO`"
+  assertException "DBExtraException handler"
+    $ catch ioExceptional $ \(_ :: DBExtraException TestConditionFail)
+          -> liftIO $ assertFailure "Should not catch TestConditionFail"
+
+  step "Trying MaybeDBExtraException handler with `throwDB`"
+  assertNoException "DBExtraException handler"
+    . catch dbExceptional $ \(MaybeDBExtraException (_ :: TestConditionFail) mSql)
+      -> liftIO . assertBool "SQL context must be Just value" $ isJust mSql
+
+  step "Trying MaybeDBExtraException handler with `throwIO`"
+  assertNoException "DBExtraException handler"
+    . catch ioExceptional $ \(MaybeDBExtraException (_ :: TestConditionFail) mSql)
+      -> liftIO . assertBool "SQL context must be Just value" $ isNothing mSql
 
 assertNoException :: String -> TestM () -> TestM ()
 assertNoException t action = catches action
