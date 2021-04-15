@@ -915,7 +915,7 @@ instance Exception TestConditionFail where
 
 dbExtraExceptionCatchTest :: ConnectionSourceM (LogT IO) -> TestTree
 dbExtraExceptionCatchTest connSource =
-  testCaseSteps' "DbExtraException catch test" connSource $ \step -> do
+  testCaseSteps' "WithDbExtra catch test" connSource $ \step -> do
   freshTestDB         step
   createTablesSchema1 step
 
@@ -943,27 +943,27 @@ dbExtraExceptionCatchTest connSource =
       , Handler $ \TestConditionFail -> pure ()
       ]
 
-  step "Trying DBExtraException handler with `throwDB`"
-  assertNoException "DBExtraException handler"
+  step "Trying WithDBExtra handler with `throwDB`"
+  assertNoException "WithDBExtra handler"
     $ catches dbExceptional
-      [ Handler $ \(_ :: DBExtraException DBBaseLineConditionIsFalse)
+      [ Handler $ \(_ :: WithDBExtra DBBaseLineConditionIsFalse)
           -> liftIO $ assertFailure "Should not catch DBBaseLineConditionIsFalse"
-      , Handler $ \(_ :: DBExtraException TestConditionFail) -> pure ()
+      , Handler $ \(_ :: WithDBExtra TestConditionFail) -> pure ()
       ]
 
-  step "Trying DBExtraException handler with `throwIO`"
-  assertException "DBExtraException handler"
-    $ catch ioExceptional $ \(_ :: DBExtraException TestConditionFail)
+  step "Trying WithDBExtra handler with `throwIO`"
+  assertException "WithDBExtra handler"
+    $ catch ioExceptional $ \(_ :: WithDBExtra TestConditionFail)
           -> liftIO $ assertFailure "Should not catch TestConditionFail"
 
-  step "Trying MaybeDBExtraException handler with `throwDB`"
-  assertNoException "DBExtraException handler"
-    . catch dbExceptional $ \(MaybeDBExtraException (_ :: TestConditionFail) mSql)
+  step "Trying WithMaybeDBExtra handler with `throwDB`"
+  assertNoException "WithDBExtra handler"
+    . catch dbExceptional $ \(WithMaybeDBExtra (_ :: TestConditionFail) mSql)
       -> liftIO . assertBool "SQL context must be Just value" $ isJust mSql
 
-  step "Trying MaybeDBExtraException handler with `throwIO`"
-  assertNoException "DBExtraException handler"
-    . catch ioExceptional $ \(MaybeDBExtraException (_ :: TestConditionFail) mSql)
+  step "Trying WithMaybeDBExtra handler with `throwIO`"
+  assertNoException "WithDBExtra handler"
+    . catch ioExceptional $ \(WithMaybeDBExtra (_ :: TestConditionFail) mSql)
       -> liftIO . assertBool "SQL context must be Just value" $ isNothing mSql
 
 assertNoException :: String -> TestM () -> TestM ()

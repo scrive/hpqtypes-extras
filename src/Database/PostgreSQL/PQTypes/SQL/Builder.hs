@@ -232,10 +232,10 @@ module Database.PostgreSQL.PQTypes.SQL.Builder
       `kWhyNot1` will return your exception as provided. Any other function (`kRun1OrThrowWhyNot`,
       `kRun1OrThrowWhyNotAllowIgnore`, `kRunManyOrThrowWhyNot`, `kRunAndFetch1OrThrowWhyNot`) will
       throw them using `DBException` to provide failing query context. This needs special awareness
-      during exception handling. You can use typed `DBExtraException` or `MaybeDBExtraException` wrappers
+      during exception handling. You can use typed `WithDBExtra` or `WithMaybeDBExtra` wrappers
       to catch such exception with query context.
 
-      > action `catch` \(e :: DBExtraException MyException) -> ...
+      > action `catch` \(e :: WithDBExtra MyException) -> ...
 
       WARNING: Exception handler will not be able to catch just the raw exception! The following will not
       work unless the exception itself is aware of possibility of being thrown with `throwDB`.
@@ -246,8 +246,8 @@ module Database.PostgreSQL.PQTypes.SQL.Builder
   , kRun1OrThrowWhyNotAllowIgnore
   , kRunManyOrThrowWhyNot
   , kRunAndFetch1OrThrowWhyNot
-  , DBExtraException(..)
-  , MaybeDBExtraException(..)
+  , WithDBExtra(..)
+  , WithMaybeDBExtra(..)
   , fromMaybeDBException
   , castSomeException
   , DBBaseLineConditionIsFalse(..)
@@ -1239,50 +1239,49 @@ enumerateWhyNotExceptions (from,condsUpTillNow) conds = concatMap worker (zip co
 -- | Type wrapper for easier exception handling of `DBException`.
 --   Unlike `DBException`, this allows more various uses, especially it can be used
 --   in conjuction with `catches` without catching unwanted exceptions.
-data DBExtraException e = forall sql. Show sql => DBExtraException
+data WithDBExtra e = forall sql. Show sql => WithDBExtra
   { dbexError :: !e -- ^ Specific error.
   , dbexQueryContext :: !sql -- ^ Last executed SQL query.
   }
   deriving (Typeable)
 
-deriving instance (Show e) => Show (DBExtraException e)
+deriving instance (Show e) => Show (WithDBExtra e)
 
-instance Exception e => Exception (DBExtraException e) where
-  toException DBExtraException {..} = toException $ DBException dbexQueryContext dbexError
+instance Exception e => Exception (WithDBExtra e) where
+  toException WithDBExtra {..} = toException $ DBException dbexQueryContext dbexError
   fromException e = do
     DBException {..} <- fromException e
     e' <- fromException $ toException dbeError
-    pure $ DBExtraException e' dbeQueryContext
-  displayException DBExtraException {..} =
-    "DBExtraException {\
+    pure $ WithDBExtra e' dbeQueryContext
+  displayException WithDBExtra {..} =
+    "WithDBExtra {\
     \ dbexError = " <> displayException dbexError <> ",\
     \ dbexQueryContext = " <> show dbexQueryContext <> "}"
 
 -- | Type wrapper for easier exception handling of `DBException`.
---   Similar to `DBExtraException` but catches exception regardless whether it was thrown
+--   Similar to `WithDBExtra` but catches exception regardless whether it was thrown
 --   using `throwDB` or directly (e.g. `throw`, `throwIO`, `throwM`).
 --   The query context `mdbexQueryContext` can be `Nothing`.
-data MaybeDBExtraException e = forall sql. Show sql => MaybeDBExtraException
+data WithMaybeDBExtra e = forall sql. Show sql => WithMaybeDBExtra
   { mdbexError :: !e -- ^ Specific error.
   , mdbexQueryContext :: !(Maybe sql) -- ^ Last executed SQL query if the exception was thrown by `throwDB`.
   }
   deriving (Typeable)
 
-deriving instance (Show e) => Show (MaybeDBExtraException e)
+deriving instance (Show e) => Show (WithMaybeDBExtra e)
 
-instance Exception e => Exception (MaybeDBExtraException e) where
-  toException MaybeDBExtraException {..} = case mdbexQueryContext of
-    Just queryContext -> toException $ DBExtraException mdbexError queryContext
+instance Exception e => Exception (WithMaybeDBExtra e) where
+  toException WithMaybeDBExtra {..} = case mdbexQueryContext of
+    Just queryContext -> toException $ WithDBExtra mdbexError queryContext
     Nothing           -> toException mdbexError
-  fromException ex@(SomeException e) = asum
-    [ flip MaybeDBExtraException (Nothing @String) <$> cast e
-    , do
-        DBExtraException {..} <- fromException ex
-        pure . MaybeDBExtraException dbexError $ Just dbexQueryContext
-    , flip MaybeDBExtraException (Nothing @String) <$> fromException ex
+  fromException e = asum
+    [ do
+        WithDBExtra {..} <- fromException e
+        pure . WithMaybeDBExtra dbexError $ Just dbexQueryContext
+    , flip WithMaybeDBExtra (Nothing @String) <$> fromException e
     ]
-  displayException MaybeDBExtraException {..} =
-    "MaybeDBExtraException {\
+  displayException WithMaybeDBExtra {..} =
+    "WithMaybeDBExtra {\
     \ mdbexError = " <> displayException mdbexError <> ",\
     \ mdbexQueryContext = " <> show mdbexQueryContext <> "}"
 
@@ -1316,7 +1315,7 @@ instance Exception e => Exception (MaybeDBExtraException e) where
 fromMaybeDBException :: (Exception e) => (SomeException -> Maybe e) -> SomeException -> Maybe e
 fromMaybeDBException defaultFromException e = asum
   [ do
-      DBExtraException {..} <- fromException e
+      WithDBExtra {..} <- fromException e
       pure dbexError
   , defaultFromException e
   ]

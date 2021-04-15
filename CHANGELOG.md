@@ -4,8 +4,8 @@
 * Remove `ToJSValue` constraints everywhere (including instances).
 * Remove dependency on `text-fields`.
 * Improved documentation of `sql*OrThrowWhyNot` combinators.
-* Add `DBExtraException` and `MaybeDBExtraException` wrapper types
-  for easier exception handling.
+* Add `WithDBExtra` and `WithMaybeDBExtra` wrapper types for easier
+  exception handling.
 * Add `fromMaybeDBException` and `castSomeException` helper functions
   for `throwDB` aware exception instances.
 
