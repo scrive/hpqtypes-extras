@@ -235,11 +235,14 @@ module Database.PostgreSQL.PQTypes.SQL.Builder
       during exception handling. You can use typed `WithDBExtra` or `WithMaybeDBExtra` wrappers
       to catch such exception with query context.
 
-      > action `catch` \(e :: WithDBExtra MyException) -> ...
+      > throwDB MyException `catch` \(e :: WithDBExtra MyException) -> ...
 
-      WARNING: Exception handler will not be able to catch just the raw exception! The following will not
+      === WARNING:
+      Exception handler will not be able to catch just the raw exception! The following will not
       work unless the exception itself is aware of possibility of being thrown with `throwDB`.
       See `fromMaybeDBException` how to implement `throwDB` aware exceptions.
+
+      > throwDB MyException `catch` \(e :: MyException) -> ...  -- This won't work by default.
   -}
   , kWhyNot1
   , kRun1OrThrowWhyNot
@@ -254,7 +257,6 @@ module Database.PostgreSQL.PQTypes.SQL.Builder
   )
   where
 
-import Control.Exception.Lifted as E
 import Control.Monad.Catch
 import Control.Monad.State
 import Data.Foldable
@@ -1260,7 +1262,7 @@ instance Exception e => Exception (WithDBExtra e) where
 
 -- | Type wrapper for easier exception handling of `DBException`.
 --   Similar to `WithDBExtra` but catches exception regardless whether it was thrown
---   using `throwDB` or directly (e.g. `throw`, `throwIO`, `throwM`).
+--   using `throwDB` or directly (e.g. `Control.Exception.throw`, `Control.Exception.throwIO`, `throwM`).
 --   The query context `mdbexQueryContext` can be `Nothing`.
 data WithMaybeDBExtra e = forall sql. Show sql => WithMaybeDBExtra
   { mdbexError :: !e -- ^ Specific error.
@@ -1320,7 +1322,7 @@ fromMaybeDBException defaultFromException e = asum
   , defaultFromException e
   ]
 
--- | Default implementation of `fromException`.
+-- | Default `fromException` implementation.
 --   Indented to be used with `fromMaybeDBException` for
 --   exceptions with default `toException` implementation.
 castSomeException :: (Exception e) => SomeException -> Maybe e
