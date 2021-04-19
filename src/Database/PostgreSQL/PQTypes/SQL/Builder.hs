@@ -232,7 +232,7 @@ module Database.PostgreSQL.PQTypes.SQL.Builder
       `kWhyNot1` will return your exception as provided. Any other function (`kRun1OrThrowWhyNot`,
       `kRun1OrThrowWhyNotAllowIgnore`, `kRunManyOrThrowWhyNot`, `kRunAndFetch1OrThrowWhyNot`) will
       throw them using `DBException` to provide failing query context. This needs special awareness
-      during exception handling. You can use typed `WithDBExtra` or `WithMaybeDBExtra` wrappers
+      during exception handling. You can use typed `WithDBExtra` or `MaybeDBExtra` wrappers
       to catch such exception with query context.
 
       > throwDB MyException `catch` \(e :: WithDBExtra MyException) -> ...
@@ -250,7 +250,7 @@ module Database.PostgreSQL.PQTypes.SQL.Builder
   , kRunManyOrThrowWhyNot
   , kRunAndFetch1OrThrowWhyNot
   , WithDBExtra(..)
-  , WithMaybeDBExtra(..)
+  , MaybeDBExtra(..)
   , fromMaybeDBException
   , castSomeException
   , DBBaseLineConditionIsFalse(..)
@@ -1264,26 +1264,26 @@ instance Exception e => Exception (WithDBExtra e) where
 --   Similar to `WithDBExtra` but catches exception regardless whether it was thrown
 --   using `throwDB` or directly (e.g. `Control.Exception.throw`, `Control.Exception.throwIO`, `throwM`).
 --   The query context `mdbexQueryContext` can be `Nothing`.
-data WithMaybeDBExtra e = forall sql. Show sql => WithMaybeDBExtra
+data MaybeDBExtra e = forall sql. Show sql => MaybeDBExtra
   { mdbexError :: !e -- ^ Specific error.
   , mdbexQueryContext :: !(Maybe sql) -- ^ Last executed SQL query if the exception was thrown by `throwDB`.
   }
   deriving (Typeable)
 
-deriving instance (Show e) => Show (WithMaybeDBExtra e)
+deriving instance (Show e) => Show (MaybeDBExtra e)
 
-instance Exception e => Exception (WithMaybeDBExtra e) where
-  toException WithMaybeDBExtra {..} = case mdbexQueryContext of
+instance Exception e => Exception (MaybeDBExtra e) where
+  toException MaybeDBExtra {..} = case mdbexQueryContext of
     Just queryContext -> toException $ WithDBExtra mdbexError queryContext
     Nothing           -> toException mdbexError
   fromException e = asum
     [ do
         WithDBExtra {..} <- fromException e
-        pure . WithMaybeDBExtra dbexError $ Just dbexQueryContext
-    , flip WithMaybeDBExtra (Nothing @String) <$> fromException e
+        pure . MaybeDBExtra dbexError $ Just dbexQueryContext
+    , flip MaybeDBExtra (Nothing @String) <$> fromException e
     ]
-  displayException WithMaybeDBExtra {..} =
-    "WithMaybeDBExtra {\
+  displayException MaybeDBExtra {..} =
+    "MaybeDBExtra {\
     \ mdbexError = " <> displayException mdbexError <> ",\
     \ mdbexQueryContext = " <> show mdbexQueryContext <> "}"
 

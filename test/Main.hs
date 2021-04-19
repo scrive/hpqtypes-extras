@@ -956,14 +956,14 @@ dbExtraExceptionCatchTest connSource =
     $ catch ioExceptional $ \(_ :: WithDBExtra TestConditionFail)
           -> liftIO $ assertFailure "Should not catch TestConditionFail"
 
-  step "Trying WithMaybeDBExtra handler with `throwDB`"
+  step "Trying MaybeDBExtra handler with `throwDB`"
   assertNoException "WithDBExtra handler"
-    . catch dbExceptional $ \(WithMaybeDBExtra (_ :: TestConditionFail) mSql)
+    . catch dbExceptional $ \(MaybeDBExtra (_ :: TestConditionFail) mSql)
       -> liftIO . assertBool "SQL context must be Just value" $ isJust mSql
 
-  step "Trying WithMaybeDBExtra handler with `throwIO`"
+  step "Trying MaybeDBExtra handler with `throwIO`"
   assertNoException "WithDBExtra handler"
-    . catch ioExceptional $ \(WithMaybeDBExtra (_ :: TestConditionFail) mSql)
+    . catch ioExceptional $ \(MaybeDBExtra (_ :: TestConditionFail) mSql)
       -> liftIO . assertBool "SQL context must be Just value" $ isNothing mSql
 
 assertNoException :: String -> TestM () -> TestM ()
