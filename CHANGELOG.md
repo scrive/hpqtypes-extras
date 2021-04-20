@@ -1,3 +1,6 @@
+# hpqtypes-extras-1.12.0.0 (2021-04-21)
+* Remove broken kWhyNot1, kRun* functions and related machinery.
+
 # hpqtypes-extras-1.11.0.0 (2021-03-29)
 * Support running with higher table versions in the database than in the code
 
