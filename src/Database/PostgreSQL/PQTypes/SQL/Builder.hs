@@ -164,9 +164,7 @@ module Database.PostgreSQL.PQTypes.SQL.Builder
   )
   where
 
-import Control.Exception.Lifted as E
 import Control.Monad.State
-import Control.Monad.Trans.Control
 import Data.List
 import Data.Maybe
 import Data.Monoid
@@ -175,7 +173,6 @@ import Data.String
 import Data.Typeable
 import Database.PostgreSQL.PQTypes
 import Prelude
-import qualified Text.JSON.Gen as JSON
 
 class Sqlable a where
   toSQLCommand :: a -> SQL
