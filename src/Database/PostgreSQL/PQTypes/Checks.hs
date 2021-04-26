@@ -829,6 +829,19 @@ checkDBConsistency options domains tablesWithVersions migrations = do
           runSQL_ "COMMIT"
           runQuery_ (sqlDropIndexConcurrently tname idx) `finally` begin
           updateTableVersion
+
+        ModifyColumnMigration cursorSql updateSql batchSize -> do
+          logMigration
+          withCursorSQL "migration_cursor" NoScroll Hold cursorSql $ \cursor -> do
+            fix $ \loop -> do
+              cursorFetch_ cursor (CD_Forward batchSize)
+              primaryKeys <- fetchMany runIdentity
+              unless (null primaryKeys) $ do
+                updateSql primaryKeys
+                commit
+                loop
+          updateTableVersion
+
       where
         logMigration = do
           logInfo_ $ arrListTable mgrTableName

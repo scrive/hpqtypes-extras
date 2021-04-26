@@ -31,6 +31,8 @@ module Database.PostgreSQL.PQTypes.Model.Migration (
 
 import Data.Int
 
+import Database.PostgreSQL.PQTypes.FromSQL (FromSQL)
+import Database.PostgreSQL.PQTypes.SQL (SQL)
 import Database.PostgreSQL.PQTypes.Model.Index
 import Database.PostgreSQL.PQTypes.Model.Table
 import Database.PostgreSQL.PQTypes.SQL.Raw
@@ -56,6 +58,17 @@ data MigrationAction m =
   | DropIndexConcurrentlyMigration
       (RawSQL ()) -- ^ Table name
       TableIndex  -- ^ Index
+
+  -- | Migration for modifying columns. Parameters are:
+  --
+  -- SQL that will be used for the cursor.
+  --
+  -- Function that takes a list of primary keys provided by the cursor SQL and
+  -- runs an arbitrary computation within MonadDB. The function might be called
+  -- repeatedly depending on the number of primary keys. See the last argument.
+  --
+  -- Number of primary keys fetched at once by the cursor SQL.
+  | forall t . FromSQL t => ModifyColumnMigration SQL ([t] -> m ()) Int
 
 -- | Migration object.
 data Migration m =
