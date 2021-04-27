@@ -832,6 +832,8 @@ checkDBConsistency options domains tablesWithVersions migrations = do
 
         ModifyColumnMigration cursorSql updateSql batchSize -> do
           logMigration
+          ts <- getTransactionSettings
+          setTransactionSettings $ ts { tsIsolationLevel = Serializable }
           withCursorSQL "migration_cursor" NoScroll Hold cursorSql $ \cursor -> do
             fix $ \loop -> do
               cursorFetch_ cursor (CD_Forward batchSize)
@@ -840,6 +842,7 @@ checkDBConsistency options domains tablesWithVersions migrations = do
                 updateSql primaryKeys
                 commit
                 loop
+          setTransactionSettings ts
           updateTableVersion
 
       where
