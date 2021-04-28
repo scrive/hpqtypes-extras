@@ -837,7 +837,7 @@ checkDBConsistency options domains tablesWithVersions migrations = do
           withCursorSQL "migration_cursor" NoScroll Hold cursorSql $ \cursor -> do
             fix $ \loop -> do
               cursorFetch_ cursor (CD_Forward batchSize)
-              primaryKeys <- fetchMany runIdentity
+              primaryKeys <- fetchMany id
               unless (null primaryKeys) $ do
                 updateSql primaryKeys
                 commit

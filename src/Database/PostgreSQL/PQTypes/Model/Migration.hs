@@ -31,7 +31,7 @@ module Database.PostgreSQL.PQTypes.Model.Migration (
 
 import Data.Int
 
-import Database.PostgreSQL.PQTypes.FromSQL (FromSQL)
+import Database.PostgreSQL.PQTypes.FromRow (FromRow)
 import Database.PostgreSQL.PQTypes.SQL (SQL)
 import Database.PostgreSQL.PQTypes.Model.Index
 import Database.PostgreSQL.PQTypes.Model.Table
@@ -68,7 +68,7 @@ data MigrationAction m =
   -- repeatedly depending on the number of primary keys. See the last argument.
   --
   -- Number of primary keys fetched at once by the cursor SQL.
-  | forall t . FromSQL t => ModifyColumnMigration SQL ([t] -> m ()) Int
+  | forall t . FromRow t => ModifyColumnMigration SQL ([t] -> m ()) Int
 
 -- | Migration object.
 data Migration m =
@@ -91,6 +91,7 @@ isStandardMigration Migration{..} =
     DropTableMigration{}               -> False
     CreateIndexConcurrentlyMigration{} -> False
     DropIndexConcurrentlyMigration{}   -> False
+    ModifyColumnMigration{}            -> False
 
 isDropTableMigration :: Migration m -> Bool
 isDropTableMigration Migration{..} =
@@ -99,3 +100,4 @@ isDropTableMigration Migration{..} =
     DropTableMigration{}               -> True
     CreateIndexConcurrentlyMigration{} -> False
     DropIndexConcurrentlyMigration{}   -> False
+    ModifyColumnMigration{}            -> False
