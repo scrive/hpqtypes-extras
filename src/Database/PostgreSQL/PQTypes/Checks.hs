@@ -778,19 +778,30 @@ checkDBConsistency options domains tablesWithVersions migrations = do
 
         CreateIndexConcurrentlyMigration tname idx -> do
           logMigration
-          -- If migration was run before but creation of an index failed, index
-          -- will be left in the database in an inactive state, so when we
-          -- rerun, we need to remove it first (see
-          -- https://www.postgresql.org/docs/9.6/sql-createindex.html for more
-          -- information).
-          runQuery_ $ "DROP INDEX IF EXISTS" <+> indexName tname idx
           -- We're in auto transaction mode (as ensured at the beginning of
           -- 'checkDBConsistency'), so we need to issue explicit SQL commit,
           -- because using 'commit' function automatically starts another
           -- transaction. We don't want that as concurrent creation of index
           -- won't run inside a transaction.
           runSQL_ "COMMIT"
+          -- If migration was run before but creation of an index failed, index
+          -- will be left in the database in an inactive state, so when we
+          -- rerun, we need to remove it first (see
+          -- https://www.postgresql.org/docs/9.6/sql-createindex.html for more
+          -- information).
+          runQuery_ $ "DROP INDEX CONCURRENTLY IF EXISTS" <+> indexName tname idx
           runQuery_ (sqlCreateIndexConcurrently tname idx) `finally` begin
+          updateTableVersion
+
+        DropIndexConcurrentlyMigration tname idx -> do
+          logMigration
+          -- We're in auto transaction mode (as ensured at the beginning of
+          -- 'checkDBConsistency'), so we need to issue explicit SQL commit,
+          -- because using 'commit' function automatically starts another
+          -- transaction. We don't want that as concurrent dropping of index
+          -- won't run inside a transaction.
+          runSQL_ "COMMIT"
+          runQuery_ (sqlDropIndexConcurrently tname idx) `finally` begin
           updateTableVersion
       where
         logMigration = do

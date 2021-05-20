@@ -14,6 +14,7 @@ module Database.PostgreSQL.PQTypes.Model.Index (
   , sqlCreateIndexSequentially
   , sqlCreateIndexConcurrently
   , sqlDropIndex
+  , sqlDropIndexConcurrently
   ) where
 
 import Crypto.Hash.RIPEMD160
@@ -164,3 +165,6 @@ sqlCreateIndex_ concurrently tname idx@TableIndex{..} = mconcat [
 
 sqlDropIndex :: RawSQL () -> TableIndex -> RawSQL ()
 sqlDropIndex tname idx = "DROP INDEX" <+> indexName tname idx
+
+sqlDropIndexConcurrently :: RawSQL () -> TableIndex -> RawSQL ()
+sqlDropIndexConcurrently tname idx = "DROP INDEX CONCURRENTLY" <+> indexName tname idx
