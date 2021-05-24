@@ -87,6 +87,7 @@ isStandardMigration Migration{..} =
     StandardMigration{}                -> True
     DropTableMigration{}               -> False
     CreateIndexConcurrentlyMigration{} -> False
+    DropIndexConcurrentlyMigration{}   -> False
 
 isDropTableMigration :: Migration m -> Bool
 isDropTableMigration Migration{..} =
@@ -94,3 +95,4 @@ isDropTableMigration Migration{..} =
     StandardMigration{}                -> False
     DropTableMigration{}               -> True
     CreateIndexConcurrentlyMigration{} -> False
+    DropIndexConcurrentlyMigration{}   -> False
