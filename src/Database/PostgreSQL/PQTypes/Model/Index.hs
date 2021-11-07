@@ -10,10 +10,9 @@ module Database.PostgreSQL.PQTypes.Model.Index (
   , uniqueIndexOnColumnWithCondition
   , uniqueIndexOnColumns
   , indexName
-  , sqlCreateIndex
-  , sqlCreateIndexSequentially
+  , sqlCreateIndexMaybeDowntime
   , sqlCreateIndexConcurrently
-  , sqlDropIndex
+  , sqlDropIndexMaybeDowntime
   , sqlDropIndexConcurrently
   ) where
 
@@ -132,18 +131,13 @@ indexName tname TableIndex{..} = flip rawSQL () $ T.take 63 . unRawSQL $ mconcat
     -- with the same columns, but different constraints can coexist
     hashWhere = asText $ T.decodeUtf8 . encode . BS.take 10 . hash . T.encodeUtf8
 
-{-# DEPRECATED sqlCreateIndex "Use sqlCreateIndexSequentially instead" #-}
--- | Deprecated version of 'sqlCreateIndexSequentially'.
-sqlCreateIndex :: RawSQL () -> TableIndex -> RawSQL ()
-sqlCreateIndex = sqlCreateIndex_ False
-
--- | Create index sequentially. Warning: if the affected table is large, this
--- will prevent the table from being modified during the creation. If this is
--- not acceptable, use sqlCreateIndexConcurrently. See
+-- | Create an index. Warning: if the affected table is large, this will prevent
+-- the table from being modified during the creation. If this is not acceptable,
+-- use 'CreateIndexConcurrentlyMigration'. See
 -- https://www.postgresql.org/docs/current/sql-createindex.html for more
 -- information.
-sqlCreateIndexSequentially :: RawSQL () -> TableIndex -> RawSQL ()
-sqlCreateIndexSequentially = sqlCreateIndex_ False
+sqlCreateIndexMaybeDowntime :: RawSQL () -> TableIndex -> RawSQL ()
+sqlCreateIndexMaybeDowntime = sqlCreateIndex_ False
 
 -- | Create index concurrently.
 sqlCreateIndexConcurrently :: RawSQL () -> TableIndex -> RawSQL ()
@@ -163,8 +157,12 @@ sqlCreateIndex_ concurrently tname idx@TableIndex{..} = mconcat [
   , maybe "" (" WHERE" <+>) idxWhere
   ]
 
-sqlDropIndex :: RawSQL () -> TableIndex -> RawSQL ()
-sqlDropIndex tname idx = "DROP INDEX" <+> indexName tname idx
+-- | Drop an index. Warning: if you don't want to lock out concurrent operations
+-- on the index's table, use 'DropIndexConcurrentlyMigration'. See
+-- https://www.postgresql.org/docs/current/sql-dropindex.html for more
+-- information.
+sqlDropIndexMaybeDowntime :: RawSQL () -> TableIndex -> RawSQL ()
+sqlDropIndexMaybeDowntime tname idx = "DROP INDEX" <+> indexName tname idx
 
 sqlDropIndexConcurrently :: RawSQL () -> TableIndex -> RawSQL ()
 sqlDropIndexConcurrently tname idx = "DROP INDEX CONCURRENTLY" <+> indexName tname idx
