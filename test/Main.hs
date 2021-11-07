@@ -589,7 +589,7 @@ migrateDBToSchema2 step = do
       composites    = []
       domains       = []
   step "Migrating the database (schema version 1 -> schema version 2)..."
-  migrateDatabase defaultExtrasOptions extensions composites domains
+  migrateDatabase defaultExtrasOptions { eoLockTimeoutMs = Just 1000 } extensions composites domains
     schema2Tables schema2Migrations
   checkDatabase defaultExtrasOptions composites domains schema2Tables
 
