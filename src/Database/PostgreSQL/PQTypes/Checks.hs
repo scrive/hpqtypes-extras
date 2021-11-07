@@ -63,7 +63,7 @@ migrateDatabase options
   mapM_ checkExtension extensions
   tablesWithVersions <- getTableVersions (tableVersions : tables)
   -- 'checkDBConsistency' also performs migrations.
-  checkDBConsistency options domains tablesWithVersions migrations
+  checkDBConsistency domains tablesWithVersions migrations
   resultCheck =<< checkCompositesStructure tablesWithVersions
                                            CreateCompositesIfDatabaseEmpty
                                            (eoObjectsValidationMode options)
@@ -540,9 +540,9 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version)
 --     the 'tables' list
 checkDBConsistency
   :: forall m. (MonadDB m, MonadLog m, MonadMask m)
-  => ExtrasOptions -> [Domain] -> TablesWithVersions -> [Migration m]
+  => [Domain] -> TablesWithVersions -> [Migration m]
   -> m ()
-checkDBConsistency options domains tablesWithVersions migrations = do
+checkDBConsistency domains tablesWithVersions migrations = do
   autoTransaction <- tsAutoTransaction <$> getTransactionSettings
   unless autoTransaction $ do
     error "checkDBConsistency: tsAutoTransaction setting needs to be True"
@@ -821,9 +821,8 @@ checkDBConsistency options domains tablesWithVersions migrations = do
         logInfo_ "Running migrations..."
         forM_ migrationsToRun $ \mgr -> do
           runMigration mgr
-          when (eoCommitAfterEachMigration options) $ do
-            logInfo_ $ "Committing migration changes..."
-            commit
+          logInfo_ $ "Committing migration changes..."
+          commit
         logInfo_ "Running migrations... done."
 
     validateMigrationsToRun :: [Migration m] -> [(Text, Int32)] -> m ()
