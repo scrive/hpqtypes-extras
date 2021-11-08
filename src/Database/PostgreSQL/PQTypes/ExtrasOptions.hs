@@ -6,9 +6,8 @@ module Database.PostgreSQL.PQTypes.ExtrasOptions
 
 data ExtrasOptions =
     ExtrasOptions
-    { eoCommitAfterEachMigration :: Bool
-      -- ^ Run commit after every migration.
-    , eoEnforcePKs               :: Bool
+    { eoLockTimeoutMs            :: !(Maybe Int)
+    , eoEnforcePKs               :: !Bool
       -- ^ Validate that every handled table has a primary key
     , eoObjectsValidationMode    :: !ObjectsValidationMode
       -- ^ Validation mode for unknown tables and composite types.
@@ -19,7 +18,7 @@ data ExtrasOptions =
 
 defaultExtrasOptions :: ExtrasOptions
 defaultExtrasOptions = ExtrasOptions
-  { eoCommitAfterEachMigration = False
+  { eoLockTimeoutMs            = Nothing
   , eoEnforcePKs               = False
   , eoObjectsValidationMode    = DontAllowUnknownObjects
   , eoAllowHigherTableVersions = False

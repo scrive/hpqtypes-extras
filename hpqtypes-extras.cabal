@@ -1,6 +1,6 @@
 cabal-version:       2.2
 name:                hpqtypes-extras
-version:             1.12.0.1
+version:             1.13.0.0
 synopsis:            Extra utilities for hpqtypes library
 description:         The following extras for hpqtypes library:
                      .
@@ -87,6 +87,7 @@ library
                , monad-control     >= 1.0.3.1 && < 1.1
                , semigroups        >= 0.16    && < 0.20
                , text-show         >= 3.7     && < 4
+               , transformers-base
                , log-base          >= 0.11    && < 0.12
                , safe              >= 0.3     && < 0.4
 

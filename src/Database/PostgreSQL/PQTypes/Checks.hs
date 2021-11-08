@@ -14,6 +14,8 @@ module Database.PostgreSQL.PQTypes.Checks (
   ) where
 
 import Control.Arrow ((&&&))
+import Control.Concurrent.Lifted (threadDelay)
+import Control.Monad.Base
 import Control.Monad.Catch
 import Control.Monad.Reader
 import Data.Int
@@ -22,6 +24,7 @@ import Data.Maybe
 import Data.Monoid
 import Data.Monoid.Utils
 import Data.Ord (comparing)
+import Data.Typeable (cast)
 import qualified Data.String
 import Data.Text (Text)
 import Database.PostgreSQL.PQTypes
@@ -49,7 +52,7 @@ headExc _ (x:_) = x
 
 -- | Run migrations and check the database structure.
 migrateDatabase
-  :: (MonadDB m, MonadLog m, MonadMask m)
+  :: (MonadBase IO m, MonadDB m, MonadLog m, MonadMask m)
   => ExtrasOptions
   -> [Extension]
   -> [CompositeType]
@@ -539,7 +542,7 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version)
 --   * all 'mgrFrom' are less than table version number of the table in
 --     the 'tables' list
 checkDBConsistency
-  :: forall m. (MonadDB m, MonadLog m, MonadMask m)
+  :: forall m. (MonadBase IO m, MonadDB m, MonadLog m, MonadMask m)
   => ExtrasOptions -> [Domain] -> TablesWithVersions -> [Migration m]
   -> m ()
 checkDBConsistency options domains tablesWithVersions migrations = do
@@ -819,12 +822,28 @@ checkDBConsistency options domains tablesWithVersions migrations = do
       validateMigrationsToRun migrationsToRun dbTablesWithVersions
       when (not . null $ migrationsToRun) $ do
         logInfo_ "Running migrations..."
-        forM_ migrationsToRun $ \mgr -> do
-          runMigration mgr
-          when (eoCommitAfterEachMigration options) $ do
+        forM_ migrationsToRun $ \mgr -> fix $ \loop -> do
+          let restartMigration query = do
+                logAttention "Failed to acquire a lock" $ object ["query" .= query]
+                logInfo_ "Restarting the migration shortly..."
+                threadDelay 1000000
+                loop
+          handleJust lockNotAvailable restartMigration $ do
+            forM_ (eoLockTimeoutMs options) $ \lockTimeout -> do
+              runSQL_ $ "SET LOCAL lock_timeout TO" <+> intToSQL lockTimeout
+            runMigration mgr `onException` rollback
             logInfo_ $ "Committing migration changes..."
             commit
         logInfo_ "Running migrations... done."
+      where
+        intToSQL :: Int -> SQL
+        intToSQL = unsafeSQL . show
+
+        lockNotAvailable :: DBException -> Maybe String
+        lockNotAvailable DBException{..}
+          | Just DetailedQueryError{..} <- cast dbeError
+          , qeErrorCode == LockNotAvailable = Just $ show dbeQueryContext
+          | otherwise                       = Nothing
 
     validateMigrationsToRun :: [Migration m] -> [(Text, Int32)] -> m ()
     validateMigrationsToRun migrationsToRun dbTablesWithVersions = do
