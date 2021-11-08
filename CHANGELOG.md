@@ -1,3 +1,8 @@
+# hpqtypes-extras-1.13.0.0 (2021-11-08)
+* Add support for handling lock_timeout during migrations.
+* Improvements for making no downtime migrations easier to write.
+* Commiting after each migration was made non-optional.
+
 # hpqtypes-extras-1.12.0.1 (2021-10-11)
 * Add support for log-base-0.11.0.0
 
