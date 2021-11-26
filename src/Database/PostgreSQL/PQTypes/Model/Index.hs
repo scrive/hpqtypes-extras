@@ -29,6 +29,7 @@ import qualified Data.Text.Encoding as T
 
 data TableIndex = TableIndex {
   idxColumns :: [RawSQL ()]
+, idxInclude :: [RawSQL ()]
 , idxMethod  :: IndexMethod
 , idxUnique  :: Bool
 , idxValid   :: Bool -- ^ If creation of index with CONCURRENTLY fails, index
@@ -54,6 +55,7 @@ instance Read IndexMethod where
 tblIndex :: TableIndex
 tblIndex = TableIndex {
   idxColumns = []
+, idxInclude = []
 , idxMethod = BTree
 , idxUnique = False
 , idxValid = True
@@ -84,6 +86,7 @@ indexOnColumnsWithMethod columns method =
 uniqueIndexOnColumn :: RawSQL () -> TableIndex
 uniqueIndexOnColumn column = TableIndex {
   idxColumns = [column]
+, idxInclude = []
 , idxMethod = BTree
 , idxUnique = True
 , idxValid = True
@@ -93,6 +96,7 @@ uniqueIndexOnColumn column = TableIndex {
 uniqueIndexOnColumns :: [RawSQL ()] -> TableIndex
 uniqueIndexOnColumns columns = TableIndex {
   idxColumns = columns
+, idxInclude = []
 , idxMethod = BTree
 , idxUnique = True
 , idxValid = True
@@ -102,6 +106,7 @@ uniqueIndexOnColumns columns = TableIndex {
 uniqueIndexOnColumnWithCondition :: RawSQL () -> RawSQL () -> TableIndex
 uniqueIndexOnColumnWithCondition column whereC = TableIndex {
   idxColumns = [column]
+, idxInclude = []
 , idxMethod = BTree
 , idxUnique = True
 , idxValid = True
@@ -114,6 +119,9 @@ indexName tname TableIndex{..} = flip rawSQL () $ T.take 63 . unRawSQL $ mconcat
   , tname
   , "__"
   , mintercalate "__" $ map (asText sanitize) idxColumns
+  , if null idxInclude
+    then ""
+    else "$$" <> mintercalate "__" (map (asText sanitize) idxInclude)
   , maybe "" (("__" <>) . hashWhere) idxWhere
   ]
   where
@@ -154,6 +162,9 @@ sqlCreateIndex_ concurrently tname idx@TableIndex{..} = mconcat [
   , " USING" <+> (rawSQL (T.pack . show $ idxMethod) ()) <+> "("
   , mintercalate ", " idxColumns
   , ")"
+  , if null idxInclude
+    then ""
+    else " INCLUDE (" <> mintercalate ", " idxInclude <> ")"
   , maybe "" (" WHERE" <+>) idxWhere
   ]
 

@@ -1,3 +1,6 @@
+# hpqtypes-extras-1.13.1.0 (2021-11-26)
+* Add support for including columns in indexes.
+
 # hpqtypes-extras-1.13.0.0 (2021-11-08)
 * Add support for handling lock_timeout during migrations.
 * Improvements for making no downtime migrations easier to write.

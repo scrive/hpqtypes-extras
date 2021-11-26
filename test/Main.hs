@@ -126,7 +126,7 @@ tableBankMigration5snd = Migration
   , mgrFrom      = 3
   , mgrAction    = CreateIndexConcurrentlyMigration
                      (tblName tableBankSchema3)
-                     (indexOnColumn "name")
+                     ((indexOnColumn "name") { idxInclude = ["id", "location"] })
   }
 
 tableBankSchema5 :: Table
@@ -134,7 +134,7 @@ tableBankSchema5 = tableBankSchema4 {
     tblVersion = (tblVersion tableBankSchema4) + 2
   , tblColumns = filter (\c -> colName c /= "cash")
       (tblColumns tableBankSchema4)
-  , tblIndexes = [indexOnColumn "name"]
+  , tblIndexes = [(indexOnColumn "name") { idxInclude = ["id", "location"] }]
   }
 
 tableBadGuySchema1 :: Table
