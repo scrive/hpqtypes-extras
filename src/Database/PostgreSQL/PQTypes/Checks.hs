@@ -1064,7 +1064,8 @@ fetchTableCheck (name, condition, validated) = Check {
 sqlGetIndexes :: Table -> SQL
 sqlGetIndexes table = toSQLCommand . sqlSelect "pg_catalog.pg_class c" $ do
   sqlResult "c.relname::text" -- index name
-  sqlResult $ "ARRAY(" <> selectCoordinates <> ")" -- array of index coordinates
+  sqlResult $ "ARRAY(" <> selectCoordinates "0" "i.indnkeyatts" <> ")" -- array of key columns in the index
+  sqlResult $ "ARRAY(" <> selectCoordinates "i.indnkeyatts" "i.indnatts" <> ")" -- array of included columns in the index
   sqlResult "am.amname::text" -- the method used (btree, gin etc)
   sqlResult "i.indisunique" -- is it unique?
   sqlResult "i.indisvalid"  -- is it valid?
@@ -1078,22 +1079,24 @@ sqlGetIndexes table = toSQLCommand . sqlSelect "pg_catalog.pg_class c" $ do
   sqlWhereIsNULL "r.contype" -- fetch only "pure" indexes
   where
     -- Get all coordinates of the index.
-    selectCoordinates = smconcat [
+    selectCoordinates start end = smconcat [
         "WITH RECURSIVE coordinates(k, name) AS ("
-      , "  VALUES (0, NULL)"
+      , "  VALUES (" <> start <> "::integer, NULL)"
       , "  UNION ALL"
       , "    SELECT k+1, pg_catalog.pg_get_indexdef(i.indexrelid, k+1, true)"
       , "      FROM coordinates"
-      , "     WHERE pg_catalog.pg_get_indexdef(i.indexrelid, k+1, true) != ''"
+      , "     WHERE k < " <> end
       , ")"
-      , "SELECT name FROM coordinates WHERE k > 0"
+      , "SELECT name FROM coordinates WHERE name IS NOT NULL"
       ]
 
-fetchTableIndex :: (String, Array1 String, String, Bool, Bool, Maybe String)
-                -> (TableIndex, RawSQL ())
-fetchTableIndex (name, Array1 columns, method, unique, valid, mconstraint) =
+fetchTableIndex
+  :: (String, Array1 String, Array1 String, String, Bool, Bool, Maybe String)
+  -> (TableIndex, RawSQL ())
+fetchTableIndex (name, Array1 keyColumns, Array1 includeColumns, method, unique, valid, mconstraint) =
   (TableIndex
-   { idxColumns = map unsafeSQL columns
+   { idxColumns = map unsafeSQL keyColumns
+   , idxInclude = map unsafeSQL includeColumns
    , idxMethod = read method
    , idxUnique = unique
    , idxValid = valid
