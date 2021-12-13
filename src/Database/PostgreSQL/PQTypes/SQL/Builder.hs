@@ -258,18 +258,19 @@ data SqlInsert = SqlInsert
   }
 
 data SqlInsertSelect = SqlInsertSelect
-  { sqlInsertSelectWhat     :: SQL
-  , sqlInsertSelectDistinct :: Bool
-  , sqlInsertSelectSet      :: [(SQL, SQL)]
-  , sqlInsertSelectResult   :: [SQL]
-  , sqlInsertSelectFrom     :: SQL
-  , sqlInsertSelectWhere    :: [SqlCondition]
-  , sqlInsertSelectOrderBy  :: [SQL]
-  , sqlInsertSelectGroupBy  :: [SQL]
-  , sqlInsertSelectHaving   :: [SQL]
-  , sqlInsertSelectOffset   :: Integer
-  , sqlInsertSelectLimit    :: Integer
-  , sqlInsertSelectWith     :: [(SQL, SQL)]
+  { sqlInsertSelectWhat       :: SQL
+  , sqlInsertSelectOnConflict :: Maybe (SQL, Maybe SQL)
+  , sqlInsertSelectDistinct   :: Bool
+  , sqlInsertSelectSet        :: [(SQL, SQL)]
+  , sqlInsertSelectResult     :: [SQL]
+  , sqlInsertSelectFrom       :: SQL
+  , sqlInsertSelectWhere      :: [SqlCondition]
+  , sqlInsertSelectOrderBy    :: [SQL]
+  , sqlInsertSelectGroupBy    :: [SQL]
+  , sqlInsertSelectHaving     :: [SQL]
+  , sqlInsertSelectOffset     :: Integer
+  , sqlInsertSelectLimit      :: Integer
+  , sqlInsertSelectWith       :: [(SQL, SQL)]
   }
 
 data SqlDelete = SqlDelete
@@ -368,20 +369,21 @@ instance Sqlable SqlSelect where
       orderByClause = emitClausesSepComma "ORDER BY" $ sqlSelectOrderBy cmd
       limitClause   = unsafeSQL $ "LIMIT" <+> show (sqlSelectLimit cmd)
 
+emitClauseOnConflictForInsert :: Maybe (SQL, Maybe SQL) -> SQL
+emitClauseOnConflictForInsert = \case
+       Nothing                   -> ""
+       Just (condition, maction) -> emitClause "ON CONFLICT" $
+         condition <+> "DO" <+> fromMaybe "NOTHING" maction
+
 instance Sqlable SqlInsert where
   toSQLCommand cmd =
     emitClausesSepComma "WITH" (map (\(name,command) -> name <+> "AS" <+> parenthesize command) (sqlInsertWith cmd)) <+>
     "INSERT INTO" <+> sqlInsertWhat cmd <+>
     parenthesize (sqlConcatComma (map fst (sqlInsertSet cmd))) <+>
     emitClausesSep "VALUES" "," (map sqlConcatComma (transpose (map (makeLongEnough . snd) (sqlInsertSet cmd)))) <+>
-    emitClauseOnConflict (sqlInsertOnConflict cmd) <+>
+    emitClauseOnConflictForInsert (sqlInsertOnConflict cmd) <+>
     emitClausesSepComma "RETURNING" (sqlInsertResult cmd)
    where
-     emitClauseOnConflict = \case
-       Nothing                   -> ""
-       Just (condition, maction) -> emitClause "ON CONFLICT" $
-         condition <+> "DO" <+> fromMaybe "NOTHING" maction
-
      -- this is the longest list of values
      longest = maximum (1 : (map (lengthOfEither . snd) (sqlInsertSet cmd)))
      lengthOfEither (Single _) = 1
@@ -409,6 +411,7 @@ instance Sqlable SqlInsertSelect where
                                               , sqlSelectLimit   = sqlInsertSelectLimit cmd
                                               , sqlSelectWith    = []
                                               }
+    , emitClauseOnConflictForInsert (sqlInsertSelectOnConflict cmd)
     , emitClausesSepComma "RETURNING" $ sqlInsertSelectResult cmd
     ]
 
@@ -450,18 +453,19 @@ sqlInsert table refine =
 sqlInsertSelect :: SQL -> SQL -> State SqlInsertSelect () -> SqlInsertSelect
 sqlInsertSelect table from refine =
   execState refine (SqlInsertSelect
-                    { sqlInsertSelectWhat    = table
-                    , sqlInsertSelectDistinct = False
-                    , sqlInsertSelectSet     = []
-                    , sqlInsertSelectResult  = []
-                    , sqlInsertSelectFrom    = from
-                    , sqlInsertSelectWhere   = []
-                    , sqlInsertSelectOrderBy = []
-                    , sqlInsertSelectGroupBy = []
-                    , sqlInsertSelectHaving  = []
-                    , sqlInsertSelectOffset  = 0
-                    , sqlInsertSelectLimit   = -1
-                    , sqlInsertSelectWith    = []
+                    { sqlInsertSelectWhat       = table
+                    , sqlInsertSelectOnConflict = Nothing
+                    , sqlInsertSelectDistinct   = False
+                    , sqlInsertSelectSet        = []
+                    , sqlInsertSelectResult     = []
+                    , sqlInsertSelectFrom       = from
+                    , sqlInsertSelectWhere      = []
+                    , sqlInsertSelectOrderBy    = []
+                    , sqlInsertSelectGroupBy    = []
+                    , sqlInsertSelectHaving     = []
+                    , sqlInsertSelectOffset     = 0
+                    , sqlInsertSelectLimit      = -1
+                    , sqlInsertSelectWith       = []
                     })
 
 sqlUpdate :: SQL -> State SqlUpdate () -> SqlUpdate
@@ -645,22 +649,6 @@ instance SqlSet SqlInsert where
 instance SqlSet SqlInsertSelect where
   sqlSet1 cmd name v = cmd { sqlInsertSelectSet = sqlInsertSelectSet cmd ++ [(name, v)] }
 
-sqlOnConflictDoNothing :: MonadState SqlInsert m => m ()
-sqlOnConflictDoNothing = modify $ \cmd -> cmd
-  { sqlInsertOnConflict = Just ("", Nothing)
-  }
-
-sqlOnConflictOnColumns
-  :: Sqlable sql => MonadState SqlInsert m => [SQL] -> sql -> m ()
-sqlOnConflictOnColumns columns sql = modify $ \cmd -> cmd
-  { sqlInsertOnConflict = Just (parenthesize $ sqlConcatComma columns, Just $ toSQLCommand sql)
-  }
-
-sqlOnConflictOnColumnsDoNothing :: MonadState SqlInsert m => [SQL] -> m ()
-sqlOnConflictOnColumnsDoNothing columns = modify $ \cmd -> cmd
-  { sqlInsertOnConflict = Just (parenthesize $ sqlConcatComma columns, Nothing)
-  }
-
 sqlSetCmd :: (MonadState v m, SqlSet v) => SQL -> SQL -> m ()
 sqlSetCmd name sql = modify (\cmd -> sqlSet1 cmd name sql)
 
@@ -682,6 +670,36 @@ sqlSetListWithDefaults name as = sqlSetCmdList name (map (maybe "DEFAULT" sqlPar
 sqlCopyColumn :: (MonadState v m, SqlSet v) => SQL -> m ()
 sqlCopyColumn column = sqlSetCmd column column
 
+class SqlOnConflict a where
+  sqlOnConflictDoNothing1 :: a -> a
+  sqlOnConflictOnColumnsDoNothing1 :: a -> [SQL] -> a
+  sqlOnConflictOnColumns1 :: Sqlable sql => a -> [SQL] -> sql -> a
+
+instance SqlOnConflict SqlInsert where
+  sqlOnConflictDoNothing1 cmd = 
+    cmd { sqlInsertOnConflict = Just ("", Nothing) }
+  sqlOnConflictOnColumns1 cmd columns sql = 
+    cmd { sqlInsertOnConflict = Just (parenthesize $ sqlConcatComma columns, Just $ toSQLCommand sql) }
+  sqlOnConflictOnColumnsDoNothing1 cmd columns = 
+    cmd { sqlInsertOnConflict = Just (parenthesize $ sqlConcatComma columns, Nothing) }
+
+instance SqlOnConflict SqlInsertSelect where
+  sqlOnConflictDoNothing1 cmd = 
+    cmd { sqlInsertSelectOnConflict = Just ("", Nothing) }
+  sqlOnConflictOnColumns1 cmd columns sql = 
+    cmd { sqlInsertSelectOnConflict = Just (parenthesize $ sqlConcatComma columns, Just $ toSQLCommand sql) }
+  sqlOnConflictOnColumnsDoNothing1 cmd columns = 
+    cmd { sqlInsertSelectOnConflict = Just (parenthesize $ sqlConcatComma columns, Nothing) }
+
+sqlOnConflictDoNothing :: (MonadState v m, SqlOnConflict v) => m ()
+sqlOnConflictDoNothing = modify sqlOnConflictDoNothing1
+
+sqlOnConflictOnColumnsDoNothing :: (MonadState v m, SqlOnConflict v) => [SQL] -> m ()
+sqlOnConflictOnColumnsDoNothing columns = modify (\cmd -> sqlOnConflictOnColumnsDoNothing1 cmd columns)
+
+sqlOnConflictOnColumns :: (MonadState v m, SqlOnConflict v, Sqlable sql) => [SQL] -> sql -> m ()
+sqlOnConflictOnColumns columns sql = modify (\cmd -> sqlOnConflictOnColumns1 cmd columns sql)
+
 class SqlResult a where
   sqlResult1 :: a -> SQL -> a
 
@@ -696,8 +714,6 @@ instance SqlResult SqlInsertSelect where
 
 instance SqlResult SqlUpdate where
   sqlResult1 cmd sql = cmd { sqlUpdateResult = sqlUpdateResult cmd ++ [sql] }
-
-
 
 sqlResult :: (MonadState v m, SqlResult v) => SQL -> m ()
 sqlResult sql = modify (\cmd -> sqlResult1 cmd sql)
