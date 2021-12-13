@@ -82,79 +82,25 @@ sqlUpdate "document_tags" $ do
 :}
 SQL " UPDATE document_tags SET value=<123>  WHERE (name = 'abc') "
 
-Exception returning and 'kWhyNot' are a subsystem for querying why a
-query did not provide expected results. For example:
-
-> let query = sqlUpdate "documents" $ do
->   sqlSet "deleted" True
->   sqlWhereEq "documents.id" 12345
->   sqlWhereEqE DocumentDeleteFlagMustBe "documents.deleted" False
->   sqlWhereILikeE DocumentTitleMustContain "documents.title" "%important%"
-> result <- kRun query
-
-If the result is zero then no document was updated. We would like to
-know what happened. In query we have three filtering clauses. One is a
-baseline: the one mentioning @documents.id@. Baseline clauses define
-what objects we are talking about. Other clauses are correctness
-checks and may fail if status of on object is unexpected. Using
-'kWhyNot' we can see what is wrong with an object:
-
-> problems <- kWhyNot query
-
-Now @problems@ should contain a list of issues with rows that could be
-possibly be affected by weren't due to correctness clauses. For
-example it may state:
-
-> problems = [[ DocumentDeleteFlagMustBe { documentDeleteFlagMustBe = False
->                                        , documentDeleteFlagReallyIs = True
->                                        }
->             , DocumentTitleMustContain { documentTitleMustContain = "%important%"
->                                        , documentTitleReallyIs = "Some contract v2"
->                                        }
->             ]]
-
-Note: problems is a nested array, for each object we get a list of
-issues pertaining to that object. If that list is empty, then it means
-that baseline conditions failed or there is no such object that
-fullfills all conditions at the same time although there are some that
-fullfill each one separatelly.
-
-Note: @kWhyNot@ is currently disabled. Use 'kWhyNot1' instead, which
-returns a single exception.
-
 -}
 
 -- TODO: clean this up, add more documentation.
 
 module Database.PostgreSQL.PQTypes.SQL.Builder
   ( sqlWhere
-  , sqlWhereE
-  , sqlWhereEV
-  , sqlWhereEVV
-  , sqlWhereEVVV
-  , sqlWhereEVVVV
   , sqlWhereEq
-  , sqlWhereEqE
   , sqlWhereEqSql
   , sqlWhereNotEq
-  , sqlWhereNotEqE
   , sqlWhereIn
   , sqlWhereInSql
-  , sqlWhereInE
   , sqlWhereNotIn
   , sqlWhereNotInSql
-  , sqlWhereNotInE
   , sqlWhereExists
   , sqlWhereNotExists
   , sqlWhereLike
-  , sqlWhereLikeE
   , sqlWhereILike
-  , sqlWhereILikeE
   , sqlWhereIsNULL
   , sqlWhereIsNotNULL
-  , sqlWhereIsNULLE
-
-  , sqlIgnore
 
   , sqlFrom
   , sqlJoin
@@ -182,10 +128,6 @@ module Database.PostgreSQL.PQTypes.SQL.Builder
   , sqlWith
   , sqlUnion
 
-  , SqlTurnIntoSelect
-  , sqlTurnIntoSelect
-  , sqlTurnIntoWhyNotSelect
-
   , sqlSelect
   , sqlSelect2
   , SqlSelect(..)
@@ -199,7 +141,6 @@ module Database.PostgreSQL.PQTypes.SQL.Builder
   , SqlDelete(..)
 
   , sqlWhereAny
-  , sqlWhereAnyE
 
   , SqlResult
   , SqlSet
@@ -210,20 +151,8 @@ module Database.PostgreSQL.PQTypes.SQL.Builder
   , SqlOffsetLimit
   , SqlDistinct
 
-
   , SqlCondition(..)
   , sqlGetWhereConditions
-
-  , SqlWhyNot(..)
-  , DBBaseLineConditionIsFalse(..)
-
-  , kWhyNot1
-  , kWhyNot1Ex
-  --, DBExceptionCouldNotParseValues(..)
-  , kRun1OrThrowWhyNot
-  , kRun1OrThrowWhyNotAllowIgnore
-  , kRunManyOrThrowWhyNot
-  , kRunAndFetch1OrThrowWhyNot
 
   , Sqlable(..)
   , sqlOR
@@ -289,32 +218,12 @@ data Multiplicity a = Single a | Many [a]
 -- structure of a condition. For now it seems that the only
 -- interesting case is EXISTS (SELECT ...), because that internal
 -- SELECT can have explainable clauses.
-data SqlCondition = SqlPlainCondition SQL SqlWhyNot
+data SqlCondition = SqlPlainCondition SQL
                   | SqlExistsCondition SqlSelect
                     deriving (Typeable, Show)
 
--- | 'SqlWhyNot' contains a recipe for how to query the database for
--- some values we're interested in and construct a proper exception
--- object using that information. For @SqlWhyNot mkException queries@
--- the @mkException@ should take as input a list of the same length
--- list as there are queries. Each query will be run in a JOIN context
--- with all referenced tables, so it can extract values from there.
-data SqlWhyNot =
-  forall e row. (FromRow row, Exception e) =>
-  SqlWhyNot Bool (row -> e) [SQL]
-
-{-
-instance Eq SqlCondition where
-  (SqlPlainCondition a _) == (SqlPlainCondition b _) = a == b
-  (SqlExistsCondition a) == (SqlExistsCondition b) = a == b
-  _ == _ = False
-  -}
-
-instance Show SqlWhyNot where
-  show (SqlWhyNot _important exc expr) = "SqlWhyNot " ++ show (typeOf (exc $undefined)) ++ " " ++ show expr
-
 instance Sqlable SqlCondition where
-  toSQLCommand (SqlPlainCondition a _) = a
+  toSQLCommand (SqlPlainCondition a) = a
   toSQLCommand (SqlExistsCondition a) = "EXISTS (" <> toSQLCommand (a { sqlSelectResult = ["TRUE"] }) <> ")"
 
 data SqlSelect = SqlSelect
@@ -616,78 +525,13 @@ instance SqlWhere SqlAll where
   sqlWhere1 cmd cond = cmd { sqlAllWhere = sqlAllWhere cmd ++ [cond] }
   sqlGetWhereConditions = sqlAllWhere
 
-newtype SqlWhereIgnore a = SqlWhereIgnore { unSqlWhereIgnore :: a }
-
-
-ignoreWhereClause :: SqlCondition -> SqlCondition
-ignoreWhereClause (SqlPlainCondition sql (SqlWhyNot _b f s)) =
-  SqlPlainCondition sql (SqlWhyNot False f s)
-ignoreWhereClause (SqlExistsCondition sql) =
-  SqlExistsCondition (sql { sqlSelectWhere = map ignoreWhereClause (sqlSelectWhere sql)})
-
-instance (SqlWhere a) => SqlWhere (SqlWhereIgnore a) where
-  sqlWhere1 (SqlWhereIgnore cmd) cond =
-        SqlWhereIgnore (sqlWhere1 cmd (ignoreWhereClause cond))
-  sqlGetWhereConditions (SqlWhereIgnore cmd) = sqlGetWhereConditions cmd
-
-
-sqlIgnore :: (MonadState s m)
-          => State (SqlWhereIgnore s) a
-          -> m ()
-sqlIgnore clauses = modify (\cmd -> unSqlWhereIgnore (execState clauses (SqlWhereIgnore cmd)))
-
 -- | The @WHERE@ part of an SQL query. See above for a usage
 -- example. See also 'SqlCondition'.
 sqlWhere :: (MonadState v m, SqlWhere v) => SQL -> m ()
-sqlWhere sql = sqlWhereE (DBBaseLineConditionIsFalse sql) sql
-
--- | Like 'sqlWhere', but also takes an exception value that is thrown
--- in case of error. See 'SqlCondition' and 'SqlWhyNot'.
-sqlWhereE :: (MonadState v m, SqlWhere v, Exception e) => e -> SQL -> m ()
-sqlWhereE exc sql = modify (\cmd -> sqlWhere1 cmd (SqlPlainCondition sql (SqlWhyNot True exc2 [])))
-  where
-    exc2 (_::()) = exc
-
--- | Like 'sqlWhereE', but takes a one-argument function that
--- constructs an exception value plus an SQL fragment for querying the
--- database for the argument that is fed into the exception
--- constructor function. See 'SqlCondition' and 'SqlWhyNot'.
---
--- The SQL fragment should be of form @TABLENAME.COLUMNAME@, as it is
--- executed as part of a @SELECT@ query involving all referenced
--- tables.
-sqlWhereEV :: (MonadState v m, SqlWhere v, Exception e, FromSQL a) => (a -> e, SQL) -> SQL -> m ()
-sqlWhereEV (exc, vsql) sql = modify (\cmd -> sqlWhere1 cmd (SqlPlainCondition sql (SqlWhyNot True exc2 [vsql])))
-  where
-    exc2 (Identity v1) = exc v1
-
--- | Like 'sqlWhereEV', but the exception constructor function takes
--- two arguments.
-sqlWhereEVV :: (MonadState v m, SqlWhere v, Exception e, FromSQL a, FromSQL b) => (a -> b -> e, SQL, SQL) -> SQL -> m ()
-sqlWhereEVV (exc, vsql1, vsql2) sql = modify (\cmd -> sqlWhere1 cmd (SqlPlainCondition sql (SqlWhyNot True exc2 [vsql1, vsql2])))
-  where
-    exc2 (v1, v2) = exc v1 v2
-
--- | Like 'sqlWhereEV', but the exception constructor function takes
--- three arguments.
-sqlWhereEVVV :: (MonadState v m, SqlWhere v, Exception e, FromSQL a, FromSQL b, FromSQL c) => (a -> b -> c -> e, SQL, SQL, SQL) -> SQL -> m ()
-sqlWhereEVVV (exc, vsql1, vsql2, vsql3) sql = modify (\cmd -> sqlWhere1 cmd (SqlPlainCondition sql (SqlWhyNot True exc2 [vsql1, vsql2, vsql3])))
-  where
-    exc2 (v1, v2, v3) = exc v1 v2 v3
-
--- | Like 'sqlWhereEV', but the exception constructor function takes
--- four arguments.
-sqlWhereEVVVV :: (MonadState v m, SqlWhere v, Exception e, FromSQL a, FromSQL b, FromSQL c, FromSQL d) => (a -> b -> c -> d -> e, SQL, SQL, SQL, SQL) -> SQL -> m ()
-sqlWhereEVVVV (exc, vsql1, vsql2, vsql3, vsql4) sql = modify (\cmd -> sqlWhere1 cmd (SqlPlainCondition sql (SqlWhyNot True exc2 [vsql1, vsql2, vsql3, vsql4])))
-  where
-    exc2 (v1, v2, v3, v4) = exc v1 v2 v3 v4
+sqlWhere sql = modify (\cmd -> sqlWhere1 cmd (SqlPlainCondition sql))
 
 sqlWhereEq :: (MonadState v m, SqlWhere v, Show a, ToSQL a) => SQL -> a -> m ()
 sqlWhereEq name value = sqlWhere $ name <+> "=" <?> value
-
-sqlWhereEqE :: (MonadState v m, SqlWhere v, Exception e, Show a, FromSQL a, ToSQL a)
-            => (a -> a -> e) -> SQL -> a -> m ()
-sqlWhereEqE exc name value = sqlWhereEV (exc value, name) $ name <+> "=" <?> value
 
 sqlWhereEqSql :: (MonadState v m, SqlWhere v, Sqlable sql) => SQL -> sql -> m ()
 sqlWhereEqSql name1 name2 = sqlWhere $ name1 <+> "=" <+> toSQLCommand name2
@@ -695,23 +539,11 @@ sqlWhereEqSql name1 name2 = sqlWhere $ name1 <+> "=" <+> toSQLCommand name2
 sqlWhereNotEq :: (MonadState v m, SqlWhere v, Show a, ToSQL a) => SQL -> a -> m ()
 sqlWhereNotEq name value = sqlWhere $ name <+> "<>" <?> value
 
-sqlWhereNotEqE :: (MonadState v m, SqlWhere v, Exception e, Show a, ToSQL a, FromSQL a)
-               => (a -> a -> e) -> SQL -> a -> m ()
-sqlWhereNotEqE exc name value = sqlWhereEV (exc value, name) $ name <+> "<>" <?> value
-
 sqlWhereLike :: (MonadState v m, SqlWhere v, Show a, ToSQL a) => SQL -> a -> m ()
 sqlWhereLike name value = sqlWhere $ name <+> "LIKE" <?> value
 
-sqlWhereLikeE :: (MonadState v m, SqlWhere v, Exception e, Show a, ToSQL a, FromSQL a)
-              => (a -> a -> e) -> SQL -> a -> m ()
-sqlWhereLikeE exc name value = sqlWhereEV (exc value, name) $ name <+> "LIKE" <?> value
-
 sqlWhereILike :: (MonadState v m, SqlWhere v, Show a, ToSQL a) => SQL -> a -> m ()
 sqlWhereILike name value = sqlWhere  $ name <+> "ILIKE" <?> value
-
-sqlWhereILikeE :: (MonadState v m, SqlWhere v, Exception e, Show a, ToSQL a, FromSQL a)
-               => (a -> a -> e) -> SQL -> a -> m ()
-sqlWhereILikeE exc name value = sqlWhereEV (exc value, name) $ name <+> "ILIKE" <?> value
 
 sqlWhereIn :: (MonadState v m, SqlWhere v, Show a, ToSQL a) => SQL -> [a] -> m ()
 sqlWhereIn _name [] = sqlWhere "FALSE"
@@ -723,13 +555,6 @@ sqlWhereIn name values = do
 sqlWhereInSql :: (MonadState v m, Sqlable a, SqlWhere v) => SQL -> a -> m ()
 sqlWhereInSql name sql = sqlWhere $ name <+> "IN" <+> parenthesize (toSQLCommand sql)
 
-sqlWhereInE :: (MonadState v m, SqlWhere v, Exception e, Show a, ToSQL a, FromSQL a)
-            => ([a] -> a -> e) -> SQL -> [a] -> m ()
-sqlWhereInE exc name [] = sqlWhereEV (exc [], name) "FALSE"
-sqlWhereInE exc name [value] = sqlWhereEqE (exc . (\x -> [x])) name value
-sqlWhereInE exc name values =
-  sqlWhereEV (exc values, name) $ name <+> "IN (SELECT UNNEST(" <?> Array1 values <+> "))"
-
 sqlWhereNotIn :: (MonadState v m, SqlWhere v, Show a, ToSQL a) => SQL -> [a] -> m ()
 sqlWhereNotIn _name [] = sqlWhere "TRUE"
 sqlWhereNotIn name [value] = sqlWhereNotEq name value
@@ -737,13 +562,6 @@ sqlWhereNotIn name values = sqlWhere $ name <+> "NOT IN (SELECT UNNEST(" <?> Arr
 
 sqlWhereNotInSql :: (MonadState v m, Sqlable a, SqlWhere v) => SQL -> a -> m ()
 sqlWhereNotInSql name sql = sqlWhere $ name <+> "NOT IN" <+> parenthesize (toSQLCommand sql)
-
-sqlWhereNotInE :: (MonadState v m, SqlWhere v, Exception e, Show a, ToSQL a, FromSQL a)
-               => ([a] -> a -> e) -> SQL -> [a] -> m ()
-sqlWhereNotInE exc name [] = sqlWhereEV (exc [], name) "TRUE"
-sqlWhereNotInE exc name [value] = sqlWhereNotEqE (exc . (\x -> [x])) name value
-sqlWhereNotInE exc name values =
-  sqlWhereEV (exc values, name) $ name <+> "NOT IN (SELECT UNNEST(" <?> Array1 values <+> "))"
 
 sqlWhereExists :: (MonadState v m, SqlWhere v) => SqlSelect -> m ()
 sqlWhereExists sql = do
@@ -759,20 +577,10 @@ sqlWhereIsNULL col = sqlWhere $ col <+> "IS NULL"
 sqlWhereIsNotNULL :: (MonadState v m, SqlWhere v) => SQL -> m ()
 sqlWhereIsNotNULL col = sqlWhere $ col <+> "IS NOT NULL"
 
-sqlWhereIsNULLE :: (MonadState v m, SqlWhere v, Exception e, FromSQL a)
-                => (a -> e) -> SQL -> m ()
-sqlWhereIsNULLE exc col = sqlWhereEV (exc, col) $ col <+> "IS NULL"
-
 -- | Add a condition in the WHERE statement that holds if any of the given
 -- condition holds.
 sqlWhereAny :: (MonadState v m, SqlWhere v) => [State SqlAll ()] -> m ()
 sqlWhereAny = sqlWhere . sqlWhereAnyImpl
-
--- | Add a condition just like 'sqlWhereAny' but throw the given exception if
--- none of the given conditions hold.
-sqlWhereAnyE :: (Exception e, MonadState v m, SqlWhere v)
-             => e -> [State SqlAll ()] -> m ()
-sqlWhereAnyE e = sqlWhereE e . sqlWhereAnyImpl
 
 sqlWhereAnyImpl :: [State SqlAll ()] -> SQL
 sqlWhereAnyImpl [] = "FALSE"
@@ -955,319 +763,3 @@ instance SqlDistinct SqlInsertSelect where
 
 sqlDistinct :: (MonadState v m, SqlDistinct v) => m ()
 sqlDistinct = modify (\cmd -> sqlDistinct1 cmd)
-
-
-class (SqlWhere a, Sqlable a) => SqlTurnIntoSelect a where
-  sqlTurnIntoSelect :: a -> SqlSelect
-
-instance SqlTurnIntoSelect SqlSelect where
-  sqlTurnIntoSelect = id
-
-
--- | The 'sqlTurnIntoWhyNotSelect' turns a failed query into a
--- why-not-query that can explain why query altered zero rows or
--- returned zero results.
---
--- Lets consider an example of explanation:
---
--- > UPDATE t1
--- >    SET a = 1
--- >  WHERE cond1
--- >    AND cond2                       -- with value2
--- >    AND EXISTS (SELECT TRUE
--- >                  FROM t2
--- >                 WHERE cond3        -- with value3a and value3b
--- >                   AND EXISTS (SELECT TRUE
--- >                                 FROM t3
--- >                                WHERE cond4))
---
--- 'sqlTurnIntoWhyNotSelect' will produce a @SELECT@ of the form:
---
--- > SELECT
--- >   EXISTS (SELECT TRUE ... WHERE cond1),
--- >   EXISTS (SELECT TRUE ... WHERE cond1 AND cond2),
--- >   EXISTS (SELECT TRUE ... WHERE cond1 AND cond2 AND cond3),
--- >   EXISTS (SELECT TRUE ... WHERE cond1 AND cond2 AND cond3 AND cond4);
---
--- Now, after this statement is executed we see which of these
--- returned @FALSE@ as the first one. This is the condition that failed
--- the whole query.
---
--- We can get more information at this point. If failed condition was
--- @cond2@, then @value2@ can be extracted by this statement:
---
--- > SELECT value2 ... WHERE cond1;
---
--- If failed condition was @cond3@, then statement executed can be:
---
--- > SELECT value3a, value3b ... WHERE cond1 AND cond2;
---
--- Rationale: @EXISTS@ clauses should pinpoint which @condX@ was the first
--- one to produce zero rows.  @SELECT@ clauses after @EXISTS@ should
--- explain why condX filtered out all rows.
---
--- 'DB.WhyNot.kWhyNot1' looks for first @EXISTS@ clause that is @FALSE@
--- and then tries to construct an @Exception@ object with values that come
--- after. If values that comes after cannot be sensibly parsed
--- (usually they are @NULL@ when a value is expected), this exception is
--- skipped and next one is tried.
---
--- If first @EXISTS@ clause is @TRUE@ but no other exception was properly
--- generated then @DBExceptionCouldNotParseValues@ is thrown with pair
--- of 'typeRef' of first exception that could not be parsed and with
--- list of SqlValues that it could not parse.
---
--- The 'DB.WhyNot.kRun1OrThrowWhyNot' throws first exception on the
--- list.
---
--- We have a theorem to use in this transformation:
---
--- > EXISTS (SELECT t1 WHERE cond1 AND EXISTS (SELECT t2 WHERE cond2))
---
--- is equivalent to
---
--- > EXISTS (SELECT t1, t2 WHERE cond1 AND cond2)
---
--- and it can be used recursivelly.
-sqlTurnIntoWhyNotSelect :: (SqlTurnIntoSelect a) => a -> SqlSelect
-sqlTurnIntoWhyNotSelect command =
-    sqlSelect "" . sqlResult $ mconcat [
-        "ARRAY["
-      , mintercalate ", " $ map emitExists [0..(count-1)]
-      , "]::boolean[]"
-      ]
-    where select = sqlTurnIntoSelect command
-          count :: Int
-          count = sum (map count' (sqlSelectWhere select))
-          count' (SqlPlainCondition {}) = 1
-          count' (SqlExistsCondition select') = sum (map count' (sqlSelectWhere select'))
-
-          emitExists :: Int -> SQL
-          emitExists current =
-            case runState (run current select) 0 of
-              (s, _) -> if null (sqlSelectWhere s)
-                        then "TRUE"
-                        else "EXISTS (" <> (toSQLCommand $ s { sqlSelectResult = [ "TRUE" ]}) <> ")"
-
-          run :: (MonadState Int m) => Int -> SqlSelect -> m SqlSelect
-          run current select' = do
-            new <- mapM (around current) (sqlSelectWhere select')
-            return (select' { sqlSelectWhere = concat new })
-
-          around :: (MonadState Int m) => Int -> SqlCondition -> m [SqlCondition]
-          around current cond@(SqlPlainCondition{}) = do
-            index <- get
-            modify (+1)
-            if current >= index
-              then return [cond]
-              else return []
-          around current (SqlExistsCondition subSelect) = do
-            subSelect' <- run current subSelect
-            return [SqlExistsCondition subSelect']
-
-
-instance SqlTurnIntoSelect SqlUpdate where
-  sqlTurnIntoSelect s = SqlSelect
-                        { sqlSelectFrom    = sqlUpdateWhat s <>
-                                             if isSqlEmpty (sqlUpdateFrom s)
-                                             then ""
-                                             else "," <+> sqlUpdateFrom s
-                        , sqlSelectUnion    = []
-                        , sqlSelectDistinct = False
-                        , sqlSelectResult  = if null (sqlUpdateResult s)
-                                             then ["TRUE"]
-                                             else sqlUpdateResult s
-                        , sqlSelectWhere   = sqlUpdateWhere s
-                        , sqlSelectOrderBy = []
-                        , sqlSelectGroupBy = []
-                        , sqlSelectHaving  = []
-                        , sqlSelectOffset  = 0
-                        , sqlSelectLimit   = -1
-                        , sqlSelectWith    = sqlUpdateWith s -- this is a bit dangerous because it can contain nested DELETE/UPDATE
-                        }
-
-instance SqlTurnIntoSelect SqlDelete where
-  sqlTurnIntoSelect s = SqlSelect
-                        { sqlSelectFrom    = sqlDeleteFrom s <>
-                                             if isSqlEmpty (sqlDeleteUsing s)
-                                             then ""
-                                             else "," <+> sqlDeleteUsing s
-                        , sqlSelectUnion    = []
-                        , sqlSelectDistinct = False
-                        , sqlSelectResult  = if null (sqlDeleteResult s)
-                                             then ["TRUE"]
-                                             else sqlDeleteResult s
-                        , sqlSelectWhere   = sqlDeleteWhere s
-                        , sqlSelectOrderBy = []
-                        , sqlSelectGroupBy = []
-                        , sqlSelectHaving  = []
-                        , sqlSelectOffset  = 0
-                        , sqlSelectLimit   = -1
-                        , sqlSelectWith    = sqlDeleteWith s -- this is a bit dangerous because it can contain nested DELETE/UPDATE
-                        }
-
-instance SqlTurnIntoSelect SqlInsertSelect where
-  sqlTurnIntoSelect s = SqlSelect
-                        { sqlSelectFrom    = sqlInsertSelectFrom s
-                        , sqlSelectUnion   = []
-                        , sqlSelectDistinct = False
-                        , sqlSelectResult  = sqlInsertSelectResult s
-                        , sqlSelectWhere   = sqlInsertSelectWhere s
-                        , sqlSelectOrderBy = sqlInsertSelectOrderBy s
-                        , sqlSelectGroupBy = sqlInsertSelectGroupBy s
-                        , sqlSelectHaving  = sqlInsertSelectHaving s
-                        , sqlSelectOffset  = sqlInsertSelectOffset s
-                        , sqlSelectLimit   = sqlInsertSelectLimit s
-                        , sqlSelectWith    = sqlInsertSelectWith s -- this is a bit dangerous because it can contain nested DELETE/UPDATE
-                        }
-
-{- Warning: use kWhyNot1 for now as kWhyNot does not work in expected way.
-
-kWhyNot should return a list of rows, where each row is a list of
-exceptions.  Right now we are not able to differentiate between rows
-because we do not support a concept of a row identity. kWhyNot can
-return rows in any order, returns empty rows for successful hits, does
-not return a row if baseline conditions weren't met. This effectivelly
-renders it useless.
-
-kWhyNot will be resurrected when we get a row identity concept.
-
--}
-
-{-
--- | If 'kWhyNot1' returns an empty list of exceptions when none of
--- @EXISTS@ clauses generated by 'sqlTurnIntoWhyNotSelect' was
--- @FALSE@. Should not happen in real life, file a bug report if you see
--- such a case.
-kWhyNot :: (SqlTurnIntoSelect s, MonadDB m) => s -> m [[SomeException]]
-kWhyNot cmd = do
-  let newSelect = sqlTurnIntoWhyNotSelect cmd
-  if null (sqlSelectResult newSelect)
-     then return [[]]
-     else do
-       kRun_ newSelect
-       kFold2 (decodeListOfExceptionsFromWhere (sqlGetWhereConditions cmd)) []
--}
-
-
-data ExceptionMaker = forall row. FromRow row => ExceptionMaker (row -> SomeException)
-
-newtype DBKwhyNotInternalError = DBKwhyNotInternalError String
-  deriving (Show, Typeable)
-
-instance Exception DBKwhyNotInternalError
-
-kWhyNot1Ex :: forall m s. (SqlTurnIntoSelect s, MonadDB m, MonadThrow m)
-           => s -> m (Bool, SomeException)
-kWhyNot1Ex cmd = do
-  let newSelect = sqlTurnIntoSelect cmd
-      newWhyNotSelect = sqlTurnIntoWhyNotSelect newSelect
-  let findFirstFalse :: Identity (Array1 Bool) -> Int
-      findFirstFalse (Identity (Array1 row)) = fromMaybe 0 (findIndex (== False) row)
-  runQuery_ (newWhyNotSelect { sqlSelectLimit = 1 })
-  indexOfFirstFailedCondition <- fetchOne findFirstFalse
-
-  let logics = enumerateWhyNotExceptions ((sqlSelectFrom newSelect),[]) (sqlGetWhereConditions newSelect)
-
-  let mcondition = logics `atMay` indexOfFirstFailedCondition
-
-  case mcondition of
-    Nothing -> return
-      (True, toException . DBKwhyNotInternalError $
-        "list of failed conditions is empty")
-    Just (important, ExceptionMaker exception, _from, []) ->
-      return (important, exception $ error "this argument should've been ignored")
-    Just (important, ExceptionMaker exception, (from, conds), sqls) -> do
-       let statement' = sqlSelect2 from $ do
-             mapM_ sqlResult sqls
-             sqlLimit (1::Int)
-             sqlOffset (0::Int)
-           statement = statement' { sqlSelectWhere = conds }
-       --Log.debug $ "Explanation SQL:\n" ++ show statement
-       runQuery_ statement
-       result <- fetchOne exception
-       return (important, result)
-
--- | Function 'kWhyNot1' is a workhorse for explainable SQL
--- failures. SQL fails if it did not affect any rows or did not return
--- any rows.  When that happens 'kWhyNot1' should be called. 'kWhyNot1'
--- returns an exception describing why a row could not be
--- returned or affected by a query.
-kWhyNot1 :: (SqlTurnIntoSelect s, MonadDB m, MonadThrow m)
-         => s -> m SomeException
-kWhyNot1 cmd = snd `fmap` kWhyNot1Ex cmd
-
-enumerateWhyNotExceptions :: (SQL, [SqlCondition])
-                          -> [SqlCondition]
-                          -> [( Bool
-                              , ExceptionMaker
-                              , (SQL, [SqlCondition])
-                              , [SQL]
-                              )]
-enumerateWhyNotExceptions (from,condsUpTillNow) conds = concatMap worker (zip conds (inits conds))
-  where
-    worker (SqlPlainCondition _ (SqlWhyNot b f s), condsUpTillNow2) =
-      [(b, ExceptionMaker (SomeException . f), (from, condsUpTillNow ++ condsUpTillNow2), s)]
-    worker (SqlExistsCondition s, condsUpTillNow2) =
-      enumerateWhyNotExceptions (newFrom, condsUpTillNow ++ condsUpTillNow2)
-                                  (sqlGetWhereConditions s)
-      where
-        newFrom = if isSqlEmpty from
-                  then sqlSelectFrom s
-                  else if isSqlEmpty (sqlSelectFrom s)
-                       then from
-                       else from <> ", " <> sqlSelectFrom s
-
--- | Implicit exception for `sqlWhere` combinator family.
-newtype DBBaseLineConditionIsFalse = DBBaseLineConditionIsFalse SQL
-  deriving (Show, Typeable)
-
-instance Exception DBBaseLineConditionIsFalse where
-  fromException se@(SomeException e) = msum
-    [ cast e
-    , do
-      DBException {..} <- fromException se
-      fromException . toException $ dbeError
-    ]
-
-kRunManyOrThrowWhyNot :: (SqlTurnIntoSelect s, MonadDB m, MonadThrow m)
-                   => s -> m ()
-kRunManyOrThrowWhyNot sqlable = do
-  success <- runQuery $ toSQLCommand sqlable
-  when (success == 0) $ do
-    SomeException exception <- kWhyNot1 sqlable
-    throwDB exception
-
-
-kRun1OrThrowWhyNot :: (SqlTurnIntoSelect s, MonadDB m, MonadThrow m)
-                   => s -> m ()
-kRun1OrThrowWhyNot sqlable = do
-  success <- runQuery01 $ toSQLCommand sqlable
-  when (not success) $ do
-    SomeException exception <- kWhyNot1 sqlable
-    throwDB exception
-
-
-kRun1OrThrowWhyNotAllowIgnore :: (SqlTurnIntoSelect s, MonadDB m, MonadThrow m)
-                                => s -> m ()
-kRun1OrThrowWhyNotAllowIgnore sqlable = do
-  success <- runQuery01 $ toSQLCommand sqlable
-  when (not success) $ do
-    (important, SomeException exception) <- kWhyNot1Ex sqlable
-    when (important) $
-      throwDB exception
-
-kRunAndFetch1OrThrowWhyNot :: (IsSQL s, FromRow row, MonadDB m, MonadThrow m, SqlTurnIntoSelect s)
-                           => (row -> a) -> s -> m a
-kRunAndFetch1OrThrowWhyNot decoder sqlcommand = do
-  runQuery_ sqlcommand
-  results <- fetchMany decoder
-  case results of
-    [] -> do
-      SomeException exception <- kWhyNot1 sqlcommand
-      throwDB exception
-    [r] -> return r
-    _ -> throwDB AffectedRowsMismatch {
-      rowsExpected = [(1, 1)]
-    , rowsDelivered = length results
-    }
