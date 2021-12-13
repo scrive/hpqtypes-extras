@@ -1,3 +1,8 @@
+# hpqtypes-extras-1.14.0.0 (2021-12-13)
+* Add Support for ON CONFLICT to sqlInsertSelect.
+* Remove upper bounds from library dependencies.
+* Remove kRun* and kWhyNot functions.
+
 # hpqtypes-extras-1.13.1.0 (2021-11-26)
 * Add support for including columns in indexes.
 
