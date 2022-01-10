@@ -450,6 +450,10 @@ createTablesSchema1 step = do
   step "Creating the database (schema version 1)..."
   migrateDatabase defaultExtrasOptions extensions domains
     composites schema1Tables schema1Migrations
+
+  -- Add a local index that shouldn't trigger validation errors.
+  runSQL_ "CREATE INDEX local_idx_bank_name ON bank(name)"
+
   checkDatabase defaultExtrasOptions composites domains schema1Tables
 
 testDBSchema1 :: (String -> TestM ()) -> TestM ([UUID], [UUID])

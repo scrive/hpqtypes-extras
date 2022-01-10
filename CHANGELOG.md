@@ -1,5 +1,8 @@
+# hpqtypes-extras-1.14.1.0 (2022-01-11)
+* Support unmanaged local indexes whose names start with "local_".
+
 # hpqtypes-extras-1.14.0.0 (2021-12-13)
-* Add Support for ON CONFLICT to sqlInsertSelect.
+* Add support for ON CONFLICT to sqlInsertSelect.
 * Remove upper bounds from library dependencies.
 * Remove kRun* and kWhyNot functions.
 
