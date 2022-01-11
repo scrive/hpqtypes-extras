@@ -20,6 +20,7 @@ import Control.Monad.Catch
 import Control.Monad.Reader
 import Data.Int
 import Data.Function (on)
+import Data.List (partition)
 import Data.Maybe
 import Data.Monoid
 import Data.Monoid.Utils
@@ -521,10 +522,20 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version)
 
         checkIndexes :: [TableIndex] -> [(TableIndex, RawSQL ())]
                      -> ValidationResult
-        checkIndexes defs indexes = mconcat [
-            checkEquality "INDEXes" defs (map fst indexes)
-          , checkNames (indexName tblName) indexes
-          ]
+        checkIndexes defs allIndexes = mconcat
+          $ checkEquality "INDEXes" defs (map fst indexes)
+          : checkNames (indexName tblName) indexes
+          : map localIndexInfo localIndexes
+          where
+            localIndexInfo (index, name) = validationInfo $ T.concat
+              [ "Found a local index '"
+              , unRawSQL name
+              , "': "
+              , T.pack (show index)
+              ]
+
+            (localIndexes, indexes) = (`partition` allIndexes) $ \(_, name) ->
+              "local_" `T.isPrefixOf` unRawSQL name
 
         checkForeignKeys :: [ForeignKey] -> [(ForeignKey, RawSQL ())]
                          -> ValidationResult
