@@ -1,3 +1,6 @@
+# hpqtypes-extras-1.14.2.0 (2022-01-20)
+* Support dropping tables in a no downtime manner.
+
 # hpqtypes-extras-1.14.1.0 (2022-01-11)
 * Support unmanaged local indexes whose names start with "local_".
 

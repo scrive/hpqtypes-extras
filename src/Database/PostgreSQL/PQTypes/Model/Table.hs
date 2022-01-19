@@ -65,6 +65,8 @@ data Table =
   Table {
   tblName               :: RawSQL () -- ^ Must be in lower case.
 , tblVersion            :: Int32
+, tblUsed               :: Bool -- ^ Set to 'False' if the table is supposed to
+                                -- be dropped in the next release.
 , tblColumns            :: [TableColumn]
 , tblPrimaryKey         :: Maybe PrimaryKey
 , tblChecks             :: [Check]
@@ -82,6 +84,7 @@ tblTable :: Table
 tblTable = Table {
   tblName = error "tblTable: table name must be specified"
 , tblVersion = error "tblTable: table version must be specified"
+, tblUsed = True
 , tblColumns = error "tblTable: table columns must be specified"
 , tblPrimaryKey = Nothing
 , tblChecks = []

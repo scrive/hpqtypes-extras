@@ -65,7 +65,7 @@ migrateDatabase options
   extensions composites domains tables migrations = do
   setDBTimeZoneToUTC
   mapM_ checkExtension extensions
-  tablesWithVersions <- getTableVersions (tableVersions : tables)
+  tablesWithVersions <- getTableVersions AllTables (tableVersions : tables)
   -- 'checkDBConsistency' also performs migrations.
   checkDBConsistency options domains tablesWithVersions migrations
   resultCheck =<< checkCompositesStructure tablesWithVersions
@@ -81,7 +81,8 @@ migrateDatabase options
     resultCheck =<< checkExistenceOfVersionsForTables (tableVersions : tables)
 
   -- After migrations are done make sure the table versions are correct.
-  resultCheck . checkVersions options =<< getTableVersions (tableVersions : tables)
+  resultCheck . checkVersions options
+    =<< getTableVersions AllTables (tableVersions : tables)
 
   -- everything is OK, commit changes
   commit
@@ -96,7 +97,7 @@ checkDatabase
   -> [Table]
   -> m ()
 checkDatabase options composites domains tables = do
-  tablesWithVersions <- getTableVersions (tableVersions : tables)
+  tablesWithVersions <- getTableVersions UsedOrExistingTables (tableVersions : tables)
   resultCheck $ checkVersions options tablesWithVersions
   resultCheck =<< checkCompositesStructure tablesWithVersions
                                            DontCreateComposites
@@ -947,13 +948,33 @@ checkDBConsistency options domains tablesWithVersions migrations = do
 -- | Type synonym for a list of tables along with their database versions.
 type TablesWithVersions = [(Table, Int32)]
 
+-- | The type of tables that 'getTableVersions' gets.
+data TablesType
+  = AllTables
+  -- ^ Get all tables.
+  | UsedOrExistingTables
+  -- ^ Get only tables that are marked as used or their versions exist in the
+  -- database.
+  --
+  -- This prevents getting unused tables that no longer exist in the database,
+  -- which are assumed to have been dropped by a newer version of the code.
+
 -- | Associate each table in the list with its version as it exists in
 -- the DB, or 0 if it's missing from the DB.
-getTableVersions :: (MonadDB m, MonadThrow m) => [Table] -> m TablesWithVersions
-getTableVersions tbls =
-  sequence
-  [ (\mver -> (tbl, fromMaybe 0 mver)) <$> checkTableVersion (tblNameString tbl)
-  | tbl <- tbls ]
+getTableVersions
+  :: (MonadDB m, MonadThrow m)
+  => TablesType
+  -> [Table]
+  -> m TablesWithVersions
+getTableVersions ttype tbls = fmap catMaybes . forM tbls $ \tbl -> do
+  adjustVersion tbl <$> checkTableVersion (tblNameString tbl)
+  where
+    adjustVersion tbl = \case
+      Just ver -> Just (tbl, ver)
+      Nothing
+        | UsedOrExistingTables <- ttype
+        , not $ tblUsed tbl -> Nothing
+        | otherwise         -> Just (tbl, 0)
 
 -- | Given a result of 'getTableVersions' check if no tables are present in the
 -- database.
