@@ -33,6 +33,7 @@ import Data.Int
 
 import Database.PostgreSQL.PQTypes.Model.Index
 import Database.PostgreSQL.PQTypes.Model.Table
+import Database.PostgreSQL.PQTypes.Model.Trigger
 import Database.PostgreSQL.PQTypes.SQL.Raw
 
 -- | Migration action to run, either an arbitrary 'MonadDB' action, or
@@ -57,6 +58,9 @@ data MigrationAction m =
       (RawSQL ()) -- ^ Table name
       TableIndex  -- ^ Index
 
+  -- | Migration for creating a trigger.
+  | CreateTriggerMigration Trigger
+
 -- | Migration object.
 data Migration m =
   Migration {
@@ -78,6 +82,7 @@ isStandardMigration Migration{..} =
     DropTableMigration{}               -> False
     CreateIndexConcurrentlyMigration{} -> False
     DropIndexConcurrentlyMigration{}   -> False
+    CreateTriggerMigration{}           -> False
 
 isDropTableMigration :: Migration m -> Bool
 isDropTableMigration Migration{..} =
@@ -86,3 +91,4 @@ isDropTableMigration Migration{..} =
     DropTableMigration{}               -> True
     CreateIndexConcurrentlyMigration{} -> False
     DropIndexConcurrentlyMigration{}   -> False
+    CreateTriggerMigration{}           -> False

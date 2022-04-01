@@ -25,6 +25,7 @@ import Database.PostgreSQL.PQTypes.Model.ColumnType
 import Database.PostgreSQL.PQTypes.Model.ForeignKey
 import Database.PostgreSQL.PQTypes.Model.Index
 import Database.PostgreSQL.PQTypes.Model.PrimaryKey
+import Database.PostgreSQL.PQTypes.Model.Trigger
 
 data TableColumn = TableColumn {
   colName     :: RawSQL ()
@@ -69,6 +70,7 @@ data Table =
 , tblChecks             :: [Check]
 , tblForeignKeys        :: [ForeignKey]
 , tblIndexes            :: [TableIndex]
+, tblTriggers           :: [Trigger]
 , tblInitialSetup       :: Maybe TableInitialSetup
 }
 
@@ -86,6 +88,7 @@ tblTable = Table {
 , tblChecks = []
 , tblForeignKeys = []
 , tblIndexes = []
+, tblTriggers = []
 , tblInitialSetup = Nothing
 }
 

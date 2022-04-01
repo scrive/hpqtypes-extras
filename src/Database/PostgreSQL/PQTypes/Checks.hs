@@ -419,12 +419,15 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version)
       indexes <- fetchMany fetchTableIndex
       runQuery_ $ sqlGetForeignKeys table
       fkeys <- fetchMany fetchForeignKey
+      triggers <- getDBTriggers
       return $ mconcat [
           checkColumns 1 tblColumns desc
         , checkPrimaryKey tblPrimaryKey pk
         , checkChecks tblChecks checks
         , checkIndexes tblIndexes indexes
         , checkForeignKeys tblForeignKeys fkeys
+        , checkTriggers tblTriggers $
+            filter (\Trigger{..} -> triggerTable == tblName) triggers
         ]
       where
         fetchTableColumn
@@ -541,6 +544,9 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version)
           , checkNames (fkName tblName) fkeys
           ]
 
+        checkTriggers :: [Trigger] -> [Trigger] -> ValidationResult
+        checkTriggers = checkEquality "TRIGGERs"
+
 -- | Checks whether database is consistent, performing migrations if
 -- necessary. Requires all table names to be in lower case.
 --
@@ -607,6 +613,11 @@ checkDBConsistency options domains tablesWithVersions migrations = do
           expectedMigrationVersions
             = reverse $ take (length presentMigrationVersions) $
               reverse  [0 .. tblVersion table - 1]
+            -- -- TODO: File a separate issue about this with a reproducer!
+            -- = if null presentMigrationVersions
+            --   then []
+            --   else [0 .. tblVersion table - 1]
+
       checkMigrationsListValidity table presentMigrationVersions
         expectedMigrationVersions
 
@@ -814,6 +825,14 @@ checkDBConsistency options domains tablesWithVersions migrations = do
           runSQL_ "COMMIT"
           runQuery_ (sqlDropIndexConcurrently tname idx) `finally` begin
           updateTableVersion
+
+        CreateTriggerMigration trigger@Trigger{..} -> do
+          logInfo_ $ "  Creating function" <+> (unRawSQL $ tfName triggerFunction)
+          runQuery_ $ sqlCreateTriggerFunction triggerFunction
+          logInfo_ $ "  Creating trigger" <+> (unRawSQL $ triggerMakeName triggerName triggerTable)
+          runQuery_ $ sqlCreateTrigger trigger
+          updateTableVersion
+
       where
         logMigration = do
           logInfo_ $ arrListTable mgrTableName

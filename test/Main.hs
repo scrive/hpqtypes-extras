@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -Wno-name-shadowing #-}
+
 module Main where
 
 import Control.Monad.Catch
@@ -5,8 +7,10 @@ import Control.Monad.IO.Class
 import Data.Either
 import Data.Typeable
 import Data.UUID.Types
+import qualified Data.Set as Set
 import qualified Data.Text as T
 
+import Data.Monoid.Utils
 import Database.PostgreSQL.PQTypes
 import Database.PostgreSQL.PQTypes.Checks
 import Database.PostgreSQL.PQTypes.Model.ColumnType
@@ -16,6 +20,7 @@ import Database.PostgreSQL.PQTypes.Model.Index
 import Database.PostgreSQL.PQTypes.Model.Migration
 import Database.PostgreSQL.PQTypes.Model.PrimaryKey
 import Database.PostgreSQL.PQTypes.Model.Table
+import Database.PostgreSQL.PQTypes.Model.Trigger
 import Database.PostgreSQL.PQTypes.SQL.Builder
 import Log
 import Log.Backend.StandardOutput
@@ -69,6 +74,7 @@ tableBankSchema1 =
                 , colNullable = False }
     ]
   , tblPrimaryKey = pkOnColumn "id"
+  , tblTriggers = []
   }
 
 tableBankSchema2 :: Table
@@ -368,7 +374,8 @@ schema2Migrations :: (MonadDB m) => [Migration m]
 schema2Migrations = schema1Migrations
                  ++ [ dropTableMigration   tableWitnessedRobberySchema1
                     , dropTableMigration   tableWitnessSchema1
-                    , createTableMigration tableUnderArrestSchema2 ]
+                    , createTableMigration tableUnderArrestSchema2
+                    ]
 
 schema3Tables :: [Table]
 schema3Tables = [ tableBankSchema3
@@ -826,6 +833,152 @@ migrationTest1Body step = do
   migrateDBToSchema5  step
   testDBSchema5       step
 
+bankTrigger1 :: Trigger
+bankTrigger1 =
+  Trigger { triggerTable = "bank"
+          , triggerName = "trigger_1"
+          , triggerEvents = Set.fromList [TriggerDelete]
+          , triggerDeferrable = False
+          , triggerInitiallyDeferred = False
+          , triggerWhen = Nothing
+          , triggerFunction = TriggerFunction "function_1" $
+                "begin"
+            <+> "  perform true;"
+            <+> "  return null;"
+            <+> "end;"
+          }
+
+bankTrigger2 :: Trigger
+bankTrigger2 =
+  bankTrigger1
+  { triggerFunction = TriggerFunction "function_2" $
+          "begin"
+      <+> "  return null;"
+      <+> "end;"
+  }
+
+bankTrigger2Proper :: Trigger
+bankTrigger2Proper =
+  bankTrigger2 { triggerName = "trigger_2" }
+
+testTriggers :: HasCallStack => (String -> TestM ()) -> TestM ()
+testTriggers step = do
+  step "Running trigger tests..."
+
+  step "create the initial database"
+  migrate [tableBankSchema1] [createTableMigration tableBankSchema1]
+
+  let msg = "checkDatabase fails if there are triggers in the database but not in the schema"
+      ts = [ tableBankSchema1 { tblVersion = 2
+                              , tblTriggers = []
+                              }
+           ]
+      ms = [ createTriggerMigration 1 bankTrigger1 ]
+  step msg
+  assertException msg $ migrate ts ms
+
+  let msg = "checkDatabase fails if there are triggers in the schema but not in the database"
+      ts = [ tableBankSchema1 { tblVersion = 2
+                              , tblTriggers = [bankTrigger1]
+                              }
+           ]
+      ms = []
+  triggerStep msg $ do
+    assertException msg $ migrate ts ms
+
+  let msg = "test succeeds when creating a single trigger"
+      ts = [ tableBankSchema1 { tblVersion = 2
+                              , tblTriggers = [bankTrigger1]
+                              }
+           ]
+      ms = [ createTriggerMigration 1 bankTrigger1 ]
+  triggerStep msg $ do
+    assertNoException msg $ migrate ts ms
+    verify [bankTrigger1]
+
+
+  let msg = "checkDatabase fails if triggers differ in function name"
+      ts = [ tableBankSchema1 { tblVersion = 2
+                              , tblTriggers = [bankTrigger1]
+                              }
+           ]
+      ms = [ createTriggerMigration 1 bankTrigger2 ]
+  triggerStep msg $ do
+    assertException msg $ migrate ts ms
+
+  -- Attempt to create the same triggers twice. Should fail with a DBException saying
+  -- that function already exists.
+  let msg = "database exception is raised if trigger is created twice"
+      ts = [ tableBankSchema1 { tblVersion = 3
+                              , tblTriggers = [bankTrigger1]
+                              }
+           ]
+      ms = [ createTriggerMigration 1 bankTrigger1
+           , createTriggerMigration 2 bankTrigger1
+           ]
+  triggerStep msg $ do
+    -- assertException is not good enough. We only want to catch DBException here.
+    try (migrate ts ms) >>= either (\DBException{} -> pure ())
+                                   (const . liftIO $ assertFailure "Failure expected")
+
+
+  let msg = "database exception is raised if triggers only differ in function name"
+      ts = [ tableBankSchema1 { tblVersion = 3
+                              , tblTriggers = [bankTrigger1, bankTrigger2]
+                              }
+           ]
+      ms = [ createTriggerMigration 1 bankTrigger1
+           , createTriggerMigration 2 bankTrigger2
+           ]
+  triggerStep msg $ do
+    -- assertException is not good enough. We only want to catch DBException here.
+    try (migrate ts ms) >>= either (\DBException{} -> pure ())
+                                   (const . liftIO $ assertFailure "Failure expected")
+
+  let msg = "test successfully creates two triggers"
+      ts = [ tableBankSchema1 { tblVersion = 3
+                              , tblTriggers = [bankTrigger1, bankTrigger2Proper]
+                              }
+           ]
+      ms = [ createTriggerMigration 1 bankTrigger1
+           , createTriggerMigration 2 bankTrigger2Proper
+           ]
+  triggerStep msg $ do
+    assertNoException msg $ migrate ts ms
+    verify [bankTrigger1, bankTrigger2Proper]
+
+  where
+    triggerStep msg rest = do
+      recreateTriggerDB
+      step msg
+      rest
+
+    migrate tables migrations = do
+      migrateDatabase defaultExtrasOptions ["pgcrypto"] [] [] tables migrations
+      checkDatabase defaultExtrasOptions [] [] tables
+
+    -- Verify that the given triggers are present in the database.
+    verify :: (MonadIO m, MonadDB m, HasCallStack) => [Trigger] -> m ()
+    verify triggers = do
+      dbTriggers <- getDBTriggers
+      let ok = and $ map (`elem` dbTriggers) triggers
+      liftIO $ assertBool "Triggers not present in the database." ok
+
+    createTriggerMigration :: MonadDB m => Int -> Trigger -> Migration m
+    createTriggerMigration from trg = Migration
+      { mgrTableName = tblName tableBankSchema1
+      , mgrFrom = fromIntegral from
+      , mgrAction = CreateTriggerMigration trg
+      }
+
+    recreateTriggerDB = do
+      runSQL_ "DROP TRIGGER IF EXISTS trg__bank__trigger_1 ON bank;"
+      runSQL_ "DROP TRIGGER IF EXISTS trg__bank__trigger_2 ON bank;"
+      runSQL_ "DROP FUNCTION IF EXISTS function_1;"
+      runSQL_ "DROP FUNCTION IF EXISTS function_2;"
+      runSQL_ "DROP TABLE IF EXISTS bank;"
+      runSQL_ "DELETE FROM table_versions WHERE name = 'bank'";
+      migrate [tableBankSchema1] [createTableMigration tableBankSchema1]
 
 migrationTest1 :: ConnectionSourceM (LogT IO) -> TestTree
 migrationTest1 connSource =
@@ -833,8 +986,6 @@ migrationTest1 connSource =
   freshTestDB         step
 
   migrationTest1Body  step
-
-  -- freshTestDB         step
 
 -- | Test for behaviour of 'checkDatabase' and 'checkDatabaseAllowUnknownObjects'
 migrationTest2 :: ConnectionSourceM (LogT IO) -> TestTree
@@ -957,6 +1108,13 @@ migrationTest4 connSource =
 
   freshTestDB         step
 
+-- | Test triggers.
+triggerTests :: ConnectionSourceM (LogT IO) -> TestTree
+triggerTests connSource =
+  testCaseSteps' "Trigger tests" connSource $ \step -> do
+    freshTestDB  step
+    testTriggers step
+
 eitherExc :: MonadCatch m => (SomeException -> m ()) -> (a -> m ()) -> m a -> m ()
 eitherExc left right c = try c >>= either left right
 
@@ -994,6 +1152,7 @@ main = do
                          , migrationTest2 connSource
                          , migrationTest3 connSource
                          , migrationTest4 connSource
+                         , triggerTests connSource
                          ]
   where
     ings =
