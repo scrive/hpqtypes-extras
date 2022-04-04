@@ -1,3 +1,7 @@
+# hpqtypes-extras-1.14.2.0 (2022-??-??)
+* Add support for GHC 9.2.
+* Drop support for GHC < 8.8.
+
 # hpqtypes-extras-1.14.1.0 (2022-01-11)
 * Support unmanaged local indexes whose names start with "local_".
 
