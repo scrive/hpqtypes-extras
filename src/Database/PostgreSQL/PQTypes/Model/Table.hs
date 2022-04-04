@@ -19,7 +19,6 @@ import Data.ByteString (ByteString)
 import Data.Int
 import Data.Monoid.Utils
 import Database.PostgreSQL.PQTypes
-import Prelude
 
 import Database.PostgreSQL.PQTypes.Model.Check
 import Database.PostgreSQL.PQTypes.Model.ColumnType

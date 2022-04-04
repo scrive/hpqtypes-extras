@@ -9,7 +9,6 @@ module Database.PostgreSQL.PQTypes.Model.Check (
 
 import Data.Monoid.Utils
 import Database.PostgreSQL.PQTypes
-import Prelude
 
 data Check = Check {
   chkName      :: RawSQL ()

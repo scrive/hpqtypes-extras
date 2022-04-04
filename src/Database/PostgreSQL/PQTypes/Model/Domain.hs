@@ -9,7 +9,6 @@ module Database.PostgreSQL.PQTypes.Model.Domain (
 import Data.Monoid.Utils
 import Data.Set (Set, fromList)
 import Database.PostgreSQL.PQTypes
-import Prelude
 
 import Database.PostgreSQL.PQTypes.Model.Check
 import Database.PostgreSQL.PQTypes.Model.ColumnType

@@ -1,16 +1,11 @@
-module Main
-  where
+module Main where
 
-import Control.Exception.Lifted as E
+import Control.Monad.Catch
 import Control.Monad.IO.Class
-import Control.Monad.Trans.Control
-
 import Data.Either
-import Data.Monoid
-import Prelude
-import qualified Data.Text as T
 import Data.Typeable
 import Data.UUID.Types
+import qualified Data.Text as T
 
 import Database.PostgreSQL.PQTypes
 import Database.PostgreSQL.PQTypes.Checks
@@ -517,7 +512,7 @@ testDBSchema1 step = do
   liftIO $ assertEqual "INSERT ON CONFLICT does nothing (2)" (name, location) details4
 
   -- If NO CONFLICT is not specified, make sure we throw an exception.
-  eres :: Either DBException () <- E.try . withSavepoint "testDBSchema" $ do
+  eres :: Either DBException () <- try . withSavepoint "testDBSchema" $ do
     runQuery_ . sqlInsert "bank" $ do
       sqlSet "id" bankId
       sqlSet "name" name
@@ -566,7 +561,7 @@ testDBSchema1 step = do
   liftIO $ assertEqual "INSERT ON CONFLICT does nothing (2)" (name, location) details7
 
   -- If NO CONFLICT is not specified, make sure we throw an exception.
-  eres1 :: Either DBException () <- E.try . withSavepoint "testDBSchema" $ do
+  eres1 :: Either DBException () <- try . withSavepoint "testDBSchema" $ do
     runQuery_ . sqlInsertSelect "bank" "bank" $ do
       sqlSetCmd "id" "id"
       sqlSetCmd "name" "name"
@@ -962,9 +957,8 @@ migrationTest4 connSource =
 
   freshTestDB         step
 
-eitherExc :: MonadBaseControl IO m =>
-             (SomeException -> m ()) -> (a -> m ()) -> m a -> m ()
-eitherExc left right c = (E.try c) >>= either left right
+eitherExc :: MonadCatch m => (SomeException -> m ()) -> (a -> m ()) -> m a -> m ()
+eitherExc left right c = try c >>= either left right
 
 assertNoException :: String -> TestM () -> TestM ()
 assertNoException t c = eitherExc
