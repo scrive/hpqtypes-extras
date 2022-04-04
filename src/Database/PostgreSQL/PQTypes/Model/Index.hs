@@ -19,10 +19,8 @@ module Database.PostgreSQL.PQTypes.Model.Index (
 import Crypto.Hash.RIPEMD160
 import Data.ByteString.Base16
 import Data.Char
-import Data.Monoid
 import Data.Monoid.Utils
 import Database.PostgreSQL.PQTypes
-import Prelude
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T

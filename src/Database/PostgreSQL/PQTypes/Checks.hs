@@ -14,15 +14,13 @@ module Database.PostgreSQL.PQTypes.Checks (
   ) where
 
 import Control.Arrow ((&&&))
-import Control.Concurrent.Lifted (threadDelay)
-import Control.Monad.Base
+import Control.Concurrent (threadDelay)
 import Control.Monad.Catch
 import Control.Monad.Reader
 import Data.Int
 import Data.Function (on)
 import Data.List (partition)
 import Data.Maybe
-import Data.Monoid
 import Data.Monoid.Utils
 import Data.Ord (comparing)
 import Data.Typeable (cast)
@@ -31,7 +29,6 @@ import Data.Text (Text)
 import Database.PostgreSQL.PQTypes
 import GHC.Stack (HasCallStack)
 import Log
-import Prelude
 import TextShow
 import qualified Data.List as L
 import qualified Data.Map as M
@@ -53,7 +50,7 @@ headExc _ (x:_) = x
 
 -- | Run migrations and check the database structure.
 migrateDatabase
-  :: (MonadBase IO m, MonadDB m, MonadLog m, MonadMask m)
+  :: (MonadIO m, MonadDB m, MonadLog m, MonadMask m)
   => ExtrasOptions
   -> [Extension]
   -> [CompositeType]
@@ -553,7 +550,7 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version)
 --   * all 'mgrFrom' are less than table version number of the table in
 --     the 'tables' list
 checkDBConsistency
-  :: forall m. (MonadBase IO m, MonadDB m, MonadLog m, MonadMask m)
+  :: forall m. (MonadIO m, MonadDB m, MonadLog m, MonadMask m)
   => ExtrasOptions -> [Domain] -> TablesWithVersions -> [Migration m]
   -> m ()
 checkDBConsistency options domains tablesWithVersions migrations = do
@@ -837,7 +834,7 @@ checkDBConsistency options domains tablesWithVersions migrations = do
           let restartMigration query = do
                 logAttention "Failed to acquire a lock" $ object ["query" .= query]
                 logInfo_ "Restarting the migration shortly..."
-                threadDelay 1000000
+                liftIO $ threadDelay 1000000
                 loop
           handleJust lockNotAvailable restartMigration $ do
             forM_ (eoLockTimeoutMs options) $ \lockTimeout -> do

@@ -6,7 +6,6 @@ module Database.PostgreSQL.PQTypes.Model.Extension (
 import Data.String
 import Data.Text (Text)
 import Database.PostgreSQL.PQTypes
-import Prelude
 
 newtype Extension = Extension { unExtension :: RawSQL () }
   deriving (Eq, Ord, Show, IsString)

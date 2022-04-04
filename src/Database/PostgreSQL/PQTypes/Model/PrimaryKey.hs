@@ -8,10 +8,8 @@ module Database.PostgreSQL.PQTypes.Model.PrimaryKey (
   , sqlDropPK
   ) where
 
-import Data.Monoid (mconcat)
 import Data.Monoid.Utils
 import Database.PostgreSQL.PQTypes
-import Prelude
 import Database.PostgreSQL.PQTypes.Model.Index
 import Database.PostgreSQL.PQTypes.Utils.NubList
 

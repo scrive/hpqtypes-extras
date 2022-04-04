@@ -3,10 +3,7 @@ module Database.PostgreSQL.PQTypes.Model.ColumnType (
   , columnTypeToSQL
   ) where
 
-import Control.Applicative ((<$>))
-import Data.Monoid
 import Database.PostgreSQL.PQTypes
-import Prelude
 import qualified Data.Text as T
 
 data ColumnType

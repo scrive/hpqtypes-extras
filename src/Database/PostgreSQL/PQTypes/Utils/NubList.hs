@@ -5,8 +5,6 @@ module Database.PostgreSQL.PQTypes.Utils.NubList
     , overNubList
     ) where
 
-import Prelude
-import Data.Monoid (Monoid(..))
 import Data.Typeable
 
 import qualified Text.Read as R

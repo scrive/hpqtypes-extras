@@ -10,10 +10,8 @@ module Database.PostgreSQL.PQTypes.Model.ForeignKey (
   , sqlDropFK
   ) where
 
-import Data.Monoid
 import Data.Monoid.Utils
 import Database.PostgreSQL.PQTypes
-import Prelude
 import qualified Data.Text as T
 
 data ForeignKey = ForeignKey {
