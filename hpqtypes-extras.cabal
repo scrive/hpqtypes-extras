@@ -89,7 +89,6 @@ library
 
   default-language: Haskell2010
   default-extensions:
-  other-extensions:   CPP
 
 test-suite  hpqtypes-extras-tests
   import:             common-stanza
