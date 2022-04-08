@@ -1103,7 +1103,7 @@ fetchTableIndex
   -> (TableIndex, RawSQL ())
 fetchTableIndex (name, Array1 keyColumns, Array1 includeColumns, method, unique, valid, mconstraint) =
   (TableIndex
-   { idxColumns = map unsafeSQL keyColumns
+   { idxColumns = map (indexColumn . unsafeSQL) keyColumns
    , idxInclude = map unsafeSQL includeColumns
    , idxMethod = read method
    , idxUnique = unique
