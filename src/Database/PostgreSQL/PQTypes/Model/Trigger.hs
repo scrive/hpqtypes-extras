@@ -175,7 +175,8 @@ sqlCreateTrigger Trigger{..} =
 
 -- | Get all noninternal triggers from the database.
 --
--- Run a query that returns all database triggers marked as @tgisinternal = false@.
+-- Run a query that returns all triggers associated with the given table and marked as
+-- @tgisinternal = false@.
 --
 -- Note that, in the background, to get the trigger's @WHEN@ clause and the source code of
 -- the attached function, the entire query that had created the trigger is received using
@@ -186,8 +187,8 @@ sqlCreateTrigger Trigger{..} =
 -- creating in the database and the one received by this function.
 --
 -- @since 1.15.0
-getDBTriggers :: forall m. MonadDB m => m [Trigger]
-getDBTriggers = do
+getDBTriggers :: forall m. MonadDB m => RawSQL () -> m [Trigger]
+getDBTriggers tableName = do
   runQuery_ . sqlSelect "pg_trigger t" $ do
     sqlResult "t.tgname::text" -- name
     sqlResult "t.tgtype" -- smallint == int2 => (2 bytes)
@@ -206,12 +207,13 @@ getDBTriggers = do
     sqlJoinOn "pg_proc p" "t.tgfoid = p.oid"
     sqlJoinOn "pg_class c" "c.oid = t.tgrelid"
     sqlWhereEq "t.tgisinternal" False
+    sqlWhereEq "c.relname" $ unRawSQL tableName
   fetchMany getTrigger
   where
     getTrigger :: (String, Int16, Bool, Bool, String, String, String, String) -> Trigger
     getTrigger (tgname, tgtype, tgdeferrable, tginitdeferrable, triggerdef, proname, prosrc, tblName) =
-      Trigger { triggerTable = tableName
-              , triggerName = triggerBaseName (fromString tgname) tableName
+      Trigger { triggerTable = tableName'
+              , triggerName = triggerBaseName (fromString tgname) tableName'
               , triggerEvents = getEvents tgtype
               , triggerDeferrable = tgdeferrable
               , triggerInitiallyDeferred = tginitdeferrable
@@ -219,7 +221,7 @@ getDBTriggers = do
               , triggerFunction = TriggerFunction (fromString proname) (fromString prosrc)
               }
       where
-        tableName = fromString tblName
+        tableName' = fromString tblName
         -- Get the WHEN part of the query. Anything between WHEN and EXECUTE is what we
         -- want. The Postgres' grammar guarantees that WHEN and EXECUTE are always next to
         -- each other and in that order.

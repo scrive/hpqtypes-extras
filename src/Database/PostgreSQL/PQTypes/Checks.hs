@@ -419,15 +419,14 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version)
       indexes <- fetchMany fetchTableIndex
       runQuery_ $ sqlGetForeignKeys table
       fkeys <- fetchMany fetchForeignKey
-      triggers <- getDBTriggers
+      triggers <- getDBTriggers tblName
       return $ mconcat [
           checkColumns 1 tblColumns desc
         , checkPrimaryKey tblPrimaryKey pk
         , checkChecks tblChecks checks
         , checkIndexes tblIndexes indexes
         , checkForeignKeys tblForeignKeys fkeys
-        , checkTriggers tblTriggers $
-            filter (\Trigger{..} -> triggerTable == tblName) triggers
+        , checkTriggers tblTriggers triggers
         ]
       where
         fetchTableColumn
