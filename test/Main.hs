@@ -837,7 +837,7 @@ bankTrigger1 :: Trigger
 bankTrigger1 =
   Trigger { triggerTable = "bank"
           , triggerName = "trigger_1"
-          , triggerEvents = Set.fromList [TriggerDelete]
+          , triggerEvents = Set.fromList [TriggerInsert]
           , triggerDeferrable = False
           , triggerInitiallyDeferred = False
           , triggerWhen = Nothing
@@ -917,10 +917,7 @@ testTriggers step = do
            , createTriggerMigration 2 bankTrigger1
            ]
   triggerStep msg $ do
-    -- assertException is not good enough. We only want to catch DBException here.
-    try (migrate ts ms) >>= either (\DBException{} -> pure ())
-                                   (const . liftIO $ assertFailure "Failure expected")
-
+    assertDBException msg $ migrate ts ms
 
   let msg = "database exception is raised if triggers only differ in function name"
       ts = [ tableBankSchema1 { tblVersion = 3
@@ -931,11 +928,9 @@ testTriggers step = do
            , createTriggerMigration 2 bankTrigger2
            ]
   triggerStep msg $ do
-    -- assertException is not good enough. We only want to catch DBException here.
-    try (migrate ts ms) >>= either (\DBException{} -> pure ())
-                                   (const . liftIO $ assertFailure "Failure expected")
+    assertDBException msg $ migrate ts ms
 
-  let msg = "test successfully creates two triggers"
+  let msg = "successfully migrate two triggers"
       ts = [ tableBankSchema1 { tblVersion = 3
                               , tblTriggers = [bankTrigger1, bankTrigger2Proper]
                               }
@@ -946,6 +941,73 @@ testTriggers step = do
   triggerStep msg $ do
     assertNoException msg $ migrate ts ms
     verify [bankTrigger1, bankTrigger2Proper]
+
+  let msg = "database exception is raised if trigger's WHEN is syntactically incorrect"
+      trg = bankTrigger1 { triggerWhen = Just "WILL FAIL" }
+      ts = [ tableBankSchema1 { tblVersion = 2
+                              , tblTriggers = [trg]
+                              }
+           ]
+      ms = [ createTriggerMigration 1 trg ]
+  triggerStep msg $ do
+    assertDBException msg $ migrate ts ms
+
+  let msg = "database exception is raised if trigger's WHEN uses undefined column"
+      trg = bankTrigger1 { triggerWhen = Just "NEW.foobar = 1" }
+      ts = [ tableBankSchema1 { tblVersion = 2
+                              , tblTriggers = [trg]
+                              }
+           ]
+      ms = [ createTriggerMigration 1 trg ]
+  triggerStep msg $ do
+    assertDBException msg $ migrate ts ms
+
+  let msg = "successfully migrate trigger with valid WHEN"
+      trg = bankTrigger1 { triggerWhen = Just "NEW.name != 'foobar'" }
+      ts = [ tableBankSchema1 { tblVersion = 2
+                              , tblTriggers = [trg]
+                              }
+           ]
+      ms = [ createTriggerMigration 1 trg ]
+  triggerStep msg $ do
+    assertNoException msg $ migrate ts ms
+    verify [trg]
+
+  let msg = "successfully migrate trigger that is deferrable"
+      trg = bankTrigger1 { triggerDeferrable = True }
+      ts = [ tableBankSchema1 { tblVersion = 2
+                              , tblTriggers = [trg]
+                              }
+           ]
+      ms = [ createTriggerMigration 1 trg ]
+  triggerStep msg $ do
+    assertNoException msg $ migrate ts ms
+    verify [trg]
+
+  let msg = "successfully migrate trigger that is deferrable and initially deferred"
+      trg = bankTrigger1 { triggerDeferrable = True
+                         , triggerInitiallyDeferred = True
+                         }
+      ts = [ tableBankSchema1 { tblVersion = 2
+                              , tblTriggers = [trg]
+                              }
+           ]
+      ms = [ createTriggerMigration 1 trg ]
+  triggerStep msg $ do
+    assertNoException msg $ migrate ts ms
+    verify [trg]
+
+  let msg = "database exception is raised if trigger is initially deferred but not deferrable"
+      trg = bankTrigger1 { triggerDeferrable = False
+                         , triggerInitiallyDeferred = True
+                         }
+      ts = [ tableBankSchema1 { tblVersion = 2
+                              , tblTriggers = [trg]
+                              }
+           ]
+      ms = [ createTriggerMigration 1 trg ]
+  triggerStep msg $ do
+    assertDBException msg $ migrate ts ms
 
   where
     triggerStep msg rest = do
@@ -1124,9 +1186,14 @@ assertNoException t c = eitherExc
   (const $ return ()) c
 
 assertException :: String -> TestM () -> TestM ()
-assertException   t c = eitherExc
+assertException t c = eitherExc
   (const $ return ())
   (const $ liftIO $ assertFailure ("No exception thrown for: " ++ t)) c
+
+assertDBException :: String -> TestM () -> TestM ()
+assertDBException t c =
+  try c >>= either (\DBException{} -> pure ())
+                   (const . liftIO . assertFailure $ "No DBException thrown for: " ++ t)
 
 -- | A variant of testCaseSteps that works in TestM monad.
 testCaseSteps' :: TestName -> ConnectionSourceM (LogT IO)

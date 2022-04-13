@@ -165,7 +165,7 @@ sqlCreateTrigger Trigger{..} =
                                  then "INITIALLY DEFERRED"
                                  else "INITIALLY IMMEDIATE"
                 in deferrable <+> deferred
-    trgWhen = maybe "" ("WHEN" <+>) triggerWhen
+    trgWhen = maybe "" (\w -> "WHEN (" <+> w <+> ")") triggerWhen
     trgFunction = tfName triggerFunction
 
 -- | Get all noninternal triggers from the database.
