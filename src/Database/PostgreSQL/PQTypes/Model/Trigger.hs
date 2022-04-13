@@ -18,11 +18,6 @@ module Database.PostgreSQL.PQTypes.Model.Trigger (
   , triggerBaseName
   , sqlCreateTrigger
   , getDBTriggers
-  -- TODO testing; remove when PR is ready
-  -- , testDB
-  -- , testGetDBTriggers
-  -- , testTrigger1
-  -- , testTrigger2
   ) where
 
 import Data.Bits (testBit)
@@ -245,42 +240,3 @@ getDBTriggers tableName = do
       , (3, TriggerDelete) -- #define TRIGGER_TYPE_DELETE (1 << 3)
       , (4, TriggerUpdate) -- #define TRIGGER_TYPE_UPDATE (1 << 4)
       ]
-
-
-testDB :: DBT IO a -> IO a
-testDB action = do
-  let cs = defaultConnectionSettings { csConnInfo = "host=localhost user=jsynacek dbname=kontrakcja" }
-      connSource = unConnectionSource $ simpleSource cs
-  runDBT connSource defaultTransactionSettings action
-
-testGetDBTriggers :: IO ()
-testGetDBTriggers = do
-  trgs <- testDB getDBTriggers
-  mapM_ print trgs
-
-
-testTrigger1 :: Trigger
-testTrigger1 = Trigger
-  { triggerTable = "users"
-  , triggerName = "users_trigger"
-  , triggerEvents = Set.fromList
-                      [ TriggerInsert
-                      , TriggerUpdate
-                      , TriggerInsert
-                      , TriggerUpdate
-                      , TriggerDelete
-                      ]
-  , triggerDeferrable = False
-  , triggerInitiallyDeferred = False
-  , triggerWhen = Nothing
-  , triggerFunction = TriggerFunction "testfun1" $
-          "begin"
-      <+> "  perform true;"
-      <+> "  return null;"
-      <+> "end;"
-  }
-
-testTrigger2 :: Trigger
-testTrigger2 = testTrigger1 { triggerName = "users_trigger_2"
-                            , triggerEvents = Set.fromList [TriggerDelete]
-                            }
