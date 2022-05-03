@@ -1,5 +1,3 @@
-{-# OPTIONS_GHC -Wno-name-shadowing #-}
-
 module Main where
 
 import Control.Monad.Catch
@@ -868,146 +866,177 @@ testTriggers step = do
   step "create the initial database"
   migrate [tableBankSchema1] [createTableMigration tableBankSchema1]
 
-  let msg = "checkDatabase fails if there are triggers in the database but not in the schema"
-      ts = [ tableBankSchema1 { tblVersion = 2
-                              , tblTriggers = []
-                              }
-           ]
-      ms = [ createTriggerMigration 1 bankTrigger1 ]
-  step msg
-  assertException msg $ migrate ts ms
-
-  let msg = "checkDatabase fails if there are triggers in the schema but not in the database"
-      ts = [ tableBankSchema1 { tblVersion = 2
-                              , tblTriggers = [bankTrigger1]
-                              }
-           ]
-      ms = []
-  triggerStep msg $ do
+  do
+    let msg = "checkDatabase fails if there are triggers in the database but not in the schema"
+        ts = [ tableBankSchema1 { tblVersion = 2
+                                , tblTriggers = []
+                                }
+             ]
+        ms = [ createTriggerMigration 1 bankTrigger1 ]
+    step msg
     assertException msg $ migrate ts ms
 
-  let msg = "test succeeds when creating a single trigger"
-      ts = [ tableBankSchema1 { tblVersion = 2
-                              , tblTriggers = [bankTrigger1]
-                              }
-           ]
-      ms = [ createTriggerMigration 1 bankTrigger1 ]
-  triggerStep msg $ do
-    assertNoException msg $ migrate ts ms
-    verify [bankTrigger1]
+  do
+    let msg = "checkDatabase fails if there are triggers in the schema but not in the database"
+        ts = [ tableBankSchema1 { tblVersion = 2
+                                , tblTriggers = [bankTrigger1]
+                                }
+             ]
+        ms = []
+    triggerStep msg $ do
+      assertException msg $ migrate ts ms
 
+  do
+    let msg = "test succeeds when creating a single trigger"
+        ts = [ tableBankSchema1 { tblVersion = 2
+                                , tblTriggers = [bankTrigger1]
+                                }
+             ]
+        ms = [ createTriggerMigration 1 bankTrigger1 ]
+    triggerStep msg $ do
+      assertNoException msg $ migrate ts ms
+      verify [bankTrigger1]
 
-  let msg = "checkDatabase fails if triggers differ in function name"
-      ts = [ tableBankSchema1 { tblVersion = 2
-                              , tblTriggers = [bankTrigger1]
-                              }
-           ]
-      ms = [ createTriggerMigration 1 bankTrigger2 ]
-  triggerStep msg $ do
-    assertException msg $ migrate ts ms
+  do
+    let msg = "checkDatabase fails if triggers differ in function name"
+        ts = [ tableBankSchema1 { tblVersion = 2
+                                , tblTriggers = [bankTrigger1]
+                                }
+             ]
+        ms = [ createTriggerMigration 1 bankTrigger2 ]
+    triggerStep msg $ do
+      assertException msg $ migrate ts ms
 
-  -- Attempt to create the same triggers twice. Should fail with a DBException saying
-  -- that function already exists.
-  let msg = "database exception is raised if trigger is created twice"
-      ts = [ tableBankSchema1 { tblVersion = 3
-                              , tblTriggers = [bankTrigger1]
-                              }
-           ]
-      ms = [ createTriggerMigration 1 bankTrigger1
-           , createTriggerMigration 2 bankTrigger1
-           ]
-  triggerStep msg $ do
-    assertDBException msg $ migrate ts ms
+  do
+    -- Attempt to create the same triggers twice. Should fail with a DBException saying
+    -- that function already exists.
+    let msg = "database exception is raised if trigger is created twice"
+        ts = [ tableBankSchema1 { tblVersion = 3
+                                , tblTriggers = [bankTrigger1]
+                                }
+             ]
+        ms = [ createTriggerMigration 1 bankTrigger1
+             , createTriggerMigration 2 bankTrigger1
+             ]
+    triggerStep msg $ do
+      assertDBException msg $ migrate ts ms
 
-  let msg = "database exception is raised if triggers only differ in function name"
-      ts = [ tableBankSchema1 { tblVersion = 3
-                              , tblTriggers = [bankTrigger1, bankTrigger2]
-                              }
-           ]
-      ms = [ createTriggerMigration 1 bankTrigger1
-           , createTriggerMigration 2 bankTrigger2
-           ]
-  triggerStep msg $ do
-    assertDBException msg $ migrate ts ms
+  do
+    let msg = "database exception is raised if triggers only differ in function name"
+        ts = [ tableBankSchema1 { tblVersion = 3
+                                , tblTriggers = [bankTrigger1, bankTrigger2]
+                                }
+             ]
+        ms = [ createTriggerMigration 1 bankTrigger1
+             , createTriggerMigration 2 bankTrigger2
+             ]
+    triggerStep msg $ do
+      assertDBException msg $ migrate ts ms
 
-  let msg = "successfully migrate two triggers"
-      ts = [ tableBankSchema1 { tblVersion = 3
-                              , tblTriggers = [bankTrigger1, bankTrigger2Proper]
-                              }
-           ]
-      ms = [ createTriggerMigration 1 bankTrigger1
-           , createTriggerMigration 2 bankTrigger2Proper
-           ]
-  triggerStep msg $ do
-    assertNoException msg $ migrate ts ms
-    verify [bankTrigger1, bankTrigger2Proper]
+  do
+    let msg = "successfully migrate two triggers"
+        ts = [ tableBankSchema1 { tblVersion = 3
+                                , tblTriggers = [bankTrigger1, bankTrigger2Proper]
+                                }
+             ]
+        ms = [ createTriggerMigration 1 bankTrigger1
+             , createTriggerMigration 2 bankTrigger2Proper
+             ]
+    triggerStep msg $ do
+      assertNoException msg $ migrate ts ms
+      verify [bankTrigger1, bankTrigger2Proper]
 
-  let msg = "database exception is raised if trigger's WHEN is syntactically incorrect"
-      trg = bankTrigger1 { triggerWhen = Just "WILL FAIL" }
-      ts = [ tableBankSchema1 { tblVersion = 2
-                              , tblTriggers = [trg]
-                              }
-           ]
-      ms = [ createTriggerMigration 1 trg ]
-  triggerStep msg $ do
-    assertDBException msg $ migrate ts ms
+  do
+    let msg = "database exception is raised if trigger's WHEN is syntactically incorrect"
+        trg = bankTrigger1 { triggerWhen = Just "WILL FAIL" }
+        ts = [ tableBankSchema1 { tblVersion = 2
+                                , tblTriggers = [trg]
+                                }
+             ]
+        ms = [ createTriggerMigration 1 trg ]
+    triggerStep msg $ do
+      assertDBException msg $ migrate ts ms
 
-  let msg = "database exception is raised if trigger's WHEN uses undefined column"
-      trg = bankTrigger1 { triggerWhen = Just "NEW.foobar = 1" }
-      ts = [ tableBankSchema1 { tblVersion = 2
-                              , tblTriggers = [trg]
-                              }
-           ]
-      ms = [ createTriggerMigration 1 trg ]
-  triggerStep msg $ do
-    assertDBException msg $ migrate ts ms
+  do
+    let msg = "database exception is raised if trigger's WHEN uses undefined column"
+        trg = bankTrigger1 { triggerWhen = Just "NEW.foobar = 1" }
+        ts = [ tableBankSchema1 { tblVersion = 2
+                                , tblTriggers = [trg]
+                                }
+             ]
+        ms = [ createTriggerMigration 1 trg ]
+    triggerStep msg $ do
+      assertDBException msg $ migrate ts ms
 
-  let msg = "successfully migrate trigger with valid WHEN"
-      trg = bankTrigger1 { triggerWhen = Just "NEW.name != 'foobar'" }
-      ts = [ tableBankSchema1 { tblVersion = 2
-                              , tblTriggers = [trg]
-                              }
-           ]
-      ms = [ createTriggerMigration 1 trg ]
-  triggerStep msg $ do
-    assertNoException msg $ migrate ts ms
-    verify [trg]
+  do
+    -- This trigger is valid. However, the WHEN clause specified in triggerWhen is not
+    -- what gets returned from the database. The decompiled and normalized WHEN clause
+    -- from the database looks like this:
+    --   new.name <> 'foobar'::text
+    -- We simply assert an exception, which presumably comes from the migration framework,
+    -- while it should actually be a deeper check for just the differing WHEN
+    -- clauses. On the other hand, it's probably good enough as it is.
+    -- See the comment for 'getDBTriggers' in src/Database/PostgreSQL/PQTypes/Model/Trigger.hs.
+    let msg = "checkDatabase fails if WHEN clauses from database and code differ"
+        trg = bankTrigger1 { triggerWhen = Just "NEW.name != 'foobar'" }
+        ts = [ tableBankSchema1 { tblVersion = 2
+                                , tblTriggers = [trg]
+                                }
+             ]
+        ms = [ createTriggerMigration 1 trg ]
+    triggerStep msg $ do
+      assertException msg $ migrate ts ms
 
-  let msg = "successfully migrate trigger that is deferrable"
-      trg = bankTrigger1 { triggerDeferrable = True }
-      ts = [ tableBankSchema1 { tblVersion = 2
-                              , tblTriggers = [trg]
-                              }
-           ]
-      ms = [ createTriggerMigration 1 trg ]
-  triggerStep msg $ do
-    assertNoException msg $ migrate ts ms
-    verify [trg]
+  do
+    let msg = "successfully migrate trigger with valid WHEN"
+        trg = bankTrigger1 { triggerWhen = Just "new.name <> 'foobar'::text" }
+        ts = [ tableBankSchema1 { tblVersion = 2
+                                , tblTriggers = [trg]
+                                }
+             ]
+        ms = [ createTriggerMigration 1 trg ]
+    triggerStep msg $ do
+      assertNoException msg $ migrate ts ms
+      verify [trg]
 
-  let msg = "successfully migrate trigger that is deferrable and initially deferred"
-      trg = bankTrigger1 { triggerDeferrable = True
-                         , triggerInitiallyDeferred = True
-                         }
-      ts = [ tableBankSchema1 { tblVersion = 2
-                              , tblTriggers = [trg]
-                              }
-           ]
-      ms = [ createTriggerMigration 1 trg ]
-  triggerStep msg $ do
-    assertNoException msg $ migrate ts ms
-    verify [trg]
+  do
+    let msg = "successfully migrate trigger that is deferrable"
+        trg = bankTrigger1 { triggerDeferrable = True }
+        ts = [ tableBankSchema1 { tblVersion = 2
+                                , tblTriggers = [trg]
+                                }
+             ]
+        ms = [ createTriggerMigration 1 trg ]
+    triggerStep msg $ do
+      assertNoException msg $ migrate ts ms
+      verify [trg]
 
-  let msg = "database exception is raised if trigger is initially deferred but not deferrable"
-      trg = bankTrigger1 { triggerDeferrable = False
-                         , triggerInitiallyDeferred = True
-                         }
-      ts = [ tableBankSchema1 { tblVersion = 2
-                              , tblTriggers = [trg]
-                              }
-           ]
-      ms = [ createTriggerMigration 1 trg ]
-  triggerStep msg $ do
-    assertDBException msg $ migrate ts ms
+  do
+    let msg = "successfully migrate trigger that is deferrable and initially deferred"
+        trg = bankTrigger1 { triggerDeferrable = True
+                           , triggerInitiallyDeferred = True
+                           }
+        ts = [ tableBankSchema1 { tblVersion = 2
+                                , tblTriggers = [trg]
+                                }
+             ]
+        ms = [ createTriggerMigration 1 trg ]
+    triggerStep msg $ do
+      assertNoException msg $ migrate ts ms
+      verify [trg]
+
+  do
+    let msg = "database exception is raised if trigger is initially deferred but not deferrable"
+        trg = bankTrigger1 { triggerDeferrable = False
+                           , triggerInitiallyDeferred = True
+                           }
+        ts = [ tableBankSchema1 { tblVersion = 2
+                                , tblTriggers = [trg]
+                                }
+             ]
+        ms = [ createTriggerMigration 1 trg ]
+    triggerStep msg $ do
+      assertDBException msg $ migrate ts ms
 
   where
     triggerStep msg rest = do

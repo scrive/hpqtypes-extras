@@ -64,7 +64,7 @@ sqlCreateTriggerFunction TriggerFunction{..} =
       <+> "$$"
       <+> "LANGUAGE PLPGSQL"
       <+> "VOLATILE"
-      <+> "RETURNS NULL ON NULL INPUT;"
+      <+> "RETURNS NULL ON NULL INPUT"
 
 -- | Trigger event name.
 --
@@ -100,17 +100,7 @@ data Trigger = Trigger {
     -- @WHEN ( __condition__ )@ in the trigger definition.
   , triggerFunction          :: TriggerFunction
     -- ^ The function to execute when the trigger fires.
-} deriving Show
-
-instance Eq Trigger where
-  -- There is no comparison for the WHEN clause. It's not possible to have two triggers
-  -- that only differ in triggerWhen.
-  t1 == t2 = triggerTable t1 == triggerTable t2
-             && triggerName t1 == triggerName t2
-             && triggerEvents t1 == triggerEvents t2
-             && triggerDeferrable t1 == triggerDeferrable t2
-             && triggerInitiallyDeferred t1 == triggerInitiallyDeferred t2
-             && triggerFunction t1 == triggerFunction t2
+} deriving (Eq, Show)
 
 -- | Make a trigger name that can be used in SQL.
 --
@@ -177,9 +167,7 @@ sqlCreateTrigger Trigger{..} =
 -- the attached function, the entire query that had created the trigger is received using
 -- @pg_get_triggerdef(t.oid)::text@ and then parsed. The result of that call will be
 -- decompiled and normalized, which means that it's likely not what the user had
--- originally actually typed. Therefore, 'triggerWhen' and 'tfSource' of 'triggerFunction'
--- should not be relied upon when comparing the original 'Trigger' that had been used for
--- creating in the database and the one received by this function.
+-- originally actually typed.
 --
 -- @since 1.15.0
 getDBTriggers :: forall m. MonadDB m => RawSQL () -> m [Trigger]
@@ -193,9 +181,7 @@ getDBTriggers tableName = do
     -- normalized, which means that it's likely not what the user actually typed. For
     -- example, if the original query had excessive whitespace in it, it won't be in this
     -- result.
-    -- TODO: Do we want to remove one layer of () similarly to how Checks.hs does that?
-    --sqlResult "regexp_replace(pg_get_triggerdef(t.oid)::text, 'WHEN \\((.*)\\)', 'WHEN \\1')"
-    sqlResult "pg_get_triggerdef(t.oid)::text"
+    sqlResult "pg_get_triggerdef(t.oid, true)::text"
     sqlResult "p.proname::text" -- name
     sqlResult "p.prosrc" -- text
     sqlResult "c.relname::text"
@@ -222,10 +208,10 @@ getDBTriggers tableName = do
         -- each other and in that order.
         tgrWhen :: Maybe (RawSQL ())
         tgrWhen =
-          let (_, match) = Text.breakOn "WHEN" $ Text.pack triggerdef
-          in if Text.null match
+          let (prefix, match) = Text.breakOnEnd "WHEN (" $ Text.pack triggerdef
+          in if Text.null prefix
              then Nothing
-             else Just $ (rawSQL . fst $ Text.breakOn " EXECUTE" match) ()
+             else Just $ (rawSQL . fst $ Text.breakOn ") EXECUTE" match) ()
 
     getEvents :: Int16 -> Set TriggerEvent
     getEvents tgtype =

@@ -544,7 +544,15 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version)
           ]
 
         checkTriggers :: [Trigger] -> [Trigger] -> ValidationResult
-        checkTriggers = checkEquality "TRIGGERs"
+        checkTriggers defs triggers =
+          mapValidationResult id mapErrs $ checkEquality "TRIGGERs" defs triggers
+          where
+            mapErrs []      = []
+            mapErrs errmsgs = errmsgs <>
+              [ "(HINT: If WHEN clauses are equal modulo number of parentheses, whitespace, \
+                \case of variables or type casts used in conditions, just copy and paste \
+                \expected output into source code.)"
+              ]
 
 -- | Checks whether database is consistent, performing migrations if
 -- necessary. Requires all table names to be in lower case.
