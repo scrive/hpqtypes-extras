@@ -95,19 +95,21 @@ tblNameString = T.unpack . tblNameText
 checkEquality :: (Eq t, Show t) => Text -> [t] -> [t] -> ValidationResult
 checkEquality pname defs props = case (defs L.\\ props, props L.\\ defs) of
   ([], []) -> mempty
-  (def_diff, db_diff) -> validationError . mconcat $ [
+  (def_diff, db_diff) -> validationError $ mconcat [
       "Table and its definition have diverged and have "
     , showt $ length db_diff
     , " and "
     , showt $ length def_diff
     , " different "
     , pname
-    , " each, respectively (table: "
-    , T.pack $ show db_diff
-    , ", definition: "
-    , T.pack $ show def_diff
-    , ")."
+    , " each, respectively:\n"
+    , "  ● table:"
+    , showDiff db_diff
+    , "\n  ● definition:"
+    , showDiff def_diff
     ]
+  where
+    showDiff = mconcat . map (("\n    ○ " <>) . T.pack . show)
 
 checkNames :: Show t => (t -> RawSQL ()) -> [(t, RawSQL ())] -> ValidationResult
 checkNames prop_name = mconcat . map check
