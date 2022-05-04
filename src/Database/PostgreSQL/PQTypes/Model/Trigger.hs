@@ -24,7 +24,6 @@ import Data.Bits (testBit)
 import Data.Int
 import Data.Monoid.Utils
 import Data.Set (Set)
-import Data.String
 import Database.PostgreSQL.PQTypes
 import Database.PostgreSQL.PQTypes.SQL.Builder
 import qualified Data.Set as Set
@@ -194,15 +193,15 @@ getDBTriggers tableName = do
     getTrigger :: (String, Int16, Bool, Bool, String, String, String, String) -> Trigger
     getTrigger (tgname, tgtype, tgdeferrable, tginitdeferrable, triggerdef, proname, prosrc, tblName) =
       Trigger { triggerTable = tableName'
-              , triggerName = triggerBaseName (fromString tgname) tableName'
+              , triggerName = triggerBaseName (unsafeSQL tgname) tableName'
               , triggerEvents = getEvents tgtype
               , triggerDeferrable = tgdeferrable
               , triggerInitiallyDeferred = tginitdeferrable
               , triggerWhen = tgrWhen
-              , triggerFunction = TriggerFunction (fromString proname) (fromString prosrc)
+              , triggerFunction = TriggerFunction (unsafeSQL proname) (unsafeSQL prosrc)
               }
       where
-        tableName' = fromString tblName
+        tableName' = unsafeSQL tblName
         -- Get the WHEN part of the query. Anything between WHEN and EXECUTE is what we
         -- want. The Postgres' grammar guarantees that WHEN and EXECUTE are always next to
         -- each other and in that order.
