@@ -614,16 +614,13 @@ checkDBConsistency options domains tablesWithVersions migrations = do
 
     validateMigrations :: m ()
     validateMigrations = forM_ tables $ \table -> do
+      -- FIXME: https://github.com/scrive/hpqtypes-extras/issues/73
       let presentMigrationVersions
             = [ mgrFrom | Migration{..} <- migrations
                         , mgrTableName == tblName table ]
           expectedMigrationVersions
             = reverse $ take (length presentMigrationVersions) $
               reverse  [0 .. tblVersion table - 1]
-            -- -- TODO: File a separate issue about this with a reproducer!
-            -- = if null presentMigrationVersions
-            --   then []
-            --   else [0 .. tblVersion table - 1]
 
       checkMigrationsListValidity table presentMigrationVersions
         expectedMigrationVersions
@@ -831,13 +828,6 @@ checkDBConsistency options domains tablesWithVersions migrations = do
           -- won't run inside a transaction.
           runSQL_ "COMMIT"
           runQuery_ (sqlDropIndexConcurrently tname idx) `finally` begin
-          updateTableVersion
-
-        CreateTriggerMigration trigger@Trigger{..} -> do
-          logInfo_ $ "  Creating function" <+> (unRawSQL $ tfName triggerFunction)
-          runQuery_ $ sqlCreateTriggerFunction triggerFunction
-          logInfo_ $ "  Creating trigger" <+> (unRawSQL $ triggerMakeName triggerName triggerTable)
-          runQuery_ $ sqlCreateTrigger trigger
           updateTableVersion
 
       where

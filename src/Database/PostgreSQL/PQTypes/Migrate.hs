@@ -47,6 +47,4 @@ createTableConstraints Table{..} = when (not $ null addConstraints) $ do
       ]
 
 createTableTriggers :: MonadDB m => Table -> m ()
-createTableTriggers Table{..} = forM_ tblTriggers $ \t -> do
-  runQuery_ . sqlCreateTriggerFunction $ triggerFunction t
-  runQuery_ $ sqlCreateTrigger t
+createTableTriggers Table{..} = forM_ tblTriggers createTrigger

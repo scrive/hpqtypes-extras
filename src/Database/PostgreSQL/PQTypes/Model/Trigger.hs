@@ -11,12 +11,16 @@ module Database.PostgreSQL.PQTypes.Model.Trigger (
   -- * Trigger functions
     TriggerFunction(..)
   , sqlCreateTriggerFunction
+  , sqlDropTriggerFunction
   -- * Triggers
   , TriggerEvent(..)
   , Trigger(..)
   , triggerMakeName
   , triggerBaseName
   , sqlCreateTrigger
+  , sqlDropTrigger
+  , createTrigger
+  , dropTrigger
   , getDBTriggers
   ) where
 
@@ -54,16 +58,23 @@ instance Eq TriggerFunction where
 -- @since 1.15.0.0
 sqlCreateTriggerFunction :: TriggerFunction -> RawSQL ()
 sqlCreateTriggerFunction TriggerFunction{..} =
-      "CREATE FUNCTION"
-      <+> tfName
-      <>  "()"
-      <+> "RETURNS TRIGGER"
-      <+> "AS $$"
-      <+> tfSource
-      <+> "$$"
-      <+> "LANGUAGE PLPGSQL"
-      <+> "VOLATILE"
-      <+> "RETURNS NULL ON NULL INPUT"
+  "CREATE FUNCTION"
+    <+> tfName
+    <>  "()"
+    <+> "RETURNS TRIGGER"
+    <+> "AS $$"
+    <+> tfSource
+    <+> "$$"
+    <+> "LANGUAGE PLPGSQL"
+    <+> "VOLATILE"
+    <+> "RETURNS NULL ON NULL INPUT"
+
+-- | Build an SQL statement for dropping a trigger function.
+--
+-- @since 1.15.0.0
+sqlDropTriggerFunction :: TriggerFunction -> RawSQL ()
+sqlDropTriggerFunction TriggerFunction{..} =
+  "DROP FUNCTION" <+> tfName <+> "RESTRICT"
 
 -- | Trigger event name.
 --
@@ -141,7 +152,7 @@ sqlCreateTrigger Trigger{..} =
     <+> "FOR EACH ROW"
     <+> trgWhen
     <+> "EXECUTE FUNCTION" <+> trgFunction
-    <+> "();"
+    <+> "()"
   where
     trgName
       | triggerName == "" = error "Trigger must have a name."
@@ -156,6 +167,43 @@ sqlCreateTrigger Trigger{..} =
                 in deferrable <+> deferred
     trgWhen = maybe "" (\w -> "WHEN (" <+> w <+> ")") triggerWhen
     trgFunction = tfName triggerFunction
+
+
+-- | Build an SQL statement that drops a trigger.
+--
+-- @since 1.15.0
+sqlDropTrigger :: Trigger -> RawSQL ()
+sqlDropTrigger Trigger{..} =
+  -- In theory, because the trigger is dependent on its function, it should be enough to
+  -- 'DROP FUNCTION triggerFunction CASCADE'. However, let's make this safe and go with
+  -- the default RESTRICT here.
+  "DROP TRIGGER" <+> trgName <+> "ON" <+> triggerTable <+> "RESTRICT"
+  where
+    trgName
+      | triggerName == "" = error "Trigger must have a name."
+      | otherwise = triggerMakeName triggerName triggerTable
+
+-- | Create the trigger in the database.
+--
+-- First, create the trigger's associated function, then create the trigger itself.
+--
+-- @since 1.15.0
+createTrigger :: MonadDB m => Trigger -> m ()
+createTrigger trigger = do
+  -- TODO: Use 'withTransaction' here? That would mean adding MonadMask...
+  runQuery_ . sqlCreateTriggerFunction $ triggerFunction trigger
+  runQuery_ $ sqlCreateTrigger trigger
+
+-- | Drop the trigger from the database.
+--
+-- @since 1.15.0
+dropTrigger :: MonadDB m => Trigger -> m ()
+dropTrigger trigger = do
+  -- First, drop the trigger, as it is dependent on the function. See the comment in
+  -- 'sqlDropTrigger'.
+  -- TODO: Use 'withTransaction' here? That would mean adding MonadMask...
+  runQuery_ $ sqlDropTrigger trigger
+  runQuery_ . sqlDropTriggerFunction $ triggerFunction trigger
 
 -- | Get all noninternal triggers from the database.
 --

@@ -1038,6 +1038,51 @@ testTriggers step = do
     triggerStep msg $ do
       assertDBException msg $ migrate ts ms
 
+  do
+    let msg = "database exception is raised if dropping trigger that does not exist"
+        trg = bankTrigger1
+        ts = [ tableBankSchema1 { tblVersion = 2
+                                , tblTriggers = [trg]
+                                }
+             ]
+        ms = [ dropTriggerMigration 1 trg ]
+    triggerStep msg $ do
+      assertDBException msg $ migrate ts ms
+
+  do
+    let msg = "database exception is raised if dropping trigger function of which does not exist"
+        trg = bankTrigger2
+        ts = [ tableBankSchema1 { tblVersion = 2
+                                , tblTriggers = [trg]
+                                }
+             ]
+        ms = [ dropTriggerMigration 1 trg ]
+    triggerStep msg $ do
+      assertDBException msg $ migrate ts ms
+
+  do
+    let msg = "successfully drop trigger"
+        trg = bankTrigger1
+        ts = [ tableBankSchema1 { tblVersion = 3
+                                , tblTriggers = []
+                                }
+             ]
+        ms = [ createTriggerMigration 1 trg, dropTriggerMigration 2 trg ]
+    triggerStep msg $ do
+      migrate ts ms
+      verify []
+
+  do
+    let msg = "database exception is raised if dropping trigger twice"
+        trg = bankTrigger2
+        ts = [ tableBankSchema1 { tblVersion = 3
+                                , tblTriggers = [trg]
+                                }
+             ]
+        ms = [ dropTriggerMigration 1 trg, dropTriggerMigration 2 trg ]
+    triggerStep msg $ do
+      assertDBException msg $ migrate ts ms
+
   where
     triggerStep msg rest = do
       recreateTriggerDB
@@ -1055,12 +1100,18 @@ testTriggers step = do
       let ok = and $ map (`elem` dbTriggers) triggers
       liftIO $ assertBool "Triggers not present in the database." ok
 
-    createTriggerMigration :: MonadDB m => Int -> Trigger -> Migration m
-    createTriggerMigration from trg = Migration
+    triggerMigration :: MonadDB m => (Trigger -> m ()) -> Int -> Trigger -> Migration m
+    triggerMigration fn from trg = Migration
       { mgrTableName = tblName tableBankSchema1
       , mgrFrom = fromIntegral from
-      , mgrAction = CreateTriggerMigration trg
+      , mgrAction = StandardMigration $ fn trg
       }
+
+    createTriggerMigration :: MonadDB m => Int -> Trigger -> Migration m
+    createTriggerMigration = triggerMigration createTrigger
+
+    dropTriggerMigration :: MonadDB m => Int -> Trigger -> Migration m
+    dropTriggerMigration = triggerMigration dropTrigger
 
     recreateTriggerDB = do
       runSQL_ "DROP TRIGGER IF EXISTS trg__bank__trigger_1 ON bank;"
