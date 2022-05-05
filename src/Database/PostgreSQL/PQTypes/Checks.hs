@@ -621,7 +621,6 @@ checkDBConsistency options domains tablesWithVersions migrations = do
           expectedMigrationVersions
             = reverse $ take (length presentMigrationVersions) $
               reverse  [0 .. tblVersion table - 1]
-
       checkMigrationsListValidity table presentMigrationVersions
         expectedMigrationVersions
 
@@ -829,7 +828,6 @@ checkDBConsistency options domains tablesWithVersions migrations = do
           runSQL_ "COMMIT"
           runQuery_ (sqlDropIndexConcurrently tname idx) `finally` begin
           updateTableVersion
-
       where
         logMigration = do
           logInfo_ $ arrListTable mgrTableName
