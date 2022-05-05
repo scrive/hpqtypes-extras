@@ -28,6 +28,7 @@ import Data.Bits (testBit)
 import Data.Int
 import Data.Monoid.Utils
 import Data.Set (Set)
+import Data.Text (Text)
 import Database.PostgreSQL.PQTypes
 import Database.PostgreSQL.PQTypes.SQL.Builder
 import qualified Data.Set as Set
@@ -84,6 +85,8 @@ data TriggerEvent
   -- ^ The @INSERT@ event.
   | TriggerUpdate
   -- ^ The @UPDATE@ event.
+  | TriggerUpdateOf [RawSQL ()]
+  -- ^ The @UPDATE OF column1 [, column2 ...]@ event.
   | TriggerDelete
   -- ^ The @DELETE@ event.
   deriving (Eq, Ord, Show)
@@ -136,6 +139,9 @@ triggerEventName :: TriggerEvent -> RawSQL ()
 triggerEventName = \case
   TriggerInsert -> "INSERT"
   TriggerUpdate -> "UPDATE"
+  TriggerUpdateOf columns -> if null columns
+                             then error "UPDATE OF must have columns."
+                             else "UPDATE OF" <+> mintercalate ", " columns
   TriggerDelete -> "DELETE"
 
 -- | Build an SQL statement that creates a trigger.
@@ -242,34 +248,49 @@ getDBTriggers tableName = do
     getTrigger (tgname, tgtype, tgdeferrable, tginitdeferrable, triggerdef, proname, prosrc, tblName) =
       Trigger { triggerTable = tableName'
               , triggerName = triggerBaseName (unsafeSQL tgname) tableName'
-              , triggerEvents = getEvents tgtype
+              , triggerEvents = trgEvents
               , triggerDeferrable = tgdeferrable
               , triggerInitiallyDeferred = tginitdeferrable
               , triggerWhen = tgrWhen
               , triggerFunction = TriggerFunction (unsafeSQL proname) (unsafeSQL prosrc)
               }
       where
+        tableName' :: RawSQL ()
         tableName' = unsafeSQL tblName
+
+        parseBetween :: Text -> Text -> Maybe (RawSQL ())
+        parseBetween left right =
+          let (prefix, match) = Text.breakOnEnd left $ Text.pack triggerdef
+          in if Text.null prefix
+             then Nothing
+             else Just $ (rawSQL . fst $ Text.breakOn right match) ()
+
         -- Get the WHEN part of the query. Anything between WHEN and EXECUTE is what we
         -- want. The Postgres' grammar guarantees that WHEN and EXECUTE are always next to
         -- each other and in that order.
         tgrWhen :: Maybe (RawSQL ())
-        tgrWhen =
-          let (prefix, match) = Text.breakOnEnd "WHEN (" $ Text.pack triggerdef
-          in if Text.null prefix
-             then Nothing
-             else Just $ (rawSQL . fst $ Text.breakOn ") EXECUTE" match) ()
+        tgrWhen = parseBetween "WHEN (" ") EXECUTE"
 
-    getEvents :: Int16 -> Set TriggerEvent
-    getEvents tgtype =
-      foldl (\set (mask, event) ->
-               if testBit tgtype mask
-               then Set.insert event set
-               else set
-            )
-      Set.empty
-      -- Taken from PostgreSQL sources: src/include/catalog/pg_trigger.h:
-      [ (2, TriggerInsert) -- #define TRIGGER_TYPE_INSERT (1 << 2)
-      , (3, TriggerDelete) -- #define TRIGGER_TYPE_DELETE (1 << 3)
-      , (4, TriggerUpdate) -- #define TRIGGER_TYPE_UPDATE (1 << 4)
-      ]
+        -- Similarly, in case of UPDATE OF, the columns can be simply parsed from the
+        -- original query. Note that UPDATE and UPDATE OF are mutually exclusive and have
+        -- the same bit set in the underlying tgtype bit field.
+        trgEvents :: Set TriggerEvent
+        trgEvents =
+          foldl (\set (mask, event) ->
+                   if testBit tgtype mask
+                   then Set.insert (maybe event trgUpdateOf $ parseBetween "UPDATE OF " " ON")
+                                   set
+                   else set
+                )
+          Set.empty
+          -- Taken from PostgreSQL sources: src/include/catalog/pg_trigger.h:
+          [ (2, TriggerInsert) -- #define TRIGGER_TYPE_INSERT (1 << 2)
+          , (3, TriggerDelete) -- #define TRIGGER_TYPE_DELETE (1 << 3)
+          , (4, TriggerUpdate) -- #define TRIGGER_TYPE_UPDATE (1 << 4)
+          ]
+
+        trgUpdateOf :: RawSQL () -> TriggerEvent
+        trgUpdateOf columnsSQL =
+          let columns = map (unsafeSQL . Text.unpack) . Text.splitOn ", " $ unRawSQL columnsSQL
+          in TriggerUpdateOf columns
+
