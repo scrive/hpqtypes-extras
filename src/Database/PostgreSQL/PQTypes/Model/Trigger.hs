@@ -3,7 +3,7 @@
 --
 -- Trigger name must be unique among triggers of same table. Only @CONTRAINT@ triggers are
 -- supported. They can only be run @AFTER@ an event. The associated functions are always
--- created with no arguments and always @RETURN NULL@.
+-- created with no arguments and always @RETURN TRIGGER@.
 --
 -- For details, see <https://www.postgresql.org/docs/11/sql-createtrigger.html>.
 
@@ -118,7 +118,7 @@ data Trigger = Trigger {
 -- | Make a trigger name that can be used in SQL.
 --
 -- Given a base @name@ and @tableName@, return a new name that will be used as the
--- actually name of the trigger in an SQL query. The returned name is in the format
+-- actual name of the trigger in an SQL query. The returned name is in the format
 -- @trg\__\<tableName\>\__\<name\>@.
 --
 -- @since 1.15.0
@@ -218,9 +218,9 @@ dropTrigger trigger = do
 --
 -- Note that, in the background, to get the trigger's @WHEN@ clause and the source code of
 -- the attached function, the entire query that had created the trigger is received using
--- @pg_get_triggerdef(t.oid)::text@ and then parsed. The result of that call will be
+-- @pg_get_triggerdef(t.oid, true)::text@ and then parsed. The result of that call will be
 -- decompiled and normalized, which means that it's likely not what the user had
--- originally actually typed.
+-- originally typed.
 --
 -- @since 1.15.0
 getDBTriggers :: forall m. MonadDB m => RawSQL () -> m [Trigger]
