@@ -278,8 +278,13 @@ getDBTriggers tableName = do
         trgEvents =
           foldl (\set (mask, event) ->
                    if testBit tgtype mask
-                   then Set.insert (maybe event trgUpdateOf $ parseBetween "UPDATE OF " " ON")
-                                   set
+                   then
+                     Set.insert
+                       (if event == TriggerUpdate
+                        then (maybe event trgUpdateOf $ parseBetween "UPDATE OF " " ON")
+                        else event
+                       )
+                       set
                    else set
                 )
           Set.empty

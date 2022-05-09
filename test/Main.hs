@@ -855,6 +855,21 @@ bankTrigger2 =
       <+> "end;"
   }
 
+bankTrigger3 :: Trigger
+bankTrigger3 =
+  Trigger { triggerTable = "bank"
+          , triggerName = "trigger_3"
+          , triggerEvents = Set.fromList [TriggerInsert, TriggerUpdateOf [unsafeSQL "location"]]
+          , triggerDeferrable = True
+          , triggerInitiallyDeferred = True
+          , triggerWhen = Nothing
+          , triggerFunction = TriggerFunction "function_3" $
+                "begin"
+            <+> "  perform true;"
+            <+> "  return null;"
+            <+> "end;"
+          }
+
 bankTrigger2Proper :: Trigger
 bankTrigger2Proper =
   bankTrigger2 { triggerName = "trigger_2" }
@@ -1069,7 +1084,7 @@ testTriggers step = do
              ]
         ms = [ createTriggerMigration 1 trg, dropTriggerMigration 2 trg ]
     triggerStep msg $ do
-      migrate ts ms
+      assertNoException msg $ migrate ts ms
       verify []
 
   do
@@ -1082,6 +1097,18 @@ testTriggers step = do
         ms = [ dropTriggerMigration 1 trg, dropTriggerMigration 2 trg ]
     triggerStep msg $ do
       assertDBException msg $ migrate ts ms
+
+  do
+    let msg = "successfully create trigger with multiple events"
+        trg = bankTrigger3
+        ts = [ tableBankSchema1 { tblVersion = 2
+                                , tblTriggers = [trg]
+                                }
+             ]
+        ms = [ createTriggerMigration 1 trg ]
+    triggerStep msg $ do
+      assertNoException msg $ migrate ts ms
+      verify [trg]
 
   where
     triggerStep msg rest = do
