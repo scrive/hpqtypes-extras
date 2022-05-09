@@ -910,7 +910,7 @@ testTriggers step = do
         ms = [ createTriggerMigration 1 bankTrigger1 ]
     triggerStep msg $ do
       assertNoException msg $ migrate ts ms
-      verify [bankTrigger1]
+      verify [bankTrigger1] True
 
   do
     let msg = "checkDatabase fails if triggers differ in function name"
@@ -959,7 +959,7 @@ testTriggers step = do
              ]
     triggerStep msg $ do
       assertNoException msg $ migrate ts ms
-      verify [bankTrigger1, bankTrigger2Proper]
+      verify [bankTrigger1, bankTrigger2Proper] True
 
   do
     let msg = "database exception is raised if trigger's WHEN is syntactically incorrect"
@@ -1012,7 +1012,7 @@ testTriggers step = do
         ms = [ createTriggerMigration 1 trg ]
     triggerStep msg $ do
       assertNoException msg $ migrate ts ms
-      verify [trg]
+      verify [trg] True
 
   do
     let msg = "successfully migrate trigger that is deferrable"
@@ -1024,7 +1024,7 @@ testTriggers step = do
         ms = [ createTriggerMigration 1 trg ]
     triggerStep msg $ do
       assertNoException msg $ migrate ts ms
-      verify [trg]
+      verify [trg] True
 
   do
     let msg = "successfully migrate trigger that is deferrable and initially deferred"
@@ -1038,7 +1038,7 @@ testTriggers step = do
         ms = [ createTriggerMigration 1 trg ]
     triggerStep msg $ do
       assertNoException msg $ migrate ts ms
-      verify [trg]
+      verify [trg] True
 
   do
     let msg = "database exception is raised if trigger is initially deferred but not deferrable"
@@ -1085,7 +1085,7 @@ testTriggers step = do
         ms = [ createTriggerMigration 1 trg, dropTriggerMigration 2 trg ]
     triggerStep msg $ do
       assertNoException msg $ migrate ts ms
-      verify []
+      verify [trg] False
 
   do
     let msg = "database exception is raised if dropping trigger twice"
@@ -1108,7 +1108,7 @@ testTriggers step = do
         ms = [ createTriggerMigration 1 trg ]
     triggerStep msg $ do
       assertNoException msg $ migrate ts ms
-      verify [trg]
+      verify [trg] True
 
   where
     triggerStep msg rest = do
@@ -1120,12 +1120,14 @@ testTriggers step = do
       migrateDatabase defaultExtrasOptions ["pgcrypto"] [] [] tables migrations
       checkDatabase defaultExtrasOptions [] [] tables
 
-    -- Verify that the given triggers are present in the database.
-    verify :: (MonadIO m, MonadDB m, HasCallStack) => [Trigger] -> m ()
-    verify triggers = do
+    -- Verify that the given triggers are (not) present in the database.
+    verify :: (MonadIO m, MonadDB m, HasCallStack) => [Trigger] -> Bool -> m ()
+    verify triggers present = do
       dbTriggers <- getDBTriggers "bank"
       let ok = and $ map (`elem` dbTriggers) triggers
-      liftIO $ assertBool "Triggers not present in the database." ok
+          err = "Triggers " <> (if present then "" else "not ") <> "present in the database."
+          trans = if present then id else not
+      liftIO . assertBool err $ trans ok
 
     triggerMigration :: MonadDB m => (Trigger -> m ()) -> Int -> Trigger -> Migration m
     triggerMigration fn from trg = Migration
