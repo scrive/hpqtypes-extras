@@ -1,5 +1,8 @@
 module Database.PostgreSQL.PQTypes.Model.Index (
     TableIndex(..)
+  , IndexColumn(..)
+  , indexColumn
+  , indexColumnWithOperatorClass
   , IndexMethod(..)
   , tblIndex
   , indexOnColumn
@@ -19,6 +22,8 @@ module Database.PostgreSQL.PQTypes.Model.Index (
 import Crypto.Hash.RIPEMD160
 import Data.ByteString.Base16
 import Data.Char
+import Data.Function
+import Data.String
 import Data.Monoid.Utils
 import Database.PostgreSQL.PQTypes
 import qualified Data.ByteString.Char8 as BS
@@ -26,7 +31,7 @@ import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 
 data TableIndex = TableIndex {
-  idxColumns :: [RawSQL ()]
+  idxColumns :: [IndexColumn]
 , idxInclude :: [RawSQL ()]
 , idxMethod  :: IndexMethod
 , idxUnique  :: Bool
@@ -35,6 +40,32 @@ data TableIndex = TableIndex {
                      -- situation is expected.
 , idxWhere   :: Maybe (RawSQL ())
 } deriving (Eq, Ord, Show)
+
+data IndexColumn
+  = IndexColumn (RawSQL ()) (Maybe (RawSQL ()))
+  deriving Show
+
+-- If one of the two columns doesn't specify the operator class, we just ignore
+-- it and still treat them as equivalent.
+instance Eq IndexColumn where
+  IndexColumn x Nothing == IndexColumn y _ = x == y
+  IndexColumn x _ == IndexColumn y Nothing = x == y
+  IndexColumn x (Just x') == IndexColumn y (Just y') = x == y && x' == y'
+
+instance Ord IndexColumn where
+  compare = compare `on` indexColumnName
+
+instance IsString IndexColumn where
+  fromString s = IndexColumn (fromString s) Nothing
+
+indexColumn :: RawSQL () -> IndexColumn
+indexColumn col = IndexColumn col Nothing
+
+indexColumnWithOperatorClass :: RawSQL () -> RawSQL () -> IndexColumn
+indexColumnWithOperatorClass col opclass = IndexColumn col (Just opclass)
+
+indexColumnName :: IndexColumn -> RawSQL ()
+indexColumnName (IndexColumn col _) = col
 
 data IndexMethod =
     BTree
@@ -60,28 +91,28 @@ tblIndex = TableIndex {
 , idxWhere = Nothing
 }
 
-indexOnColumn :: RawSQL () -> TableIndex
+indexOnColumn :: IndexColumn -> TableIndex
 indexOnColumn column = tblIndex { idxColumns = [column] }
 
 -- | Create an index on the given column with the specified method.  No checks
 -- are made that the method is appropriate for the type of the column.
-indexOnColumnWithMethod :: RawSQL () -> IndexMethod -> TableIndex
+indexOnColumnWithMethod :: IndexColumn -> IndexMethod -> TableIndex
 indexOnColumnWithMethod column method =
     tblIndex { idxColumns = [column]
              , idxMethod = method }
 
-indexOnColumns :: [RawSQL ()] -> TableIndex
+indexOnColumns :: [IndexColumn] -> TableIndex
 indexOnColumns columns = tblIndex { idxColumns = columns }
 
 -- | Create an index on the given columns with the specified method.  No checks
 -- are made that the method is appropriate for the type of the column;
 -- cf. [the PostgreSQL manual](https://www.postgresql.org/docs/current/static/indexes-multicolumn.html).
-indexOnColumnsWithMethod :: [RawSQL ()] -> IndexMethod -> TableIndex
+indexOnColumnsWithMethod :: [IndexColumn] -> IndexMethod -> TableIndex
 indexOnColumnsWithMethod columns method =
     tblIndex { idxColumns = columns
              , idxMethod = method }
 
-uniqueIndexOnColumn :: RawSQL () -> TableIndex
+uniqueIndexOnColumn :: IndexColumn -> TableIndex
 uniqueIndexOnColumn column = TableIndex {
   idxColumns = [column]
 , idxInclude = []
@@ -91,7 +122,7 @@ uniqueIndexOnColumn column = TableIndex {
 , idxWhere = Nothing
 }
 
-uniqueIndexOnColumns :: [RawSQL ()] -> TableIndex
+uniqueIndexOnColumns :: [IndexColumn] -> TableIndex
 uniqueIndexOnColumns columns = TableIndex {
   idxColumns = columns
 , idxInclude = []
@@ -101,7 +132,7 @@ uniqueIndexOnColumns columns = TableIndex {
 , idxWhere = Nothing
 }
 
-uniqueIndexOnColumnWithCondition :: RawSQL () -> RawSQL () -> TableIndex
+uniqueIndexOnColumnWithCondition :: IndexColumn -> RawSQL () -> TableIndex
 uniqueIndexOnColumnWithCondition column whereC = TableIndex {
   idxColumns = [column]
 , idxInclude = []
@@ -116,7 +147,7 @@ indexName tname TableIndex{..} = flip rawSQL () $ T.take 63 . unRawSQL $ mconcat
     if idxUnique then "unique_idx__" else "idx__"
   , tname
   , "__"
-  , mintercalate "__" $ map (asText sanitize) idxColumns
+  , mintercalate "__" $ map (asText sanitize . indexColumnName) idxColumns
   , if null idxInclude
     then ""
     else "$$" <> mintercalate "__" (map (asText sanitize) idxInclude)
@@ -158,7 +189,13 @@ sqlCreateIndex_ concurrently tname idx@TableIndex{..} = mconcat [
   , indexName tname idx
   , " ON" <+> tname
   , " USING" <+> (rawSQL (T.pack . show $ idxMethod) ()) <+> "("
-  , mintercalate ", " idxColumns
+  , mintercalate ", "
+      (map
+        (\case
+          IndexColumn col Nothing -> col
+          IndexColumn col (Just opclass) -> col <+> opclass
+        )
+        idxColumns)
   , ")"
   , if null idxInclude
     then ""
