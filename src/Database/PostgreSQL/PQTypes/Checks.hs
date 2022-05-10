@@ -419,12 +419,14 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version)
       indexes <- fetchMany fetchTableIndex
       runQuery_ $ sqlGetForeignKeys table
       fkeys <- fetchMany fetchForeignKey
+      triggers <- getDBTriggers tblName
       return $ mconcat [
           checkColumns 1 tblColumns desc
         , checkPrimaryKey tblPrimaryKey pk
         , checkChecks tblChecks checks
         , checkIndexes tblIndexes indexes
         , checkForeignKeys tblForeignKeys fkeys
+        , checkTriggers tblTriggers triggers
         ]
       where
         fetchTableColumn
@@ -541,6 +543,17 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version)
           , checkNames (fkName tblName) fkeys
           ]
 
+        checkTriggers :: [Trigger] -> [Trigger] -> ValidationResult
+        checkTriggers defs triggers =
+          mapValidationResult id mapErrs $ checkEquality "TRIGGERs" defs triggers
+          where
+            mapErrs []      = []
+            mapErrs errmsgs = errmsgs <>
+              [ "(HINT: If WHEN clauses are equal modulo number of parentheses, whitespace, \
+                \case of variables or type casts used in conditions, just copy and paste \
+                \expected output into source code.)"
+              ]
+
 -- | Checks whether database is consistent, performing migrations if
 -- necessary. Requires all table names to be in lower case.
 --
@@ -601,6 +614,7 @@ checkDBConsistency options domains tablesWithVersions migrations = do
 
     validateMigrations :: m ()
     validateMigrations = forM_ tables $ \table -> do
+      -- FIXME: https://github.com/scrive/hpqtypes-extras/issues/73
       let presentMigrationVersions
             = [ mgrFrom | Migration{..} <- migrations
                         , mgrTableName == tblName table ]

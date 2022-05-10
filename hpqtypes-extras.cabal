@@ -1,6 +1,6 @@
 cabal-version:       2.2
 name:                hpqtypes-extras
-version:             1.14.2.0
+version:             1.15.0.0
 synopsis:            Extra utilities for hpqtypes library
 description:         The following extras for hpqtypes library:
                      .
@@ -68,6 +68,7 @@ library
                  , Database.PostgreSQL.PQTypes.Model.Migration
                  , Database.PostgreSQL.PQTypes.Model.PrimaryKey
                  , Database.PostgreSQL.PQTypes.Model.Table
+                 , Database.PostgreSQL.PQTypes.Model.Trigger
                  , Database.PostgreSQL.PQTypes.SQL.Builder
                  , Database.PostgreSQL.PQTypes.Versions
 
@@ -111,6 +112,7 @@ test-suite  hpqtypes-extras-tests
   ghc-options:        -Wall
 
   build-depends:      base
+                    , containers
                     , exceptions
                     , hpqtypes
                     , hpqtypes-extras

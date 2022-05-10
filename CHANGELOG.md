@@ -1,3 +1,6 @@
+# hpqtypes-extras-1.15.0.0 (2022-??-??)
+* Add support for triggers and trigger functions.
+
 # hpqtypes-extras-1.14.2.0 (2022-??-??)
 * Add support for GHC 9.2.
 * Drop support for GHC < 8.8.

@@ -1,7 +1,8 @@
 module Database.PostgreSQL.PQTypes.Migrate (
   createDomain,
   createTable,
-  createTableConstraints
+  createTableConstraints,
+  createTableTriggers
   ) where
 
 import Control.Monad
@@ -28,6 +29,8 @@ createTable withConstraints table@Table{..} = do
   forM_ tblIndexes $ runQuery_ . sqlCreateIndexMaybeDowntime tblName
   -- Add all the other constraints if applicable.
   when withConstraints $ createTableConstraints table
+  -- Create triggers.
+  createTableTriggers table
   -- Register the table along with its version.
   runQuery_ . sqlInsert "table_versions" $ do
     sqlSet "name" (tblNameText table)
@@ -42,3 +45,6 @@ createTableConstraints Table{..} = when (not $ null addConstraints) $ do
       , map sqlAddValidCheckMaybeDowntime tblChecks
       , map (sqlAddValidFKMaybeDowntime tblName) tblForeignKeys
       ]
+
+createTableTriggers :: MonadDB m => Table -> m ()
+createTableTriggers = mapM_ createTrigger . tblTriggers

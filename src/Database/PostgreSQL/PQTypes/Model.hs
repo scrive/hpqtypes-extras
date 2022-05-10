@@ -9,6 +9,7 @@ module Database.PostgreSQL.PQTypes.Model (
   , module Database.PostgreSQL.PQTypes.Model.Migration
   , module Database.PostgreSQL.PQTypes.Model.PrimaryKey
   , module Database.PostgreSQL.PQTypes.Model.Table
+  , module Database.PostgreSQL.PQTypes.Model.Trigger
   ) where
 
 import Database.PostgreSQL.PQTypes.Model.Check
@@ -21,3 +22,4 @@ import Database.PostgreSQL.PQTypes.Model.Index
 import Database.PostgreSQL.PQTypes.Model.Migration
 import Database.PostgreSQL.PQTypes.Model.PrimaryKey
 import Database.PostgreSQL.PQTypes.Model.Table
+import Database.PostgreSQL.PQTypes.Model.Trigger
