@@ -25,6 +25,7 @@ module Database.PostgreSQL.PQTypes.Model.Trigger (
   ) where
 
 import Data.Bits (testBit)
+import Data.Foldable (foldl')
 import Data.Int
 import Data.Monoid.Utils
 import Data.Set (Set)
@@ -276,17 +277,17 @@ getDBTriggers tableName = do
         -- the same bit set in the underlying tgtype bit field.
         trgEvents :: Set TriggerEvent
         trgEvents =
-          foldl (\set (mask, event) ->
-                   if testBit tgtype mask
-                   then
-                     Set.insert
-                       (if event == TriggerUpdate
-                        then (maybe event trgUpdateOf $ parseBetween "UPDATE OF " " ON")
-                        else event
-                       )
-                       set
-                   else set
-                )
+          foldl' (\set (mask, event) ->
+                    if testBit tgtype mask
+                    then
+                      Set.insert
+                        (if event == TriggerUpdate
+                         then maybe event trgUpdateOf $ parseBetween "UPDATE OF " " ON"
+                         else event
+                        )
+                        set
+                    else set
+                 )
           Set.empty
           -- Taken from PostgreSQL sources: src/include/catalog/pg_trigger.h:
           [ (2, TriggerInsert) -- #define TRIGGER_TYPE_INSERT (1 << 2)
