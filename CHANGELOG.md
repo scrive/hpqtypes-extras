@@ -1,9 +1,8 @@
-# hpqtypes-extras-1.15.0.0 (2022-??-??)
-* Add support for triggers and trigger functions.
-
-# hpqtypes-extras-1.14.2.0 (2022-??-??)
+# hpqtypes-extras-1.15.0.0 (2022-05-11)
 * Add support for GHC 9.2.
 * Drop support for GHC < 8.8.
+* Add support for triggers and trigger functions.
+* Allow to specify the operator class of an index column.
 
 # hpqtypes-extras-1.14.1.0 (2022-01-11)
 * Support unmanaged local indexes whose names start with "local_".
