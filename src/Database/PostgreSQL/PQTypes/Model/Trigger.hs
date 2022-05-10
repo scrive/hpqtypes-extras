@@ -34,7 +34,7 @@ import Database.PostgreSQL.PQTypes.SQL.Builder
 import qualified Data.Set as Set
 import qualified Data.Text as Text
 
--- | Function associated to a trigger.
+-- | Function associated with a trigger.
 --
 -- @since 1.15.0.0
 data TriggerFunction = TriggerFunction {
