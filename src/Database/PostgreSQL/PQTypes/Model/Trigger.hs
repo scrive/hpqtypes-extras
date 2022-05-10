@@ -1,7 +1,7 @@
 -- |
 -- Module: Database.PostgreSQL.PQTypes.Model.Trigger
 --
--- Trigger name must be unique among triggers of same table. Only @CONTRAINT@ triggers are
+-- Trigger name must be unique among triggers of same table. Only @CONSTRAINT@ triggers are
 -- supported. They can only be run @AFTER@ an event. The associated functions are always
 -- created with no arguments and always @RETURN TRIGGER@.
 --
