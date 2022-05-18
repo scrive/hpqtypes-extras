@@ -8,12 +8,8 @@
 -- For details, see <https://www.postgresql.org/docs/11/sql-createtrigger.html>.
 
 module Database.PostgreSQL.PQTypes.Model.Trigger (
-  -- * Trigger functions
-    TriggerFunction(..)
-  , sqlCreateTriggerFunction
-  , sqlDropTriggerFunction
   -- * Triggers
-  , TriggerEvent(..)
+    TriggerEvent(..)
   , Trigger(..)
   , triggerMakeName
   , triggerBaseName
@@ -22,6 +18,10 @@ module Database.PostgreSQL.PQTypes.Model.Trigger (
   , createTrigger
   , dropTrigger
   , getDBTriggers
+  -- * Trigger functions
+  , sqlCreateTriggerFunction
+  , sqlDropTriggerFunction
+  , triggerFunctionMakeName
   ) where
 
 import Data.Bits (testBit)
@@ -34,49 +34,6 @@ import Database.PostgreSQL.PQTypes
 import Database.PostgreSQL.PQTypes.SQL.Builder
 import qualified Data.Set as Set
 import qualified Data.Text as Text
-
--- | Function associated with a trigger.
---
--- @since 1.15.0.0
-data TriggerFunction = TriggerFunction {
-    tfName   :: RawSQL ()
-    -- ^ The function's name.
-  , tfSource :: RawSQL ()
-    -- ^ The functions's body source code.
-} deriving (Show)
-
-instance Eq TriggerFunction where
-  -- Since the functions have no arguments, it's impossible to create two functions with
-  -- the same name. Therefore comparing functions only by their names is enough in this
-  -- case. The assumption is, of course, that the database schema is only changed using
-  -- this framework.
-  f1 == f2 = tfName f1 == tfName f2
-
--- | Build an SQL statement for creating a trigger function.
---
--- Since we only support @CONSTRAINT@ triggers, the function will always @RETURN TRIGGER@
--- and will have no parameters.
---
--- @since 1.15.0.0
-sqlCreateTriggerFunction :: TriggerFunction -> RawSQL ()
-sqlCreateTriggerFunction TriggerFunction{..} =
-  "CREATE FUNCTION"
-    <+> tfName
-    <>  "()"
-    <+> "RETURNS TRIGGER"
-    <+> "AS $$"
-    <+> tfSource
-    <+> "$$"
-    <+> "LANGUAGE PLPGSQL"
-    <+> "VOLATILE"
-    <+> "RETURNS NULL ON NULL INPUT"
-
--- | Build an SQL statement for dropping a trigger function.
---
--- @since 1.15.0.0
-sqlDropTriggerFunction :: TriggerFunction -> RawSQL ()
-sqlDropTriggerFunction TriggerFunction{..} =
-  "DROP FUNCTION" <+> tfName <+> "RESTRICT"
 
 -- | Trigger event name.
 --
@@ -112,9 +69,19 @@ data Trigger = Trigger {
   , triggerWhen              :: Maybe (RawSQL ())
     -- ^ The condition that specifies whether the trigger should fire. Corresponds to the
     -- @WHEN ( __condition__ )@ in the trigger definition.
-  , triggerFunction          :: TriggerFunction
+  , triggerFunction          :: RawSQL ()
     -- ^ The function to execute when the trigger fires.
-} deriving (Eq, Show)
+} deriving (Show)
+
+instance Eq Trigger where
+  t1 == t2 =
+    triggerTable t1 == triggerTable t2
+    && triggerName t1 == triggerName t2
+    && triggerEvents t1 == triggerEvents t2
+    && triggerDeferrable t1 == triggerDeferrable t2
+    && triggerInitiallyDeferred t1 == triggerInitiallyDeferred t2
+    && triggerWhen t1 == triggerWhen t2
+    -- Function source code is not guaranteed to be equal, so we ignore it.
 
 -- | Make a trigger name that can be used in SQL.
 --
@@ -173,7 +140,7 @@ sqlCreateTrigger Trigger{..} =
                                  else "INITIALLY IMMEDIATE"
                 in deferrable <+> deferred
     trgWhen = maybe "" (\w -> "WHEN (" <+> w <+> ")") triggerWhen
-    trgFunction = tfName triggerFunction
+    trgFunction = triggerFunctionMakeName triggerName
 
 
 -- | Build an SQL statement that drops a trigger.
@@ -198,7 +165,7 @@ sqlDropTrigger Trigger{..} =
 createTrigger :: MonadDB m => Trigger -> m ()
 createTrigger trigger = do
   -- TODO: Use 'withTransaction' here? That would mean adding MonadMask...
-  runQuery_ . sqlCreateTriggerFunction $ triggerFunction trigger
+  runQuery_ $ sqlCreateTriggerFunction trigger
   runQuery_ $ sqlCreateTrigger trigger
 
 -- | Drop the trigger from the database.
@@ -210,7 +177,7 @@ dropTrigger trigger = do
   -- 'sqlDropTrigger'.
   -- TODO: Use 'withTransaction' here? That would mean adding MonadMask...
   runQuery_ $ sqlDropTrigger trigger
-  runQuery_ . sqlDropTriggerFunction $ triggerFunction trigger
+  runQuery_ $ sqlDropTriggerFunction trigger
 
 -- | Get all noninternal triggers from the database.
 --
@@ -236,7 +203,6 @@ getDBTriggers tableName = do
     -- example, if the original query had excessive whitespace in it, it won't be in this
     -- result.
     sqlResult "pg_get_triggerdef(t.oid, true)::text"
-    sqlResult "p.proname::text" -- name
     sqlResult "p.prosrc" -- text
     sqlResult "c.relname::text"
     sqlJoinOn "pg_proc p" "t.tgfoid = p.oid"
@@ -245,15 +211,15 @@ getDBTriggers tableName = do
     sqlWhereEq "c.relname" $ unRawSQL tableName
   fetchMany getTrigger
   where
-    getTrigger :: (String, Int16, Bool, Bool, String, String, String, String) -> Trigger
-    getTrigger (tgname, tgtype, tgdeferrable, tginitdeferrable, triggerdef, proname, prosrc, tblName) =
+    getTrigger :: (String, Int16, Bool, Bool, String, String, String) -> Trigger
+    getTrigger (tgname, tgtype, tgdeferrable, tginitdeferrable, triggerdef, prosrc, tblName) =
       Trigger { triggerTable = tableName'
               , triggerName = triggerBaseName (unsafeSQL tgname) tableName'
               , triggerEvents = trgEvents
               , triggerDeferrable = tgdeferrable
               , triggerInitiallyDeferred = tginitdeferrable
               , triggerWhen = tgrWhen
-              , triggerFunction = TriggerFunction (unsafeSQL proname) (unsafeSQL prosrc)
+              , triggerFunction = unsafeSQL prosrc
               }
       where
         tableName' :: RawSQL ()
@@ -299,4 +265,40 @@ getDBTriggers tableName = do
         trgUpdateOf columnsSQL =
           let columns = map (unsafeSQL . Text.unpack) . Text.splitOn ", " $ unRawSQL columnsSQL
           in TriggerUpdateOf columns
+
+-- | Build an SQL statement for creating a trigger function.
+--
+-- Since we only support @CONSTRAINT@ triggers, the function will always @RETURN TRIGGER@
+-- and will have no parameters.
+--
+-- @since 1.15.0.0
+sqlCreateTriggerFunction :: Trigger -> RawSQL ()
+sqlCreateTriggerFunction Trigger{..} =
+  "CREATE FUNCTION"
+    <+> triggerFunctionMakeName triggerName
+    <>  "()"
+    <+> "RETURNS TRIGGER"
+    <+> "AS $$"
+    <+> triggerFunction
+    <+> "$$"
+    <+> "LANGUAGE PLPGSQL"
+    <+> "VOLATILE"
+    <+> "RETURNS NULL ON NULL INPUT"
+
+-- | Build an SQL statement for dropping a trigger function.
+--
+-- @since 1.15.0.0
+sqlDropTriggerFunction :: Trigger -> RawSQL ()
+sqlDropTriggerFunction Trigger{..} =
+  "DROP FUNCTION" <+> triggerFunctionMakeName triggerName <+> "RESTRICT"
+
+-- | Make a trigger function name that can be used in SQL.
+--
+-- Given a base @name@, return a new name that will be used as the actual name
+-- of the trigger function in an SQL query. The returned name is in the format
+-- @trgfun\__\<name\>@.
+--
+-- @since 1.16.0.0
+triggerFunctionMakeName :: RawSQL () -> RawSQL ()
+triggerFunctionMakeName name = "trgfun__" <> name
 
