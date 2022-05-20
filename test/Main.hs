@@ -839,7 +839,7 @@ bankTrigger1 =
           , triggerDeferrable = False
           , triggerInitiallyDeferred = False
           , triggerWhen = Nothing
-          , triggerFunction = TriggerFunction "function_1" $
+          , triggerFunction =
                 "begin"
             <+> "  perform true;"
             <+> "  return null;"
@@ -849,7 +849,7 @@ bankTrigger1 =
 bankTrigger2 :: Trigger
 bankTrigger2 =
   bankTrigger1
-  { triggerFunction = TriggerFunction "function_2" $
+  { triggerFunction =
           "begin"
       <+> "  return null;"
       <+> "end;"
@@ -863,7 +863,7 @@ bankTrigger3 =
           , triggerDeferrable = True
           , triggerInitiallyDeferred = True
           , triggerWhen = Nothing
-          , triggerFunction = TriggerFunction "function_3" $
+          , triggerFunction =
                 "begin"
             <+> "  perform true;"
             <+> "  return null;"
@@ -911,16 +911,6 @@ testTriggers step = do
     triggerStep msg $ do
       assertNoException msg $ migrate ts ms
       verify [bankTrigger1] True
-
-  do
-    let msg = "checkDatabase fails if triggers differ in function name"
-        ts = [ tableBankSchema1 { tblVersion = 2
-                                , tblTriggers = [bankTrigger1]
-                                }
-             ]
-        ms = [ createTriggerMigration 1 bankTrigger2 ]
-    triggerStep msg $ do
-      assertException msg $ migrate ts ms
 
   do
     -- Attempt to create the same triggers twice. Should fail with a DBException saying
@@ -1124,7 +1114,8 @@ testTriggers step = do
     verify :: (MonadIO m, MonadDB m, HasCallStack) => [Trigger] -> Bool -> m ()
     verify triggers present = do
       dbTriggers <- getDBTriggers "bank"
-      let ok = and $ map (`elem` dbTriggers) triggers
+      let trgs = map fst dbTriggers
+          ok = and $ map (`elem` trgs) triggers
           err = "Triggers " <> (if present then "" else "not ") <> "present in the database."
           trans = if present then id else not
       liftIO . assertBool err $ trans ok
@@ -1145,8 +1136,8 @@ testTriggers step = do
     recreateTriggerDB = do
       runSQL_ "DROP TRIGGER IF EXISTS trg__bank__trigger_1 ON bank;"
       runSQL_ "DROP TRIGGER IF EXISTS trg__bank__trigger_2 ON bank;"
-      runSQL_ "DROP FUNCTION IF EXISTS function_1;"
-      runSQL_ "DROP FUNCTION IF EXISTS function_2;"
+      runSQL_ "DROP FUNCTION IF EXISTS trgfun__trigger_1;"
+      runSQL_ "DROP FUNCTION IF EXISTS trgfun__trigger_2;"
       runSQL_ "DROP TABLE IF EXISTS bank;"
       runSQL_ "DELETE FROM table_versions WHERE name = 'bank'";
       migrate [tableBankSchema1] [createTableMigration tableBankSchema1]

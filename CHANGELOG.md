@@ -1,3 +1,6 @@
+# hpqtypes-extras-1.16.0.0 (2022-05-20)
+* Trigger functions are now part of triggers and have their names generated.
+
 # hpqtypes-extras-1.15.0.0 (2022-05-11)
 * Add support for GHC 9.2.
 * Drop support for GHC < 8.8.
