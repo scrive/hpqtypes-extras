@@ -1114,7 +1114,8 @@ testTriggers step = do
     verify :: (MonadIO m, MonadDB m, HasCallStack) => [Trigger] -> Bool -> m ()
     verify triggers present = do
       dbTriggers <- getDBTriggers "bank"
-      let ok = and $ map (`elem` dbTriggers) triggers
+      let trgs = map fst dbTriggers
+          ok = and $ map (`elem` trgs) triggers
           err = "Triggers " <> (if present then "" else "not ") <> "present in the database."
           trans = if present then id else not
       liftIO . assertBool err $ trans ok

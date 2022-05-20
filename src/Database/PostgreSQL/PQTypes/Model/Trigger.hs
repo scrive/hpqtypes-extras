@@ -182,7 +182,8 @@ dropTrigger trigger = do
 -- | Get all noninternal triggers from the database.
 --
 -- Run a query that returns all triggers associated with the given table and marked as
--- @tgisinternal = false@.
+-- @tgisinternal = false@. The second item in the returned tuple is the trigger's function
+-- name.
 --
 -- Note that, in the background, to get the trigger's @WHEN@ clause and the source code of
 -- the attached function, the entire query that had created the trigger is received using
@@ -191,7 +192,7 @@ dropTrigger trigger = do
 -- originally typed.
 --
 -- @since 1.15.0
-getDBTriggers :: forall m. MonadDB m => RawSQL () -> m [Trigger]
+getDBTriggers :: forall m. MonadDB m => RawSQL () -> m [(Trigger, RawSQL ())]
 getDBTriggers tableName = do
   runQuery_ . sqlSelect "pg_trigger t" $ do
     sqlResult "t.tgname::text" -- name
@@ -203,6 +204,7 @@ getDBTriggers tableName = do
     -- example, if the original query had excessive whitespace in it, it won't be in this
     -- result.
     sqlResult "pg_get_triggerdef(t.oid, true)::text"
+    sqlResult "p.proname::text"
     sqlResult "p.prosrc" -- text
     sqlResult "c.relname::text"
     sqlJoinOn "pg_proc p" "t.tgfoid = p.oid"
@@ -211,16 +213,18 @@ getDBTriggers tableName = do
     sqlWhereEq "c.relname" $ unRawSQL tableName
   fetchMany getTrigger
   where
-    getTrigger :: (String, Int16, Bool, Bool, String, String, String) -> Trigger
-    getTrigger (tgname, tgtype, tgdeferrable, tginitdeferrable, triggerdef, prosrc, tblName) =
-      Trigger { triggerTable = tableName'
-              , triggerName = triggerBaseName (unsafeSQL tgname) tableName'
-              , triggerEvents = trgEvents
-              , triggerDeferrable = tgdeferrable
-              , triggerInitiallyDeferred = tginitdeferrable
-              , triggerWhen = tgrWhen
-              , triggerFunction = unsafeSQL prosrc
-              }
+    getTrigger :: (String, Int16, Bool, Bool, String, String, String, String) -> (Trigger, RawSQL ())
+    getTrigger (tgname, tgtype, tgdeferrable, tginitdeferrable, triggerdef, proname, prosrc, tblName) =
+      ( Trigger { triggerTable = tableName'
+                , triggerName = triggerBaseName (unsafeSQL tgname) tableName'
+                , triggerEvents = trgEvents
+                , triggerDeferrable = tgdeferrable
+                , triggerInitiallyDeferred = tginitdeferrable
+                , triggerWhen = tgrWhen
+                , triggerFunction = unsafeSQL prosrc
+                }
+      , unsafeSQL proname
+      )
       where
         tableName' :: RawSQL ()
         tableName' = unsafeSQL tblName

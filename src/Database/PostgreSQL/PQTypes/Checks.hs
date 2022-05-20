@@ -543,10 +543,11 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version)
           , checkNames (fkName tblName) fkeys
           ]
 
-        checkTriggers :: [Trigger] -> [Trigger] -> ValidationResult
+        checkTriggers :: [Trigger] -> [(Trigger, RawSQL ())] -> ValidationResult
         checkTriggers defs triggers =
-          mapValidationResult id mapErrs $ checkEquality "TRIGGERs" defs triggers
+          mapValidationResult id mapErrs $ checkEquality "TRIGGERs" defs' triggers
           where
+            defs' = map (\t -> (t, triggerFunctionMakeName $ triggerName t)) defs
             mapErrs []      = []
             mapErrs errmsgs = errmsgs <>
               [ "(HINT: If WHEN clauses are equal modulo number of parentheses, whitespace, \
