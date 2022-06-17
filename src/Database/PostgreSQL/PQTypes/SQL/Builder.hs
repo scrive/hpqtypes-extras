@@ -146,6 +146,7 @@ module Database.PostgreSQL.PQTypes.SQL.Builder
   , SqlSet
   , SqlFrom
   , SqlWhere
+  , SqlWith
   , SqlOrderBy
   , SqlGroupByHaving
   , SqlOffsetLimit
