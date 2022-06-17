@@ -1,17 +1,16 @@
-module Main
-  where
+module Main where
 
-import Control.Exception.Lifted as E
+import Control.Monad.Catch
 import Control.Monad.IO.Class
-import Control.Monad.Trans.Control
-
 import Data.Either
 import Data.Monoid
-import qualified Data.Text as T
 import Data.Typeable
 import Data.UUID.Types
 import Prelude
+import qualified Data.Set as Set
+import qualified Data.Text as T
 
+import Data.Monoid.Utils
 import Database.PostgreSQL.PQTypes
 import Database.PostgreSQL.PQTypes.Checks
 import Database.PostgreSQL.PQTypes.Model.ColumnType
@@ -21,6 +20,7 @@ import Database.PostgreSQL.PQTypes.Model.Index
 import Database.PostgreSQL.PQTypes.Model.Migration
 import Database.PostgreSQL.PQTypes.Model.PrimaryKey
 import Database.PostgreSQL.PQTypes.Model.Table
+import Database.PostgreSQL.PQTypes.Model.Trigger
 import Database.PostgreSQL.PQTypes.SQL.Builder
 import Log
 import Log.Backend.StandardOutput
@@ -34,7 +34,8 @@ newtype ConnectionString = ConnectionString String
 
 instance IsOption ConnectionString where
   defaultValue = ConnectionString
-                 "postgresql://postgres@localhost/travis_ci_test"
+    -- For GitHub Actions CI
+    "host=postgres user=postgres password=postgres"
   parseValue   = Just . ConnectionString
   optionName   = return "connection-string"
   optionHelp   = return "Postgres connection string"
@@ -73,6 +74,7 @@ tableBankSchema1 =
                 , colNullable = False }
     ]
   , tblPrimaryKey = pkOnColumn "id"
+  , tblTriggers = []
   }
 
 tableBankSchema2 :: Table
@@ -125,7 +127,7 @@ tableBankMigration5snd = Migration
   , mgrFrom      = 3
   , mgrAction    = CreateIndexConcurrentlyMigration
                      (tblName tableBankSchema3)
-                     (indexOnColumn "name")
+                     ((indexOnColumn "name") { idxInclude = ["id", "location"] })
   }
 
 tableBankSchema5 :: Table
@@ -133,7 +135,7 @@ tableBankSchema5 = tableBankSchema4 {
     tblVersion = (tblVersion tableBankSchema4) + 2
   , tblColumns = filter (\c -> colName c /= "cash")
       (tblColumns tableBankSchema4)
-  , tblIndexes = [indexOnColumn "name"]
+  , tblIndexes = [(indexOnColumn "name") { idxInclude = ["id", "location"] }]
   }
 
 tableBadGuySchema1 :: Table
@@ -372,7 +374,8 @@ schema2Migrations :: (MonadDB m) => [Migration m]
 schema2Migrations = schema1Migrations
                  ++ [ dropTableMigration   tableWitnessedRobberySchema1
                     , dropTableMigration   tableWitnessSchema1
-                    , createTableMigration tableUnderArrestSchema2 ]
+                    , createTableMigration tableUnderArrestSchema2
+                    ]
 
 schema3Tables :: [Table]
 schema3Tables = [ tableBankSchema3
@@ -449,6 +452,10 @@ createTablesSchema1 step = do
   step "Creating the database (schema version 1)..."
   migrateDatabase defaultExtrasOptions extensions domains
     composites schema1Tables schema1Migrations
+
+  -- Add a local index that shouldn't trigger validation errors.
+  runSQL_ "CREATE INDEX local_idx_bank_name ON bank(name)"
+
   checkDatabase defaultExtrasOptions composites domains schema1Tables
 
 testDBSchema1 :: (String -> TestM ()) -> TestM ([UUID], [UUID])
@@ -512,12 +519,62 @@ testDBSchema1 step = do
   liftIO $ assertEqual "INSERT ON CONFLICT does nothing (2)" (name, location) details4
 
   -- If NO CONFLICT is not specified, make sure we throw an exception.
-  eres :: Either DBException () <- E.try . withSavepoint "testDBSchema" $ do
-    runQuery_ . sqlInsert "bank " $ do
+  eres :: Either DBException () <- try . withSavepoint "testDBSchema" $ do
+    runQuery_ . sqlInsert "bank" $ do
       sqlSet "id" bankId
       sqlSet "name" name
       sqlSet "location" location
   liftIO $ assertBool "If ON CONFLICT is not specified an exception is thrown" (isLeft eres)
+
+  runQuery_ . sqlInsertSelect "bank" "bank" $ do
+    sqlSetCmd "id" "id"
+    sqlSetCmd "name" "name"
+    sqlSetCmd "location" "location"
+    sqlWhereEq "id" bankId
+    sqlOnConflictOnColumns ["id"] . sqlUpdate "" $ do
+      sqlSet "name" name
+      sqlSet "location" location
+  runQuery_ . sqlSelect "bank" $ do
+    sqlResult "name"
+    sqlResult "location"
+    sqlWhereEq "id" bankId
+  details5 <- fetchOne id
+  liftIO $ assertEqual "INSERT ON CONFLICT updates" (name, location) details5
+
+  runQuery_ . sqlInsertSelect "bank" "bank" $ do
+    sqlSetCmd "id" "id"
+    sqlSetCmd "name" "name"
+    sqlSetCmd "location" "location"
+    sqlWhereEq "id" bankId
+    sqlOnConflictDoNothing
+  runQuery_ . sqlSelect "bank" $ do
+    sqlResult "name"
+    sqlResult "location"
+    sqlWhereEq "id" bankId
+  details6 <- fetchOne id
+  liftIO $ assertEqual "INSERT ON CONFLICT does nothing (1)" (name, location) details6
+
+  runQuery_ . sqlInsertSelect "bank" "bank" $ do
+    sqlSetCmd "id" "id"
+    sqlSetCmd "name" "name"
+    sqlSetCmd "location" "location"
+    sqlWhereEq "id" bankId
+    sqlOnConflictOnColumnsDoNothing ["id"]
+  runQuery_ . sqlSelect "bank" $ do
+    sqlResult "name"
+    sqlResult "location"
+    sqlWhereEq "id" bankId
+  details7 <- fetchOne id
+  liftIO $ assertEqual "INSERT ON CONFLICT does nothing (2)" (name, location) details7
+
+  -- If NO CONFLICT is not specified, make sure we throw an exception.
+  eres1 :: Either DBException () <- try . withSavepoint "testDBSchema" $ do
+    runQuery_ . sqlInsertSelect "bank" "bank" $ do
+      sqlSetCmd "id" "id"
+      sqlSetCmd "name" "name"
+      sqlSetCmd "location" "location"
+      sqlWhereEq "id" bankId
+  liftIO $ assertBool "If ON CONFLICT is not specified an exception is thrown" (isLeft eres1)
 
   -- Populate the 'bad_guy' table.
   runQuery_ . sqlInsert "bad_guy" $ do
@@ -588,7 +645,7 @@ migrateDBToSchema2 step = do
       composites    = []
       domains       = []
   step "Migrating the database (schema version 1 -> schema version 2)..."
-  migrateDatabase defaultExtrasOptions extensions composites domains
+  migrateDatabase defaultExtrasOptions { eoLockTimeoutMs = Just 1000 } extensions composites domains
     schema2Tables schema2Migrations
   checkDatabase defaultExtrasOptions composites domains schema2Tables
 
@@ -776,6 +833,316 @@ migrationTest1Body step = do
   migrateDBToSchema5  step
   testDBSchema5       step
 
+bankTrigger1 :: Trigger
+bankTrigger1 =
+  Trigger { triggerTable = "bank"
+          , triggerName = "trigger_1"
+          , triggerEvents = Set.fromList [TriggerInsert]
+          , triggerDeferrable = False
+          , triggerInitiallyDeferred = False
+          , triggerWhen = Nothing
+          , triggerFunction =
+                "begin"
+            <+> "  perform true;"
+            <+> "  return null;"
+            <+> "end;"
+          }
+
+bankTrigger2 :: Trigger
+bankTrigger2 =
+  bankTrigger1
+  { triggerFunction =
+          "begin"
+      <+> "  return null;"
+      <+> "end;"
+  }
+
+bankTrigger3 :: Trigger
+bankTrigger3 =
+  Trigger { triggerTable = "bank"
+          , triggerName = "trigger_3"
+          , triggerEvents = Set.fromList [TriggerInsert, TriggerUpdateOf [unsafeSQL "location"]]
+          , triggerDeferrable = True
+          , triggerInitiallyDeferred = True
+          , triggerWhen = Nothing
+          , triggerFunction =
+                "begin"
+            <+> "  perform true;"
+            <+> "  return null;"
+            <+> "end;"
+          }
+
+bankTrigger2Proper :: Trigger
+bankTrigger2Proper =
+  bankTrigger2 { triggerName = "trigger_2" }
+
+testTriggers :: HasCallStack => (String -> TestM ()) -> TestM ()
+testTriggers step = do
+  step "Running trigger tests..."
+
+  step "create the initial database"
+  migrate [tableBankSchema1] [createTableMigration tableBankSchema1]
+
+  do
+    let msg = "checkDatabase fails if there are triggers in the database but not in the schema"
+        ts = [ tableBankSchema1 { tblVersion = 2
+                                , tblTriggers = []
+                                }
+             ]
+        ms = [ createTriggerMigration 1 bankTrigger1 ]
+    step msg
+    assertException msg $ migrate ts ms
+
+  do
+    let msg = "checkDatabase fails if there are triggers in the schema but not in the database"
+        ts = [ tableBankSchema1 { tblVersion = 2
+                                , tblTriggers = [bankTrigger1]
+                                }
+             ]
+        ms = []
+    triggerStep msg $ do
+      assertException msg $ migrate ts ms
+
+  do
+    let msg = "test succeeds when creating a single trigger"
+        ts = [ tableBankSchema1 { tblVersion = 2
+                                , tblTriggers = [bankTrigger1]
+                                }
+             ]
+        ms = [ createTriggerMigration 1 bankTrigger1 ]
+    triggerStep msg $ do
+      assertNoException msg $ migrate ts ms
+      verify [bankTrigger1] True
+
+  do
+    -- Attempt to create the same triggers twice. Should fail with a DBException saying
+    -- that function already exists.
+    let msg = "database exception is raised if trigger is created twice"
+        ts = [ tableBankSchema1 { tblVersion = 3
+                                , tblTriggers = [bankTrigger1]
+                                }
+             ]
+        ms = [ createTriggerMigration 1 bankTrigger1
+             , createTriggerMigration 2 bankTrigger1
+             ]
+    triggerStep msg $ do
+      assertDBException msg $ migrate ts ms
+
+  do
+    let msg = "database exception is raised if triggers only differ in function name"
+        ts = [ tableBankSchema1 { tblVersion = 3
+                                , tblTriggers = [bankTrigger1, bankTrigger2]
+                                }
+             ]
+        ms = [ createTriggerMigration 1 bankTrigger1
+             , createTriggerMigration 2 bankTrigger2
+             ]
+    triggerStep msg $ do
+      assertDBException msg $ migrate ts ms
+
+  do
+    let msg = "successfully migrate two triggers"
+        ts = [ tableBankSchema1 { tblVersion = 3
+                                , tblTriggers = [bankTrigger1, bankTrigger2Proper]
+                                }
+             ]
+        ms = [ createTriggerMigration 1 bankTrigger1
+             , createTriggerMigration 2 bankTrigger2Proper
+             ]
+    triggerStep msg $ do
+      assertNoException msg $ migrate ts ms
+      verify [bankTrigger1, bankTrigger2Proper] True
+
+  do
+    let msg = "database exception is raised if trigger's WHEN is syntactically incorrect"
+        trg = bankTrigger1 { triggerWhen = Just "WILL FAIL" }
+        ts = [ tableBankSchema1 { tblVersion = 2
+                                , tblTriggers = [trg]
+                                }
+             ]
+        ms = [ createTriggerMigration 1 trg ]
+    triggerStep msg $ do
+      assertDBException msg $ migrate ts ms
+
+  do
+    let msg = "database exception is raised if trigger's WHEN uses undefined column"
+        trg = bankTrigger1 { triggerWhen = Just "NEW.foobar = 1" }
+        ts = [ tableBankSchema1 { tblVersion = 2
+                                , tblTriggers = [trg]
+                                }
+             ]
+        ms = [ createTriggerMigration 1 trg ]
+    triggerStep msg $ do
+      assertDBException msg $ migrate ts ms
+
+  do
+    -- This trigger is valid. However, the WHEN clause specified in triggerWhen is not
+    -- what gets returned from the database. The decompiled and normalized WHEN clause
+    -- from the database looks like this:
+    --   new.name <> 'foobar'::text
+    -- We simply assert an exception, which presumably comes from the migration framework,
+    -- while it should actually be a deeper check for just the differing WHEN
+    -- clauses. On the other hand, it's probably good enough as it is.
+    -- See the comment for 'getDBTriggers' in src/Database/PostgreSQL/PQTypes/Model/Trigger.hs.
+    let msg = "checkDatabase fails if WHEN clauses from database and code differ"
+        trg = bankTrigger1 { triggerWhen = Just "NEW.name != 'foobar'" }
+        ts = [ tableBankSchema1 { tblVersion = 2
+                                , tblTriggers = [trg]
+                                }
+             ]
+        ms = [ createTriggerMigration 1 trg ]
+    triggerStep msg $ do
+      assertException msg $ migrate ts ms
+
+  do
+    let msg = "successfully migrate trigger with valid WHEN"
+        trg = bankTrigger1 { triggerWhen = Just "new.name <> 'foobar'::text" }
+        ts = [ tableBankSchema1 { tblVersion = 2
+                                , tblTriggers = [trg]
+                                }
+             ]
+        ms = [ createTriggerMigration 1 trg ]
+    triggerStep msg $ do
+      assertNoException msg $ migrate ts ms
+      verify [trg] True
+
+  do
+    let msg = "successfully migrate trigger that is deferrable"
+        trg = bankTrigger1 { triggerDeferrable = True }
+        ts = [ tableBankSchema1 { tblVersion = 2
+                                , tblTriggers = [trg]
+                                }
+             ]
+        ms = [ createTriggerMigration 1 trg ]
+    triggerStep msg $ do
+      assertNoException msg $ migrate ts ms
+      verify [trg] True
+
+  do
+    let msg = "successfully migrate trigger that is deferrable and initially deferred"
+        trg = bankTrigger1 { triggerDeferrable = True
+                           , triggerInitiallyDeferred = True
+                           }
+        ts = [ tableBankSchema1 { tblVersion = 2
+                                , tblTriggers = [trg]
+                                }
+             ]
+        ms = [ createTriggerMigration 1 trg ]
+    triggerStep msg $ do
+      assertNoException msg $ migrate ts ms
+      verify [trg] True
+
+  do
+    let msg = "database exception is raised if trigger is initially deferred but not deferrable"
+        trg = bankTrigger1 { triggerDeferrable = False
+                           , triggerInitiallyDeferred = True
+                           }
+        ts = [ tableBankSchema1 { tblVersion = 2
+                                , tblTriggers = [trg]
+                                }
+             ]
+        ms = [ createTriggerMigration 1 trg ]
+    triggerStep msg $ do
+      assertDBException msg $ migrate ts ms
+
+  do
+    let msg = "database exception is raised if dropping trigger that does not exist"
+        trg = bankTrigger1
+        ts = [ tableBankSchema1 { tblVersion = 2
+                                , tblTriggers = [trg]
+                                }
+             ]
+        ms = [ dropTriggerMigration 1 trg ]
+    triggerStep msg $ do
+      assertDBException msg $ migrate ts ms
+
+  do
+    let msg = "database exception is raised if dropping trigger function of which does not exist"
+        trg = bankTrigger2
+        ts = [ tableBankSchema1 { tblVersion = 2
+                                , tblTriggers = [trg]
+                                }
+             ]
+        ms = [ dropTriggerMigration 1 trg ]
+    triggerStep msg $ do
+      assertDBException msg $ migrate ts ms
+
+  do
+    let msg = "successfully drop trigger"
+        trg = bankTrigger1
+        ts = [ tableBankSchema1 { tblVersion = 3
+                                , tblTriggers = []
+                                }
+             ]
+        ms = [ createTriggerMigration 1 trg, dropTriggerMigration 2 trg ]
+    triggerStep msg $ do
+      assertNoException msg $ migrate ts ms
+      verify [trg] False
+
+  do
+    let msg = "database exception is raised if dropping trigger twice"
+        trg = bankTrigger2
+        ts = [ tableBankSchema1 { tblVersion = 3
+                                , tblTriggers = [trg]
+                                }
+             ]
+        ms = [ dropTriggerMigration 1 trg, dropTriggerMigration 2 trg ]
+    triggerStep msg $ do
+      assertDBException msg $ migrate ts ms
+
+  do
+    let msg = "successfully create trigger with multiple events"
+        trg = bankTrigger3
+        ts = [ tableBankSchema1 { tblVersion = 2
+                                , tblTriggers = [trg]
+                                }
+             ]
+        ms = [ createTriggerMigration 1 trg ]
+    triggerStep msg $ do
+      assertNoException msg $ migrate ts ms
+      verify [trg] True
+
+  where
+    triggerStep msg rest = do
+      recreateTriggerDB
+      step msg
+      rest
+
+    migrate tables migrations = do
+      migrateDatabase defaultExtrasOptions ["pgcrypto"] [] [] tables migrations
+      checkDatabase defaultExtrasOptions [] [] tables
+
+    -- Verify that the given triggers are (not) present in the database.
+    verify :: (MonadIO m, MonadDB m, HasCallStack) => [Trigger] -> Bool -> m ()
+    verify triggers present = do
+      dbTriggers <- getDBTriggers "bank"
+      let trgs = map fst dbTriggers
+          ok = and $ map (`elem` trgs) triggers
+          err = "Triggers " <> (if present then "" else "not ") <> "present in the database."
+          trans = if present then id else not
+      liftIO . assertBool err $ trans ok
+
+    triggerMigration :: MonadDB m => (Trigger -> m ()) -> Int -> Trigger -> Migration m
+    triggerMigration fn from trg = Migration
+      { mgrTableName = tblName tableBankSchema1
+      , mgrFrom = fromIntegral from
+      , mgrAction = StandardMigration $ fn trg
+      }
+
+    createTriggerMigration :: MonadDB m => Int -> Trigger -> Migration m
+    createTriggerMigration = triggerMigration createTrigger
+
+    dropTriggerMigration :: MonadDB m => Int -> Trigger -> Migration m
+    dropTriggerMigration = triggerMigration dropTrigger
+
+    recreateTriggerDB = do
+      runSQL_ "DROP TRIGGER IF EXISTS trg__bank__trigger_1 ON bank;"
+      runSQL_ "DROP TRIGGER IF EXISTS trg__bank__trigger_2 ON bank;"
+      runSQL_ "DROP FUNCTION IF EXISTS trgfun__trigger_1;"
+      runSQL_ "DROP FUNCTION IF EXISTS trgfun__trigger_2;"
+      runSQL_ "DROP TABLE IF EXISTS bank;"
+      runSQL_ "DELETE FROM table_versions WHERE name = 'bank'";
+      migrate [tableBankSchema1] [createTableMigration tableBankSchema1]
 
 migrationTest1 :: ConnectionSourceM (LogT IO) -> TestTree
 migrationTest1 connSource =
@@ -783,8 +1150,6 @@ migrationTest1 connSource =
   freshTestDB         step
 
   migrationTest1Body  step
-
-  -- freshTestDB         step
 
 -- | Test for behaviour of 'checkDatabase' and 'checkDatabaseAllowUnknownObjects'
 migrationTest2 :: ConnectionSourceM (LogT IO) -> TestTree
@@ -804,6 +1169,7 @@ migrationTest2 connSource =
       currentSchema   = schema1Tables
       differentSchema = schema5Tables
       extrasOptions   = defaultExtrasOptions { eoEnforcePKs = True }
+      extrasOptionsWithUnknownObjects = extrasOptions { eoObjectsValidationMode = AllowUnknownObjects }
 
   runQuery_ $ sqlCreateComposite composite
 
@@ -813,15 +1179,15 @@ migrationTest2 connSource =
     checkDatabase extrasOptions [] [] currentSchema
   assertNoException "checkDatabaseAllowUnknownTables runs fine \
                     \for consistent DB" $
-    checkDatabaseAllowUnknownObjects extrasOptions [composite] [] currentSchema
+    checkDatabase extrasOptionsWithUnknownObjects [composite] [] currentSchema
   assertNoException "checkDatabaseAllowUnknownTables runs fine \
                     \for consistent DB with unknown composite type in the database" $
-    checkDatabaseAllowUnknownObjects extrasOptions [] [] currentSchema
+    checkDatabase extrasOptionsWithUnknownObjects [] [] currentSchema
   assertException "checkDatabase should throw exception for wrong schema" $
     checkDatabase extrasOptions [] [] differentSchema
   assertException ("checkDatabaseAllowUnknownObjects \
                    \should throw exception for wrong scheme") $
-    checkDatabaseAllowUnknownObjects extrasOptions [] [] differentSchema
+    checkDatabase extrasOptionsWithUnknownObjects [] [] differentSchema
 
   runSQL_ "INSERT INTO table_versions (name, version) \
           \VALUES ('unknown_table', 0)"
@@ -829,14 +1195,14 @@ migrationTest2 connSource =
     checkDatabase extrasOptions [] [] currentSchema
   assertNoException ("checkDatabaseAllowUnknownObjects \
                      \accepts extra entry in 'table_versions'") $
-    checkDatabaseAllowUnknownObjects extrasOptions [] [] currentSchema
+    checkDatabase extrasOptionsWithUnknownObjects [] [] currentSchema
   runSQL_ "DELETE FROM table_versions where name='unknown_table'"
 
   runSQL_ "CREATE TABLE unknown_table (title text)"
   assertException "checkDatabase should throw with unknown table" $
     checkDatabase extrasOptions [] [] currentSchema
   assertNoException "checkDatabaseAllowUnknownObjects accepts unknown table" $
-    checkDatabaseAllowUnknownObjects extrasOptions [] [] currentSchema
+    checkDatabase extrasOptionsWithUnknownObjects [] [] currentSchema
 
   runSQL_ "INSERT INTO table_versions (name, version) \
           \VALUES ('unknown_table', 0)"
@@ -844,7 +1210,7 @@ migrationTest2 connSource =
     checkDatabase extrasOptions [] [] currentSchema
   assertNoException ("checkDatabaseAllowUnknownObjects \
                      \accepts unknown tables with version") $
-    checkDatabaseAllowUnknownObjects extrasOptions [] [] currentSchema
+    checkDatabase extrasOptionsWithUnknownObjects [] [] currentSchema
 
   freshTestDB    step
 
@@ -931,7 +1297,7 @@ migrationTest5 connSource =
                     }
 
 uniqueIndex6 :: TableIndex
-uniqueIndex6 = uniqueIndexOnColumns [ "role", "(COALESCE(src_id, - 1::bigint))", "(COALESCE(trg_id, - 1::bigint))" ]
+uniqueIndex6 = uniqueIndexOnColumns [ "role", "COALESCE(src_id, - 1::bigint)", "COALESCE(trg_id, - 1::bigint)" ]
 
 testDBSchema6 :: (String -> TestM ()) -> TestM ()
 testDBSchema6 step = do
@@ -943,7 +1309,7 @@ testDBSchema6 step = do
   assertException "Unique constraint violation should fail" . runQuery_ . sqlInsert "access_control" $ duplicateRole
   commit -- to prevent the ERROR: current transaction is aborted, commands ignored until end of transaction block
 
-  runQuery_ $ sqlDropIndex "roles" uniqueIndex6
+  runQuery_ $ sqlDropIndexMaybeDowntime "roles" uniqueIndex6
 
   where
     duplicateRole = do
@@ -956,10 +1322,15 @@ testDBSchema6 step = do
       sqlSet "src_id" (1 :: Int)
       sqlSet "trg_id" (3 :: Int)
 
+-- | Test triggers.
+triggerTests :: ConnectionSourceM (LogT IO) -> TestTree
+triggerTests connSource =
+  testCaseSteps' "Trigger tests" connSource $ \step -> do
+    freshTestDB  step
+    testTriggers step
 
-eitherExc :: MonadBaseControl IO m =>
-             (SomeException -> m ()) -> (a -> m ()) -> m a -> m ()
-eitherExc left right c = (E.try c) >>= either left right
+eitherExc :: MonadCatch m => (SomeException -> m ()) -> (a -> m ()) -> m a -> m ()
+eitherExc left right c = try c >>= either left right
 
 assertNoException :: String -> TestM () -> TestM ()
 assertNoException t c = eitherExc
@@ -967,9 +1338,14 @@ assertNoException t c = eitherExc
   (const $ return ()) c
 
 assertException :: String -> TestM () -> TestM ()
-assertException   t c = eitherExc
+assertException t c = eitherExc
   (const $ return ())
   (const $ liftIO $ assertFailure ("No exception thrown for: " ++ t)) c
+
+assertDBException :: String -> TestM () -> TestM ()
+assertDBException t c =
+  try c >>= either (\DBException{} -> pure ())
+                   (const . liftIO . assertFailure $ "No DBException thrown for: " ++ t)
 
 -- | A variant of testCaseSteps that works in TestM monad.
 testCaseSteps' :: TestName -> ConnectionSourceM (LogT IO)
@@ -979,7 +1355,7 @@ testCaseSteps' testName connSource f =
   testCaseSteps testName $ \step' -> do
   let step s = liftIO $ step' s
   withSimpleStdOutLogger $ \logger ->
-    runLogT "hpqtypes-extras-test" logger $
+    runLogT "hpqtypes-extras-test" logger defaultLogLevel $
     runDBT connSource defaultTransactionSettings $
     f step
 
@@ -996,6 +1372,7 @@ main = do
                          , migrationTest3 connSource
                          , migrationTest4 connSource
                          , migrationTest5 connSource
+                         , triggerTests connSource
                          ]
   where
     ings =

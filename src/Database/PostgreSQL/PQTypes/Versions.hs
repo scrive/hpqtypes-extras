@@ -1,7 +1,5 @@
 module Database.PostgreSQL.PQTypes.Versions where
 
-import Prelude
-
 import Database.PostgreSQL.PQTypes.Model
 
 tableVersions :: Table

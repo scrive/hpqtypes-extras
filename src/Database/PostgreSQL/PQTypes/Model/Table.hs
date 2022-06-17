@@ -19,13 +19,13 @@ import Data.ByteString (ByteString)
 import Data.Int
 import Data.Monoid.Utils
 import Database.PostgreSQL.PQTypes
-import Prelude
 
 import Database.PostgreSQL.PQTypes.Model.Check
 import Database.PostgreSQL.PQTypes.Model.ColumnType
 import Database.PostgreSQL.PQTypes.Model.ForeignKey
 import Database.PostgreSQL.PQTypes.Model.Index
 import Database.PostgreSQL.PQTypes.Model.PrimaryKey
+import Database.PostgreSQL.PQTypes.Model.Trigger
 
 data TableColumn = TableColumn {
   colName     :: RawSQL ()
@@ -65,16 +65,12 @@ data Table =
   Table {
   tblName               :: RawSQL () -- ^ Must be in lower case.
 , tblVersion            :: Int32
-, tblAcceptedDbVersions :: [Int32] -- ^ List of database table versions that
-                                   -- will be accepted even if they don't match
-                                   -- the table definition (note that in such
-                                   -- case structural differences are not
-                                   -- errors).
 , tblColumns            :: [TableColumn]
 , tblPrimaryKey         :: Maybe PrimaryKey
 , tblChecks             :: [Check]
 , tblForeignKeys        :: [ForeignKey]
 , tblIndexes            :: [TableIndex]
+, tblTriggers           :: [Trigger]
 , tblInitialSetup       :: Maybe TableInitialSetup
 }
 
@@ -87,12 +83,12 @@ tblTable :: Table
 tblTable = Table {
   tblName = error "tblTable: table name must be specified"
 , tblVersion = error "tblTable: table version must be specified"
-, tblAcceptedDbVersions = []
 , tblColumns = error "tblTable: table columns must be specified"
 , tblPrimaryKey = Nothing
 , tblChecks = []
 , tblForeignKeys = []
 , tblIndexes = []
+, tblTriggers = []
 , tblInitialSetup = Nothing
 }
 

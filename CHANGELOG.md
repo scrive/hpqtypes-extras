@@ -1,4 +1,42 @@
-# hpqtypes-extra-1.10.3.0 (2020-11-16)
+# hpqtypes-extras-1.16.0.0 (2022-05-20)
+* Trigger functions are now part of triggers and have their names generated.
+
+# hpqtypes-extras-1.15.0.0 (2022-05-11)
+* Add support for GHC 9.2.
+* Drop support for GHC < 8.8.
+* Add support for triggers and trigger functions.
+* Allow to specify the operator class of an index column.
+
+# hpqtypes-extras-1.14.1.0 (2022-01-11)
+* Support unmanaged local indexes whose names start with "local_".
+
+# hpqtypes-extras-1.14.0.0 (2021-12-13)
+* Add support for ON CONFLICT to sqlInsertSelect.
+* Remove upper bounds from library dependencies.
+* Remove kRun* and kWhyNot functions.
+
+# hpqtypes-extras-1.13.1.0 (2021-11-26)
+* Add support for including columns in indexes.
+
+# hpqtypes-extras-1.13.0.0 (2021-11-08)
+* Add support for handling lock_timeout during migrations.
+* Improvements for making no downtime migrations easier to write.
+* Commiting after each migration was made non-optional.
+
+# hpqtypes-extras-1.12.0.1 (2021-10-11)
+* Add support for log-base-0.11.0.0
+
+# hpqtypes-extras-1.12.0.0 (2021-10-??)
+* Use plain exceptions instead of DBExtraException
+
+# hpqtypes-extras-1.11.0.0 (2021-03-29)
+* Support running with higher table versions in the database than in the code
+
+# hpqtypes-extras-1.10.4.0 (2021-02-04)
+* Generate valid INSERT SELECT query with data modifying WITH clauses
+* Add DerivingVia helpers for enums
+
+# hpqtypes-extras-1.10.3.0 (2020-11-16)
 * Include LIMIT clause in UNION subqueries of the select
 
 # hpqtypes-extras-1.10.2.1 (2020-05-05)

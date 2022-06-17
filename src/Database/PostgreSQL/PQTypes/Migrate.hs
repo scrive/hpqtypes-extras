@@ -1,7 +1,8 @@
 module Database.PostgreSQL.PQTypes.Migrate (
   createDomain,
   createTable,
-  createTableConstraints
+  createTableConstraints,
+  createTableTriggers
   ) where
 
 import Control.Monad
@@ -17,7 +18,7 @@ createDomain dom@Domain{..} = do
   -- create the domain
   runQuery_ $ sqlCreateDomain dom
   -- add constraint checks to the domain
-  F.forM_ domChecks $ runQuery_ . sqlAlterDomain domName . sqlAddValidCheck
+  F.forM_ domChecks $ runQuery_ . sqlAlterDomain domName . sqlAddValidCheckMaybeDowntime
 
 createTable :: MonadDB m => Bool -> Table -> m ()
 createTable withConstraints table@Table{..} = do
@@ -25,9 +26,11 @@ createTable withConstraints table@Table{..} = do
   runQuery_ $ sqlCreateTable tblName
   runQuery_ $ sqlAlterTable tblName $ map sqlAddColumn tblColumns
   -- Add indexes.
-  forM_ tblIndexes $ runQuery_ . sqlCreateIndexSequentially tblName
+  forM_ tblIndexes $ runQuery_ . sqlCreateIndexMaybeDowntime tblName
   -- Add all the other constraints if applicable.
   when withConstraints $ createTableConstraints table
+  -- Create triggers.
+  createTableTriggers table
   -- Register the table along with its version.
   runQuery_ . sqlInsert "table_versions" $ do
     sqlSet "name" (tblNameText table)
@@ -39,6 +42,9 @@ createTableConstraints Table{..} = when (not $ null addConstraints) $ do
   where
     addConstraints = concat [
         [sqlAddPK tblName pk | Just pk <- return tblPrimaryKey]
-      , map sqlAddValidCheck tblChecks
-      , map (sqlAddValidFK tblName) tblForeignKeys
+      , map sqlAddValidCheckMaybeDowntime tblChecks
+      , map (sqlAddValidFKMaybeDowntime tblName) tblForeignKeys
       ]
+
+createTableTriggers :: MonadDB m => Table -> m ()
+createTableTriggers = mapM_ createTrigger . tblTriggers

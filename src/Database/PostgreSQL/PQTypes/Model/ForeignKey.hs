@@ -4,14 +4,12 @@ module Database.PostgreSQL.PQTypes.Model.ForeignKey (
   , fkOnColumn
   , fkOnColumns
   , fkName
-  , sqlAddFK
-  , sqlAddValidFK
+  , sqlAddValidFKMaybeDowntime
   , sqlAddNotValidFK
   , sqlValidateFK
   , sqlDropFK
   ) where
 
-import Data.Monoid
 import Data.Monoid.Utils
 import Database.PostgreSQL.PQTypes
 import Database.PostgreSQL.PQTypes.SQL.Builder
@@ -64,17 +62,12 @@ fkName tname ForeignKey{..} = sqlIdentifier $ mconcat [
   , fkRefTable
   ]
 
-{-# DEPRECATED sqlAddFK "Use sqlAddValidFK instead" #-}
--- | Deprecated version of sqlAddValidFK.
-sqlAddFK :: RawSQL () -> ForeignKey -> RawSQL ()
-sqlAddFK = sqlAddFK_ True
-
 -- | Add valid foreign key. Warning: PostgreSQL acquires SHARE ROW EXCLUSIVE
 -- lock (that prevents data updates) on both modified and referenced table for
 -- the duration of the creation. If this is not acceptable, use
 -- 'sqlAddNotValidFK' and 'sqlValidateFK'.
-sqlAddValidFK :: RawSQL () -> ForeignKey -> RawSQL ()
-sqlAddValidFK = sqlAddFK_ True
+sqlAddValidFKMaybeDowntime :: RawSQL () -> ForeignKey -> RawSQL ()
+sqlAddValidFKMaybeDowntime = sqlAddFK_ True
 
 -- | Add foreign key marked as NOT VALID. This avoids potentially long
 -- validation blocking updates to both modified and referenced table for its

@@ -49,13 +49,13 @@ data MigrationAction m =
 
   -- | Migration for creating an index concurrently.
   | CreateIndexConcurrentlyMigration
-#if __GLASGOW_HASKELL__ >= 806
       (RawSQL ()) -- ^ Table name
       TableIndex  -- ^ Index
-#else
-      (RawSQL ())
-      TableIndex
-#endif
+
+  -- | Migration for dropping an index concurrently.
+  | DropIndexConcurrentlyMigration
+      (RawSQL ()) -- ^ Table name
+      TableIndex  -- ^ Index
 
 -- | Migration object.
 data Migration m =
@@ -77,6 +77,7 @@ isStandardMigration Migration{..} =
     StandardMigration{}                -> True
     DropTableMigration{}               -> False
     CreateIndexConcurrentlyMigration{} -> False
+    DropIndexConcurrentlyMigration{}   -> False
 
 isDropTableMigration :: Migration m -> Bool
 isDropTableMigration Migration{..} =
@@ -84,3 +85,4 @@ isDropTableMigration Migration{..} =
     StandardMigration{}                -> False
     DropTableMigration{}               -> True
     CreateIndexConcurrentlyMigration{} -> False
+    DropIndexConcurrentlyMigration{}   -> False

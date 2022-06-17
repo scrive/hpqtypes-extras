@@ -1,0 +1,5 @@
+branches:       master
+benchmarks:     True
+doctest:        True
+tests:          True
+postgresql:     True

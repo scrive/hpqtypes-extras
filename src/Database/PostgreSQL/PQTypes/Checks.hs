@@ -1,34 +1,34 @@
 module Database.PostgreSQL.PQTypes.Checks (
   -- * Checks
     checkDatabase
-  , checkDatabaseAllowUnknownObjects
   , createTable
   , createDomain
 
   -- * Options
   , ExtrasOptions(..)
   , defaultExtrasOptions
+  , ObjectsValidationMode(..)
 
   -- * Migrations
   , migrateDatabase
   ) where
 
 import Control.Arrow ((&&&))
-import Control.Applicative ((<$>))
+import Control.Concurrent (threadDelay)
 import Control.Monad.Catch
 import Control.Monad.Reader
 import Data.Int
 import Data.Function (on)
+import Data.List (partition)
 import Data.Maybe
-import Data.Monoid
 import Data.Monoid.Utils
 import Data.Ord (comparing)
+import Data.Typeable (cast)
 import qualified Data.String
 import Data.Text (Text)
 import Database.PostgreSQL.PQTypes
 import GHC.Stack (HasCallStack)
 import Log
-import Prelude
 import TextShow
 import qualified Data.List as L
 import qualified Data.Map as M
@@ -50,7 +50,7 @@ headExc _ (x:_) = x
 
 -- | Run migrations and check the database structure.
 migrateDatabase
-  :: (MonadDB m, MonadLog m, MonadMask m)
+  :: (MonadIO m, MonadDB m, MonadLog m, MonadMask m)
   => ExtrasOptions
   -> [Extension]
   -> [CompositeType]
@@ -67,49 +67,41 @@ migrateDatabase options
   checkDBConsistency options domains tablesWithVersions migrations
   resultCheck =<< checkCompositesStructure tablesWithVersions
                                            CreateCompositesIfDatabaseEmpty
-                                           DontAllowUnknownObjects
+                                           (eoObjectsValidationMode options)
                                            composites
   resultCheck =<< checkDomainsStructure domains
   resultCheck =<< checkDBStructure options tablesWithVersions
   resultCheck =<< checkTablesWereDropped migrations
-  resultCheck =<< checkUnknownTables tables
-  resultCheck =<< checkExistenceOfVersionsForTables (tableVersions : tables)
+
+  when (eoObjectsValidationMode options == DontAllowUnknownObjects) $ do
+    resultCheck =<< checkUnknownTables tables
+    resultCheck =<< checkExistenceOfVersionsForTables (tableVersions : tables)
+
+  -- After migrations are done make sure the table versions are correct.
+  resultCheck . checkVersions options =<< getTableVersions (tableVersions : tables)
 
   -- everything is OK, commit changes
   commit
 
--- | Run checks on the database structure and whether the database
--- needs to be migrated. Will do a full check of DB structure.
+-- | Run checks on the database structure and whether the database needs to be
+-- migrated. Will do a full check of DB structure.
 checkDatabase
   :: forall m . (MonadDB m, MonadLog m, MonadThrow m)
-  => ExtrasOptions -> [CompositeType] -> [Domain] -> [Table] -> m ()
-checkDatabase options = checkDatabase_ options DontAllowUnknownObjects
-
--- | Same as 'checkDatabase', but will not fail if there are additional tables
--- and composite types in the database.
-checkDatabaseAllowUnknownObjects
-  :: forall m . (MonadDB m, MonadLog m, MonadThrow m)
-  => ExtrasOptions -> [CompositeType] -> [Domain] -> [Table] -> m ()
-checkDatabaseAllowUnknownObjects options = checkDatabase_ options AllowUnknownObjects
-
-data ObjectsValidationMode = AllowUnknownObjects | DontAllowUnknownObjects
-  deriving Eq
-
-checkDatabase_
-  :: forall m . (MonadDB m, MonadLog m, MonadThrow m)
   => ExtrasOptions
-  -> ObjectsValidationMode
   -> [CompositeType]
   -> [Domain]
   -> [Table]
   -> m ()
-checkDatabase_ options ovm composites domains tables = do
+checkDatabase options composites domains tables = do
   tablesWithVersions <- getTableVersions (tableVersions : tables)
-  resultCheck $ checkVersions tablesWithVersions
-  resultCheck =<< checkCompositesStructure tablesWithVersions DontCreateComposites ovm composites
+  resultCheck $ checkVersions options tablesWithVersions
+  resultCheck =<< checkCompositesStructure tablesWithVersions
+                                           DontCreateComposites
+                                           (eoObjectsValidationMode options)
+                                           composites
   resultCheck =<< checkDomainsStructure domains
   resultCheck =<< checkDBStructure options tablesWithVersions
-  when (ovm == DontAllowUnknownObjects) $ do
+  when (eoObjectsValidationMode options == DontAllowUnknownObjects) $ do
     resultCheck =<< checkUnknownTables tables
     resultCheck =<< checkExistenceOfVersionsForTables (tableVersions : tables)
 
@@ -118,24 +110,6 @@ checkDatabase_ options ovm composites domains tables = do
   resultCheck =<< checkInitialSetups tables
 
   where
-    checkVersions :: TablesWithVersions -> ValidationResult
-    checkVersions vs = mconcat . map checkVersion $ vs
-
-    checkVersion :: (Table, Int32) -> ValidationResult
-    checkVersion (t@Table{..}, v)
-      | tblVersion `elem` tblAcceptedDbVersions
-                  = validationError $
-                    "Table '" <> tblNameText t <>
-                    "' has its current table version in accepted db versions"
-      | tblVersion == v || v `elem` tblAcceptedDbVersions
-                  = mempty
-      | v == 0    = validationError $
-                    "Table '" <> tblNameText t <> "' must be created"
-      | otherwise = validationError $
-                    "Table '" <> tblNameText t
-                    <> "' must be migrated" <+> showt v <+> "->"
-                    <+> showt tblVersion
-
     checkInitialSetups :: [Table] -> m ValidationResult
     checkInitialSetups tbls =
       liftM mconcat . mapM checkInitialSetup' $ tbls
@@ -197,6 +171,21 @@ getDBTableNames = do
 
   dbTableNames <- fetchMany runIdentity
   return dbTableNames
+
+checkVersions :: ExtrasOptions -> TablesWithVersions -> ValidationResult
+checkVersions options = mconcat . map checkVersion
+  where
+    checkVersion :: (Table, Int32) -> ValidationResult
+    checkVersion (t@Table{..}, v)
+      | if eoAllowHigherTableVersions options
+        then tblVersion <= v
+        else tblVersion == v = mempty
+      | v == 0    = validationError $
+                    "Table '" <> tblNameText t <> "' must be created"
+      | otherwise = validationError $
+                    "Table '" <> tblNameText t
+                    <> "' must be migrated" <+> showt v <+> "->"
+                    <+> showt tblVersion
 
 -- | Check that there's a 1-to-1 correspondence between the list of
 -- 'Table's and what's actually in the database.
@@ -395,13 +384,11 @@ checkDBStructure
   => ExtrasOptions
   -> TablesWithVersions
   -> m ValidationResult
-checkDBStructure options tables = fmap mconcat .
-                                  forM tables $ \(table, version) ->
-  do
+checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version) -> do
   result <- topMessage "table" (tblNameText table) <$> checkTableStructure table
-  -- If one of the accepted versions defined for the table is the current table
-  -- version in the database, show inconsistencies as info messages only.
-  return $ if version `elem` tblAcceptedDbVersions table
+  -- If we allow higher table versions in the database, show inconsistencies as
+  -- info messages only.
+  return $ if eoAllowHigherTableVersions options && tblVersion table < version
            then validationErrorsToInfos result
            else result
   where
@@ -432,12 +419,14 @@ checkDBStructure options tables = fmap mconcat .
       indexes <- fetchMany fetchTableIndex
       runQuery_ $ sqlGetForeignKeys table
       fkeys <- fetchMany fetchForeignKey
+      triggers <- getDBTriggers tblName
       return $ mconcat [
           checkColumns 1 tblColumns desc
         , checkPrimaryKey tblPrimaryKey pk
         , checkChecks tblChecks checks
         , checkIndexes tblIndexes indexes
         , checkForeignKeys tblForeignKeys fkeys
+        , checkTriggers tblTriggers triggers
         ]
       where
         fetchTableColumn
@@ -532,10 +521,20 @@ checkDBStructure options tables = fmap mconcat .
 
         checkIndexes :: [TableIndex] -> [(TableIndex, RawSQL ())]
                      -> ValidationResult
-        checkIndexes defs indexes = mconcat [
-            checkEquality "INDEXes" defs (map fst indexes)
-          , checkNames (unquoted . indexName tblName) indexes
-          ]
+        checkIndexes defs allIndexes = mconcat
+          $ checkEquality "INDEXes" defs (map fst indexes)
+          : checkNames (unquoted . indexName tblName) indexes
+          : map localIndexInfo localIndexes
+          where
+            localIndexInfo (index, name) = validationInfo $ T.concat
+              [ "Found a local index '"
+              , unRawSQL name
+              , "': "
+              , T.pack (show index)
+              ]
+
+            (localIndexes, indexes) = (`partition` allIndexes) $ \(_, name) ->
+              "local_" `T.isPrefixOf` unRawSQL name
 
         checkForeignKeys :: [ForeignKey] -> [(ForeignKey, RawSQL ())]
                          -> ValidationResult
@@ -543,6 +542,18 @@ checkDBStructure options tables = fmap mconcat .
             checkEquality "FOREIGN KEYs" defs (map fst fkeys)
           , checkNames (unquoted . fkName tblName) fkeys
           ]
+
+        checkTriggers :: [Trigger] -> [(Trigger, RawSQL ())] -> ValidationResult
+        checkTriggers defs triggers =
+          mapValidationResult id mapErrs $ checkEquality "TRIGGERs" defs' triggers
+          where
+            defs' = map (\t -> (t, triggerFunctionMakeName $ triggerName t)) defs
+            mapErrs []      = []
+            mapErrs errmsgs = errmsgs <>
+              [ "(HINT: If WHEN clauses are equal modulo number of parentheses, whitespace, \
+                \case of variables or type casts used in conditions, just copy and paste \
+                \expected output into source code.)"
+              ]
 
 -- | Checks whether database is consistent, performing migrations if
 -- necessary. Requires all table names to be in lower case.
@@ -553,7 +564,7 @@ checkDBStructure options tables = fmap mconcat .
 --   * all 'mgrFrom' are less than table version number of the table in
 --     the 'tables' list
 checkDBConsistency
-  :: forall m. (MonadDB m, MonadLog m, MonadMask m)
+  :: forall m. (MonadIO m, MonadDB m, MonadLog m, MonadMask m)
   => ExtrasOptions -> [Domain] -> TablesWithVersions -> [Migration m]
   -> m ()
 checkDBConsistency options domains tablesWithVersions migrations = do
@@ -604,6 +615,7 @@ checkDBConsistency options domains tablesWithVersions migrations = do
 
     validateMigrations :: m ()
     validateMigrations = forM_ tables $ \table -> do
+      -- FIXME: https://github.com/scrive/hpqtypes-extras/issues/73
       let presentMigrationVersions
             = [ mgrFrom | Migration{..} <- migrations
                         , mgrTableName == tblName table ]
@@ -792,19 +804,30 @@ checkDBConsistency options domains tablesWithVersions migrations = do
 
         CreateIndexConcurrentlyMigration tname idx -> do
           logMigration
-          -- If migration was run before but creation of an index failed, index
-          -- will be left in the database in an inactive state, so when we
-          -- rerun, we need to remove it first (see
-          -- https://www.postgresql.org/docs/9.6/sql-createindex.html for more
-          -- information).
-          runQuery_ $ "DROP INDEX IF EXISTS" <+> quoted (indexName tname idx)
           -- We're in auto transaction mode (as ensured at the beginning of
           -- 'checkDBConsistency'), so we need to issue explicit SQL commit,
           -- because using 'commit' function automatically starts another
           -- transaction. We don't want that as concurrent creation of index
           -- won't run inside a transaction.
           runSQL_ "COMMIT"
+          -- If migration was run before but creation of an index failed, index
+          -- will be left in the database in an inactive state, so when we
+          -- rerun, we need to remove it first (see
+          -- https://www.postgresql.org/docs/9.6/sql-createindex.html for more
+          -- information).
+          runQuery_ $ "DROP INDEX CONCURRENTLY IF EXISTS" <+> quoted (indexName tname idx)
           runQuery_ (sqlCreateIndexConcurrently tname idx) `finally` begin
+          updateTableVersion
+
+        DropIndexConcurrentlyMigration tname idx -> do
+          logMigration
+          -- We're in auto transaction mode (as ensured at the beginning of
+          -- 'checkDBConsistency'), so we need to issue explicit SQL commit,
+          -- because using 'commit' function automatically starts another
+          -- transaction. We don't want that as concurrent dropping of index
+          -- won't run inside a transaction.
+          runSQL_ "COMMIT"
+          runQuery_ (sqlDropIndexConcurrently tname idx) `finally` begin
           updateTableVersion
       where
         logMigration = do
@@ -822,15 +845,28 @@ checkDBConsistency options domains tablesWithVersions migrations = do
       validateMigrationsToRun migrationsToRun dbTablesWithVersions
       when (not . null $ migrationsToRun) $ do
         logInfo_ "Running migrations..."
-        forM_ migrationsToRun $ \mgr -> do
-          runMigration mgr
-
-          when (eoForceCommit options) $ do
+        forM_ migrationsToRun $ \mgr -> fix $ \loop -> do
+          let restartMigration query = do
+                logAttention "Failed to acquire a lock" $ object ["query" .= query]
+                logInfo_ "Restarting the migration shortly..."
+                liftIO $ threadDelay 1000000
+                loop
+          handleJust lockNotAvailable restartMigration $ do
+            forM_ (eoLockTimeoutMs options) $ \lockTimeout -> do
+              runSQL_ $ "SET LOCAL lock_timeout TO" <+> intToSQL lockTimeout
+            runMigration mgr `onException` rollback
             logInfo_ $ "Committing migration changes..."
             commit
-            logInfo_ $ "Committing migration changes done."
-            logInfo_ "!IMPORTANT! Database has been permanently changed"
         logInfo_ "Running migrations... done."
+      where
+        intToSQL :: Int -> SQL
+        intToSQL = unsafeSQL . show
+
+        lockNotAvailable :: DBException -> Maybe String
+        lockNotAvailable DBException{..}
+          | Just DetailedQueryError{..} <- cast dbeError
+          , qeErrorCode == LockNotAvailable = Just $ show dbeQueryContext
+          | otherwise                       = Nothing
 
     validateMigrationsToRun :: [Migration m] -> [(Text, Int32)] -> m ()
     validateMigrationsToRun migrationsToRun dbTablesWithVersions = do
@@ -1051,7 +1087,8 @@ fetchTableCheck (name, condition, validated) = Check {
 sqlGetIndexes :: Table -> SQL
 sqlGetIndexes table = toSQLCommand . sqlSelect "pg_catalog.pg_class c" $ do
   sqlResult "c.relname::text" -- index name
-  sqlResult $ "ARRAY(" <> selectCoordinates <> ")" -- array of index coordinates
+  sqlResult $ "ARRAY(" <> selectCoordinates "0" "i.indnkeyatts" <> ")" -- array of key columns in the index
+  sqlResult $ "ARRAY(" <> selectCoordinates "i.indnkeyatts" "i.indnatts" <> ")" -- array of included columns in the index
   sqlResult "am.amname::text" -- the method used (btree, gin etc)
   sqlResult "i.indisunique" -- is it unique?
   sqlResult "i.indisvalid"  -- is it valid?
@@ -1065,22 +1102,24 @@ sqlGetIndexes table = toSQLCommand . sqlSelect "pg_catalog.pg_class c" $ do
   sqlWhereIsNULL "r.contype" -- fetch only "pure" indexes
   where
     -- Get all coordinates of the index.
-    selectCoordinates = smconcat [
+    selectCoordinates start end = smconcat [
         "WITH RECURSIVE coordinates(k, name) AS ("
-      , "  VALUES (0, NULL)"
+      , "  VALUES (" <> start <> "::integer, NULL)"
       , "  UNION ALL"
       , "    SELECT k+1, pg_catalog.pg_get_indexdef(i.indexrelid, k+1, true)"
       , "      FROM coordinates"
-      , "     WHERE pg_catalog.pg_get_indexdef(i.indexrelid, k+1, true) != ''"
+      , "     WHERE k < " <> end
       , ")"
-      , "SELECT name FROM coordinates WHERE k > 0"
+      , "SELECT name FROM coordinates WHERE name IS NOT NULL"
       ]
 
-fetchTableIndex :: (String, Array1 String, String, Bool, Bool, Maybe String)
-                -> (TableIndex, RawSQL ())
-fetchTableIndex (name, Array1 columns, method, unique, valid, mconstraint) =
+fetchTableIndex
+  :: (String, Array1 String, Array1 String, String, Bool, Bool, Maybe String)
+  -> (TableIndex, RawSQL ())
+fetchTableIndex (name, Array1 keyColumns, Array1 includeColumns, method, unique, valid, mconstraint) =
   (TableIndex
-   { idxColumns = map unsafeSQL columns
+   { idxColumns = map (indexColumn . unsafeSQL) keyColumns
+   , idxInclude = map unsafeSQL includeColumns
    , idxMethod = read method
    , idxUnique = unique
    , idxValid = valid
