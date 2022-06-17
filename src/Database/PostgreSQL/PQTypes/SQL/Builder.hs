@@ -709,6 +709,9 @@ instance SqlResult SqlInsertSelect where
 instance SqlResult SqlUpdate where
   sqlResult1 cmd sql = cmd { sqlUpdateResult = sqlUpdateResult cmd ++ [sql] }
 
+instance SqlResult SqlDelete where
+  sqlResult1 cmd sql = cmd { sqlDeleteResult = sqlDeleteResult cmd ++ [sql] }
+
 sqlResult :: (MonadState v m, SqlResult v) => SQL -> m ()
 sqlResult sql = modify (\cmd -> sqlResult1 cmd sql)
 
