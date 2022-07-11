@@ -1400,7 +1400,7 @@ migrationTest5 connSource =
     checkCopyStringColumn = do
       runQuery_ . sqlSelect "bank" $ sqlResult "name_new"
       rows_new :: [Maybe T.Text] <- fetchMany runIdentity
-      runQuery_ . sqlSelect "bank" $ sqlResult "name_new"
+      runQuery_ . sqlSelect "bank" $ sqlResult "name"
       rows_old :: [Maybe T.Text] <- fetchMany runIdentity
       liftIO . assertEqual "All name_new are equal name" True $
         all (uncurry (==)) $ zip rows_new rows_old
