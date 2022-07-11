@@ -68,6 +68,12 @@ data MigrationAction m =
   -- repeatedly depending on the number of primary keys. See the last argument.
   --
   -- Number of primary keys fetched at once by the cursor SQL.
+  -- To handle multi-column primary keys, the following needs to be done:
+  --
+  --   1. Get the list of tuples from PostgreSQL.
+  --   2. Unzip them into a tuple of lists in Haskell.
+  --   3. Pass the lists to PostgreSQL as separate parameters and zip them back in the SQL,
+  --      see https://stackoverflow.com/questions/12414750/is-there-something-like-a-zip-function-in-postgresql-that-combines-two-arrays for more details.
   | forall t . FromRow t => ModifyColumnMigration SQL ([t] -> m ()) Int
 
 -- | Migration object.
