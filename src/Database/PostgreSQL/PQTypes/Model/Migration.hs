@@ -32,9 +32,9 @@ module Database.PostgreSQL.PQTypes.Model.Migration (
 import Data.Int
 
 import Database.PostgreSQL.PQTypes.FromRow (FromRow)
-import Database.PostgreSQL.PQTypes.SQL (SQL)
 import Database.PostgreSQL.PQTypes.Model.Index
 import Database.PostgreSQL.PQTypes.Model.Table
+import Database.PostgreSQL.PQTypes.SQL (SQL)
 import Database.PostgreSQL.PQTypes.SQL.Raw
 
 -- | Migration action to run, either an arbitrary 'MonadDB' action, or
@@ -61,6 +61,9 @@ data MigrationAction m =
 
   -- | Migration for modifying columns. Parameters are:
   --
+  -- Name of the table that the cursor is associated with. It has to be the same as in the
+  -- cursor SQL, see the second parameter.
+  --
   -- SQL that will be used for the cursor.
   --
   -- Function that takes a list of primary keys provided by the cursor SQL and
@@ -74,7 +77,7 @@ data MigrationAction m =
   --   2. Unzip them into a tuple of lists in Haskell.
   --   3. Pass the lists to PostgreSQL as separate parameters and zip them back in the SQL,
   --      see https://stackoverflow.com/questions/12414750/is-there-something-like-a-zip-function-in-postgresql-that-combines-two-arrays for more details.
-  | forall t . FromRow t => ModifyColumnMigration SQL ([t] -> m ()) Int
+  | forall t . FromRow t => ModifyColumnMigration (RawSQL ()) SQL ([t] -> m ()) Int
 
 -- | Migration object.
 data Migration m =

@@ -1298,6 +1298,13 @@ migrationTest5 connSource =
       sqlSetList "name" $ (\i -> "bank" <> show i) <$> numbers
       sqlSetList "location" $ (\i -> "location" <> show i) <$> numbers
 
+    -- Explicitly vacuum to update the catalog so that getting the row number estimates
+    -- works. The bracket_ trick is here because vacuum can't run inside a transaction
+    -- block, which every test runs in.
+    bracket_ (runSQL_ "COMMIT")
+             (runSQL_ "BEGIN")
+             (runSQL_ "VACUUM bank")
+
     forM_ (zip4 tables migrations steps assertions) $
       \(table, migration, step', assertion) -> do
         step step'
@@ -1309,7 +1316,7 @@ migrationTest5 connSource =
 
   where
     -- Chosen by a fair dice roll.
-    numbers = [1..21] :: [Int]
+    numbers = [1..101] :: [Int]
     table1 = tableBankSchema1
     tables = [ table1 { tblVersion = 2
                       , tblColumns = tblColumns table1 ++ [stringColumn]
@@ -1366,7 +1373,7 @@ migrationTest5 connSource =
     copyStringColumnMigration = Migration
       { mgrTableName = "bank"
       , mgrFrom = 2
-      , mgrAction = ModifyColumnMigration cursorSql copyColumnSql 5
+      , mgrAction = ModifyColumnMigration "bank" cursorSql copyColumnSql 5
       }
     copyColumnSql :: MonadDB m => [Identity UUID] -> m ()
     copyColumnSql primaryKeys =
@@ -1384,7 +1391,7 @@ migrationTest5 connSource =
     modifyBoolColumnMigration = Migration
       { mgrTableName = "bank"
       , mgrFrom = 4
-      , mgrAction = ModifyColumnMigration cursorSql modifyColumnSql 100
+      , mgrAction = ModifyColumnMigration "bank" cursorSql modifyColumnSql 120
       }
     modifyColumnSql :: MonadDB m => [Identity UUID] -> m ()
     modifyColumnSql primaryKeys =

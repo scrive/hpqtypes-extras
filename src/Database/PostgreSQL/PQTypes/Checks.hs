@@ -830,16 +830,42 @@ checkDBConsistency options domains tablesWithVersions migrations = do
           runQuery_ (sqlDropIndexConcurrently tname idx) `finally` begin
           updateTableVersion
 
-        ModifyColumnMigration cursorSql updateSql batchSize -> do
+        ModifyColumnMigration tableName cursorSql updateSql batchSize -> do
           logMigration
           withCursorSQL "migration_cursor" NoScroll Hold cursorSql $ \cursor -> do
-            fix $ \loop -> do
-              cursorFetch_ cursor (CD_Forward batchSize)
-              primaryKeys <- fetchMany id
-              unless (null primaryKeys) $ do
-                updateSql primaryKeys
-                commit
-                loop
+            -- Vacuum should be done approximately once every 5% of the table has been
+            -- updated, or every 50 rows as a minimum.
+            --
+            -- In PostgreSQL, when a record is updated, a new version of this record is
+            -- created. The old one is destroyed by the "vacuum" command when no
+            -- transaction needs it anymore. So there's an autovacuum daemon whose purpose
+            -- is to do this cleanup, and that is sufficient most of the time. We assume
+            -- that it's tuned to try to keep the "bloat" (dead records) at around 10% of
+            -- the table size in the environment, and it's also tuned to not saturate the
+            -- server with IO operations while doing the vacuum - vacuuming is IO
+            -- intensive as there are a lot of reads and rewrites, which makes it slow and
+            -- costly. So, autovacuum wouldn't be able to keep up with the aggressive
+            -- batch update. Therefore we need to run vacuum ourselves, to keep things in
+            -- check. The 5% limit is arbitrary, but a reasonable ballpark estimate: it
+            -- more or less makes sure we keep dead records in the 10% envelope and the
+            -- table doesn't grow too much during the operation.
+            vacuumThreshold <- max 50 . fromIntegral . (`div` 20) <$> getRowEstimate tableName
+            let cursorLoop processed = do
+                  cursorFetch_ cursor (CD_Forward batchSize)
+                  primaryKeys <- fetchMany id
+                  logInfo_ $ T.pack $ "PKS: " ++ show (length primaryKeys)
+                  unless (null primaryKeys) $ do
+                    updateSql primaryKeys
+                    commit
+                    if processed + batchSize >= vacuumThreshold
+                    then do
+                      bracket_ (runSQL_ "COMMIT")
+                               (runSQL_ "BEGIN")
+                               (runQuery_ $ "VACUUM" <+> tableName)
+                      cursorLoop 0
+                    else
+                      cursorLoop (processed + batchSize)
+            cursorLoop 0
           updateTableVersion
 
       where
@@ -851,6 +877,16 @@ checkDBConsistency options domains tablesWithVersions migrations = do
           runQuery_ $ sqlUpdate "table_versions" $ do
             sqlSet "version"  (succ mgrFrom)
             sqlWhereEq "name" (T.unpack . unRawSQL $ mgrTableName)
+
+        -- Get the estimated number of rows of the given table. It might not work properly
+        -- if the table is present in multiple database schemas.
+        -- See https://wiki.postgresql.org/wiki/Count_estimate.
+        getRowEstimate :: MonadDB m => RawSQL () -> m Int32
+        getRowEstimate tableName = do
+          runQuery_ . sqlSelect "pg_class" $ do
+            sqlResult "reltuples::integer"
+            sqlWhereEq "relname" $ unRawSQL tableName
+          fetchOne runIdentity
 
     runMigrations :: [(Text, Int32)] -> m ()
     runMigrations dbTablesWithVersions = do
