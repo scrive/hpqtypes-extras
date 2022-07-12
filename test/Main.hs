@@ -613,12 +613,12 @@ testDBSchema1 step = do
   -- Populate the 'witness' table.
   runQuery_ . sqlInsert "witness" $ do
     sqlSetList "firstname" ["Meredith" :: T.Text, "Charlie", "Peter", "Emun"
-                           ,"Benedict"]
+                           ,"Benedict", "Erica"]
     sqlSetList "lastname" ["Vickers"::T.Text, "Holloway", "Weyland", "Eliott"
-                          ,"Wong"]
+                          ,"Wong", "Hackett"]
     sqlResult "id"
   (witnessIds :: [UUID]) <- fetchMany runIdentity
-  liftIO $ assertEqual "INSERT into 'witness' table" 5 (length witnessIds)
+  liftIO $ assertEqual "INSERT into 'witness' table" 6 (length witnessIds)
 
   -- Populate the 'witnessed_robbery' table.
   runQuery_ . sqlInsert "witnessed_robbery" $ do
@@ -636,6 +636,18 @@ testDBSchema1 step = do
   (robberyWitnessIds' :: [UUID]) <- fetchMany runIdentity
   liftIO $ assertEqual "INSERT into 'witnessed_robbery' table" 3
     (length robberyWitnessIds')
+
+  do
+    deletedRows <- runQuery . sqlDelete "witness" $ do
+      sqlWhereEq "id" $ witnessIds !! 5
+      sqlResult "firstname"
+      sqlResult "lastname"
+    liftIO $ assertEqual "DELETE FROM 'witness' table" 1 deletedRows
+
+    deletedName <- fetchOne id
+    liftIO $ assertEqual "DELETE FROM 'witness' table RETURNING firstname, lastname"
+      ("Erica" :: String, "Hackett" :: String)
+      deletedName
 
   return (badGuyIds, robberyIds)
 

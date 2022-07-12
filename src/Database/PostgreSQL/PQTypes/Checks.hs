@@ -809,14 +809,14 @@ checkDBConsistency options domains tablesWithVersions migrations = do
           -- because using 'commit' function automatically starts another
           -- transaction. We don't want that as concurrent creation of index
           -- won't run inside a transaction.
-          runSQL_ "COMMIT"
-          -- If migration was run before but creation of an index failed, index
-          -- will be left in the database in an inactive state, so when we
-          -- rerun, we need to remove it first (see
-          -- https://www.postgresql.org/docs/9.6/sql-createindex.html for more
-          -- information).
-          runQuery_ $ "DROP INDEX CONCURRENTLY IF EXISTS" <+> quoted (indexName tname idx)
-          runQuery_ (sqlCreateIndexConcurrently tname idx) `finally` begin
+          bracket_ (runSQL_ "COMMIT") (runSQL_ "BEGIN") $ do
+            -- If migration was run before but creation of an index failed, index
+            -- will be left in the database in an inactive state, so when we
+            -- rerun, we need to remove it first (see
+            -- https://www.postgresql.org/docs/9.6/sql-createindex.html for more
+            -- information).
+            runQuery_ $ "DROP INDEX CONCURRENTLY IF EXISTS" <+> quoted (indexName tname idx)
+            runQuery_ (sqlCreateIndexConcurrently tname idx)
           updateTableVersion
 
         DropIndexConcurrentlyMigration tname idx -> do
@@ -826,8 +826,8 @@ checkDBConsistency options domains tablesWithVersions migrations = do
           -- because using 'commit' function automatically starts another
           -- transaction. We don't want that as concurrent dropping of index
           -- won't run inside a transaction.
-          runSQL_ "COMMIT"
-          runQuery_ (sqlDropIndexConcurrently tname idx) `finally` begin
+          bracket_ (runSQL_ "COMMIT") (runSQL_ "BEGIN") $ do
+            runQuery_ (sqlDropIndexConcurrently tname idx)
           updateTableVersion
       where
         logMigration = do
