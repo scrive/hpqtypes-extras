@@ -1,8 +1,12 @@
 module Main where
 
 import Control.Monad.Catch
+import Control.Monad (forM_)
 import Control.Monad.IO.Class
 import Data.Either
+import Data.List (zip4)
+import Data.Monoid
+import Prelude
 import Data.Typeable
 import Data.UUID.Types
 import qualified Data.Set as Set
@@ -1292,6 +1296,144 @@ triggerTests connSource =
 eitherExc :: MonadCatch m => (SomeException -> m ()) -> (a -> m ()) -> m a -> m ()
 eitherExc left right c = try c >>= either left right
 
+migrationTest5 :: ConnectionSourceM (LogT IO) -> TestTree
+migrationTest5 connSource =
+  testCaseSteps' "Migration test 5" connSource $ \step -> do
+    freshTestDB step
+
+    step "Creating the database (schema version 1)..."
+    migrateDatabase defaultExtrasOptions ["pgcrypto"] [] [] [table1] [createTableMigration table1]
+    checkDatabase defaultExtrasOptions [] [] [table1]
+
+    step "Populating the 'bank' table..."
+    runQuery_ . sqlInsert "bank" $ do
+      sqlSetList "name" $ (\i -> "bank" <> show i) <$> numbers
+      sqlSetList "location" $ (\i -> "location" <> show i) <$> numbers
+
+    -- Explicitly vacuum to update the catalog so that getting the row number estimates
+    -- works. The bracket_ trick is here because vacuum can't run inside a transaction
+    -- block, which every test runs in.
+    bracket_ (runSQL_ "COMMIT")
+             (runSQL_ "BEGIN")
+             (runSQL_ "VACUUM bank")
+
+    forM_ (zip4 tables migrations steps assertions) $
+      \(table, migration, step', assertion) -> do
+        step step'
+        migrateDatabase defaultExtrasOptions ["pgcrypto"] [] [] [table] [migration]
+        checkDatabase defaultExtrasOptions [] [] [table]
+        uncurry assertNoException assertion
+
+    freshTestDB step
+
+  where
+    -- Chosen by a fair dice roll.
+    numbers = [1..101] :: [Int]
+    table1 = tableBankSchema1
+    tables = [ table1 { tblVersion = 2
+                      , tblColumns = tblColumns table1 ++ [stringColumn]
+                      }
+             , table1 { tblVersion = 3
+                      , tblColumns = tblColumns table1 ++ [stringColumn]
+                      }
+             , table1 { tblVersion = 4
+                      , tblColumns = tblColumns table1 ++ [stringColumn, boolColumn]
+                      }
+             , table1 { tblVersion = 5
+                      , tblColumns = tblColumns table1 ++ [stringColumn, boolColumn]
+                      }
+             ]
+
+    migrations = [ addStringColumnMigration
+                 , copyStringColumnMigration
+                 , addBoolColumnMigration
+                 , modifyBoolColumnMigration
+                 ]
+
+    steps = [ "Adding string column (version 1 -> version 2)..."
+            , "Copying string column (version 2 -> version 3)..."
+            , "Adding bool column (version 3 -> version 4)..."
+            , "Modifying bool column (version 4 -> version 5)..."
+            ]
+
+    assertions =
+      [ ("Check that the string column has been added" :: String, checkAddStringColumn)
+      , ("Check that the string data has been copied", checkCopyStringColumn)
+      , ("Check that the bool column has been added", checkAddBoolColumn)
+      , ("Check that the bool column has been modified", checkModifyBoolColumn)
+      ]
+
+    stringColumn = tblColumn { colName = "name_new"
+                             , colType = TextT
+                             }
+
+    boolColumn = tblColumn { colName = "name_is_true"
+                            , colType = BoolT
+                            , colNullable = False
+                            , colDefault = Just "false"
+                            }
+
+    cursorSql = "SELECT id FROM bank" :: SQL
+
+    addStringColumnMigration = Migration
+      { mgrTableName = "bank"
+      , mgrFrom = 1
+      , mgrAction = StandardMigration $
+        runQuery_ $ sqlAlterTable "bank" [ sqlAddColumn stringColumn ]
+      }
+
+    copyStringColumnMigration = Migration
+      { mgrTableName = "bank"
+      , mgrFrom = 2
+      , mgrAction = ModifyColumnMigration "bank" cursorSql copyColumnSql 1000
+      }
+    copyColumnSql :: MonadDB m => [Identity UUID] -> m ()
+    copyColumnSql primaryKeys =
+      runQuery_ . sqlUpdate "bank" $ do
+        sqlSetCmd "name_new" "bank.name"
+        sqlWhereIn "bank.id" $ runIdentity <$> primaryKeys
+
+    addBoolColumnMigration = Migration
+      { mgrTableName = "bank"
+      , mgrFrom = 3
+      , mgrAction = StandardMigration $
+        runQuery_ $ sqlAlterTable "bank" [ sqlAddColumn boolColumn ]
+      }
+
+    modifyBoolColumnMigration = Migration
+      { mgrTableName = "bank"
+      , mgrFrom = 4
+      , mgrAction = ModifyColumnMigration "bank" cursorSql modifyColumnSql 1000
+      }
+    modifyColumnSql :: MonadDB m => [Identity UUID] -> m ()
+    modifyColumnSql primaryKeys =
+      runQuery_ . sqlUpdate "bank" $ do
+        sqlSet "name_is_true" True
+        sqlWhereIn "bank.id" $ runIdentity <$> primaryKeys
+
+    checkAddStringColumn = do
+      runQuery_ . sqlSelect "bank" $ sqlResult "name_new"
+      rows :: [Maybe T.Text] <- fetchMany runIdentity
+      liftIO . assertEqual "No name_new in empty column" True $ all (== Nothing) rows
+
+    checkCopyStringColumn = do
+      runQuery_ . sqlSelect "bank" $ sqlResult "name_new"
+      rows_new :: [Maybe T.Text] <- fetchMany runIdentity
+      runQuery_ . sqlSelect "bank" $ sqlResult "name"
+      rows_old :: [Maybe T.Text] <- fetchMany runIdentity
+      liftIO . assertEqual "All name_new are equal name" True $
+        all (uncurry (==)) $ zip rows_new rows_old
+
+    checkAddBoolColumn = do
+      runQuery_ . sqlSelect "bank" $ sqlResult "name_is_true"
+      rows :: [Maybe Bool] <- fetchMany runIdentity
+      liftIO . assertEqual "All name_is_true default to false" True $ all (== Just False) rows
+
+    checkModifyBoolColumn = do
+      runQuery_ . sqlSelect "bank" $ sqlResult "name_is_true"
+      rows :: [Maybe Bool] <- fetchMany runIdentity
+      liftIO . assertEqual "All name_is_true are true" True $ all (== Just True) rows
+
 assertNoException :: String -> TestM () -> TestM ()
 assertNoException t c = eitherExc
   (const $ liftIO $ assertFailure ("Exception thrown for: " ++ t))
@@ -1331,6 +1473,7 @@ main = do
                          , migrationTest2 connSource
                          , migrationTest3 connSource
                          , migrationTest4 connSource
+                         , migrationTest5 connSource
                          , triggerTests connSource
                          ]
   where
