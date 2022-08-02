@@ -1,3 +1,7 @@
+# hpqtypes-extras-1.16.1.0 (2022-08-02)
+* Add support for `sqlResult` in `sqlDelete`.
+* Add a migration type for modifying columns.
+
 # hpqtypes-extras-1.16.0.0 (2022-05-20)
 * Trigger functions are now part of triggers and have their names generated.
 
