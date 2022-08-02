@@ -1373,7 +1373,7 @@ migrationTest5 connSource =
     copyStringColumnMigration = Migration
       { mgrTableName = "bank"
       , mgrFrom = 2
-      , mgrAction = ModifyColumnMigration "bank" cursorSql copyColumnSql 5
+      , mgrAction = ModifyColumnMigration "bank" cursorSql copyColumnSql 1000
       }
     copyColumnSql :: MonadDB m => [Identity UUID] -> m ()
     copyColumnSql primaryKeys =
@@ -1391,7 +1391,7 @@ migrationTest5 connSource =
     modifyBoolColumnMigration = Migration
       { mgrTableName = "bank"
       , mgrFrom = 4
-      , mgrAction = ModifyColumnMigration "bank" cursorSql modifyColumnSql 120
+      , mgrAction = ModifyColumnMigration "bank" cursorSql modifyColumnSql 1000
       }
     modifyColumnSql :: MonadDB m => [Identity UUID] -> m ()
     modifyColumnSql primaryKeys =
