@@ -15,7 +15,9 @@ module Database.PostgreSQL.PQTypes.Checks (
 
 import Control.Arrow ((&&&))
 import Control.Concurrent (threadDelay)
+import Control.Monad
 import Control.Monad.Catch
+import Control.Monad.Fix
 import Control.Monad.Reader
 import Data.Int
 import Data.Function (on)
