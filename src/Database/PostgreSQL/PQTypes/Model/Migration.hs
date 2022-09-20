@@ -31,8 +31,10 @@ module Database.PostgreSQL.PQTypes.Model.Migration (
 
 import Data.Int
 
+import Database.PostgreSQL.PQTypes.FromRow (FromRow)
 import Database.PostgreSQL.PQTypes.Model.Index
 import Database.PostgreSQL.PQTypes.Model.Table
+import Database.PostgreSQL.PQTypes.SQL (SQL)
 import Database.PostgreSQL.PQTypes.SQL.Raw
 
 -- | Migration action to run, either an arbitrary 'MonadDB' action, or
@@ -57,6 +59,26 @@ data MigrationAction m =
       (RawSQL ()) -- ^ Table name
       TableIndex  -- ^ Index
 
+  -- | Migration for modifying columns. Parameters are:
+  --
+  -- Name of the table that the cursor is associated with. It has to be the same as in the
+  -- cursor SQL, see the second parameter.
+  --
+  -- SQL that will be used for the cursor.
+  --
+  -- Function that takes a list of primary keys provided by the cursor SQL and
+  -- runs an arbitrary computation within MonadDB. The function might be called
+  -- repeatedly depending on the number of primary keys. See the last argument.
+  --
+  -- Number of primary keys fetched at once by the cursor SQL.
+  -- To handle multi-column primary keys, the following needs to be done:
+  --
+  --   1. Get the list of tuples from PostgreSQL.
+  --   2. Unzip them into a tuple of lists in Haskell.
+  --   3. Pass the lists to PostgreSQL as separate parameters and zip them back in the SQL,
+  --      see https://stackoverflow.com/questions/12414750/is-there-something-like-a-zip-function-in-postgresql-that-combines-two-arrays for more details.
+  | forall t . FromRow t => ModifyColumnMigration (RawSQL ()) SQL ([t] -> m ()) Int
+
 -- | Migration object.
 data Migration m =
   Migration {
@@ -78,6 +100,7 @@ isStandardMigration Migration{..} =
     DropTableMigration{}               -> False
     CreateIndexConcurrentlyMigration{} -> False
     DropIndexConcurrentlyMigration{}   -> False
+    ModifyColumnMigration{}            -> False
 
 isDropTableMigration :: Migration m -> Bool
 isDropTableMigration Migration{..} =
@@ -86,3 +109,4 @@ isDropTableMigration Migration{..} =
     DropTableMigration{}               -> True
     CreateIndexConcurrentlyMigration{} -> False
     DropIndexConcurrentlyMigration{}   -> False
+    ModifyColumnMigration{}            -> False

@@ -4,3 +4,4 @@
 cabal.project
 cabal.project.local
 .ghc.environment.*
+.vscode
