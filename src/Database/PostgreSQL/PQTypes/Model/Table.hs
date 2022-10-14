@@ -28,16 +28,18 @@ import Database.PostgreSQL.PQTypes.Model.PrimaryKey
 import Database.PostgreSQL.PQTypes.Model.Trigger
 
 data TableColumn = TableColumn {
-  colName     :: RawSQL ()
-, colType     :: ColumnType
-, colNullable :: Bool
-, colDefault  :: Maybe (RawSQL ())
+  colName      :: RawSQL ()
+, colType      :: ColumnType
+, colCollation :: Maybe (RawSQL ())
+, colNullable  :: Bool
+, colDefault   :: Maybe (RawSQL ())
 } deriving Show
 
 tblColumn :: TableColumn
 tblColumn = TableColumn {
   colName = error "tblColumn: column name must be specified"
 , colType = error "tblColumn: column type must be specified"
+, colCollation = Nothing
 , colNullable = True
 , colDefault = Nothing
 }
@@ -47,6 +49,7 @@ sqlAddColumn TableColumn{..} = smconcat [
     "ADD COLUMN"
   , colName
   , columnTypeToSQL colType
+  , maybe "" (\c -> "COLLATE \"" <> c <> "\"") colCollation
   , if colNullable then "NULL" else "NOT NULL"
   , maybe "" ("DEFAULT" <+>) colDefault
   ]
