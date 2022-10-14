@@ -428,12 +428,12 @@ withMaterializedSupported :: IORef Bool
 withMaterializedSupported = unsafePerformIO $ newIORef False
 
 -- This has to be a thunk because we are using the IORef reading in unsafePerformIO
-isWithMaterializedSupported :: () -> Bool
-isWithMaterializedSupported _ = unsafePerformIO $ readIORef withMaterializedSupported
+isWithMaterializedSupported :: Bool
+isWithMaterializedSupported = unsafePerformIO $ readIORef withMaterializedSupported
 
 materializedClause :: Materialized -> SQL
-materializedClause Materialized = if isWithMaterializedSupported () then "MATERIALIZED" else ""
-materializedClause NonMaterialized = if isWithMaterializedSupported () then "NOT MATERIALIZED" else ""
+materializedClause Materialized = if isWithMaterializedSupported then "MATERIALIZED" else ""
+materializedClause NonMaterialized = if isWithMaterializedSupported then "NOT MATERIALIZED" else ""
 
 instance Sqlable SqlUpdate where
   toSQLCommand cmd =
