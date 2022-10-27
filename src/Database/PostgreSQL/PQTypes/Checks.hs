@@ -399,6 +399,12 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version)
       runQuery_ $ sqlSelect "pg_catalog.pg_attribute a" $ do
         sqlResult "a.attname::text"
         sqlResult "pg_catalog.format_type(a.atttypid, a.atttypmod)"
+        sqlResult . parenthesize . toSQLCommand $
+          sqlSelect "pg_catalog.pg_collation c, pg_catalog.pg_type t" $ do
+            sqlResult "c.collname::text"
+            -- `typcollation` specifies the default collation of the type (if
+            -- any), and `attcollation` is the collation of the column.
+            sqlWhere "c.oid = a.attcollation AND t.oid = a.atttypid AND a.attcollation <> t.typcollation"
         sqlResult "NOT a.attnotnull"
         sqlResult . parenthesize . toSQLCommand $
           sqlSelect "pg_catalog.pg_attrdef d" $ do
@@ -430,10 +436,11 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version)
         ]
       where
         fetchTableColumn
-          :: (String, ColumnType, Bool, Maybe String) -> TableColumn
-        fetchTableColumn (name, ctype, nullable, mdefault) = TableColumn {
+          :: (String, ColumnType, Maybe Text, Bool, Maybe String) -> TableColumn
+        fetchTableColumn (name, ctype, collation, nullable, mdefault) = TableColumn {
             colName = unsafeSQL name
           , colType = ctype
+          , colCollation = flip rawSQL () <$> collation
           , colNullable = nullable
           , colDefault = unsafeSQL `liftM` mdefault
           }

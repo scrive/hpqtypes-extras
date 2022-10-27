@@ -71,8 +71,10 @@ tableBankSchema1 =
                 , colNullable = False
                 , colDefault = Just "gen_random_uuid()" }
     , tblColumn { colName = "name",     colType = TextT
+                , colCollation = Just "en_US"
                 , colNullable = False }
     , tblColumn { colName = "location", colType = TextT
+                , colCollation = Just "C"
                 , colNullable = False }
     ]
   , tblPrimaryKey = pkOnColumn "id"
@@ -638,6 +640,45 @@ testDBSchema1 step = do
   (robberyWitnessIds' :: [UUID]) <- fetchMany runIdentity
   liftIO $ assertEqual "INSERT into 'witnessed_robbery' table" 3
     (length robberyWitnessIds')
+
+  -- Create a new record to test order-by case sensitivity.
+  runQuery_ . sqlInsert "bank" $ do
+    sqlSet "name" ("byblos bank" :: T.Text)
+    sqlSet "location" ("SYRIA" :: T.Text)
+
+  -- Check that ordering results by the "location" column uses case-sensitive
+  -- sorting (since the collation method for that column is "C").
+  runQuery_ . sqlSelect "bank" $ do
+    sqlResult "location"
+    sqlOrderBy "location"
+
+  details8 <- fetchMany runIdentity
+  liftIO $ assertEqual "Using collation method \"C\" leads to case-sensitive ordering of results"
+    [ "18 Bargatan, Stockholm, Sweden" :: String
+    , "2/3 Quux Ave., Milton Keynes, UK"
+    , "23 Baz Lane, Liverpool, UK"
+    , "6600 Sunset Blvd., Los Angeles, CA, USA"
+    , "SYRIA"
+    , "Spain"
+    ]
+    details8
+
+  -- Check that ordering results by the "name" column uses case-insensitive
+  -- sorting (since the collation method for that column is "en_US").
+  runQuery_ . sqlSelect "bank" $ do
+    sqlResult "name"
+    sqlOrderBy "name"
+
+  details9 <- fetchMany runIdentity
+  liftIO $ assertEqual "Using collation method \"en_US\" leads to case-insensitive ordering of results"
+    [ "byblos bank" :: String
+    , "Citi"
+    , "Nordea"
+    , "Santander"
+    , "Swedbank"
+    , "Wells Fargo"
+    ]
+    details9
 
   do
     deletedRows <- runQuery . sqlDelete "witness" $ do
