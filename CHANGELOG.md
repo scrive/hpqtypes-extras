@@ -1,3 +1,6 @@
+# hpqtypes-extras-1.16.2.0 (2022-10-27)
+* Add support for setting collation method for columns.
+
 # hpqtypes-extras-1.16.1.0 (2022-08-02)
 * Add support for `sqlResult` in `sqlDelete`.
 * Add a migration type for modifying columns.
