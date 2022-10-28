@@ -416,6 +416,9 @@ instance Sqlable SqlInsertSelect where
     , emitClausesSepComma "RETURNING" $ sqlInsertSelectResult cmd
     ]
 
+-- This function has to be called as one of first things in your program
+-- for the library to make sure that it is aware if the "WITH MATERIALIZED"
+-- clause is supported by your PostgreSQL version.
 checkAndRememberMaterializationSupport :: (MonadDB m, MonadIO m, MonadMask m) => m ()
 checkAndRememberMaterializationSupport = do
   res :: Either DBException Int64 <- try . withNewConnection $ do
