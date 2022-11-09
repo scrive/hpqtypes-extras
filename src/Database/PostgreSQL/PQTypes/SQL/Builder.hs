@@ -430,7 +430,6 @@ withMaterializedSupported :: IORef Bool
 {-# NOINLINE withMaterializedSupported #-}
 withMaterializedSupported = unsafePerformIO $ newIORef False
 
--- This has to be a thunk because we are using the IORef reading in unsafePerformIO
 isWithMaterializedSupported :: Bool
 isWithMaterializedSupported = unsafePerformIO $ readIORef withMaterializedSupported
 
