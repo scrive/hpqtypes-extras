@@ -8,9 +8,9 @@
 #
 # For more information, see https://github.com/haskell-CI/haskell-ci
 #
-# version: 0.15.20220730
+# version: 0.15.202211107
 #
-# REGENDATA ("0.15.20220730",["github","--config=cabal.haskell-ci","hpqtypes-extras.cabal"])
+# REGENDATA ("0.15.202211107",["github","--config=cabal.haskell-ci","hpqtypes-extras.cabal"])
 #
 name: Haskell-CI
 on:
@@ -22,7 +22,7 @@ on:
       - master
 jobs:
   linux:
-    name: Haskell-CI - Linux - ${{ matrix.compiler }}
+    name: Haskell-CI - Linux - ${{ matrix.compiler }} - Postgres ${{ matrix.postgres-version }}
     runs-on: ubuntu-20.04
     timeout-minutes:
       60
@@ -30,7 +30,7 @@ jobs:
       image: buildpack-deps:bionic
     services:
       postgres:
-        image: postgres:11
+        image: postgres:${{matrix.postgres-version}}
         env:
           POSTGRES_PASSWORD: postgres
         options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
@@ -38,26 +38,66 @@ jobs:
     strategy:
       matrix:
         include:
+          - compiler: ghc-9.4.2
+            compilerKind: ghc
+            compilerVersion: 9.4.2
+            setup-method: ghcup
+            allow-failure: false
+            postgres-version: "11"
+          - compiler: ghc-9.4.2
+            compilerKind: ghc
+            compilerVersion: 9.4.2
+            setup-method: ghcup
+            allow-failure: false
+            postgres-version: "14"
           - compiler: ghc-9.2.4
             compilerKind: ghc
             compilerVersion: 9.2.4
             setup-method: ghcup
             allow-failure: false
+            postgres-version: "11"
+          - compiler: ghc-9.2.4
+            compilerKind: ghc
+            compilerVersion: 9.2.4
+            setup-method: ghcup
+            allow-failure: false
+            postgres-version: "14"
           - compiler: ghc-9.0.2
             compilerKind: ghc
             compilerVersion: 9.0.2
             setup-method: ghcup
             allow-failure: false
+            postgres-version: "11"
+          - compiler: ghc-9.0.2
+            compilerKind: ghc
+            compilerVersion: 9.0.2
+            setup-method: ghcup
+            allow-failure: false
+            postgres-version: "14"
           - compiler: ghc-8.10.7
             compilerKind: ghc
             compilerVersion: 8.10.7
             setup-method: ghcup
             allow-failure: false
+            postgres-version: "11"
+          - compiler: ghc-8.10.7
+            compilerKind: ghc
+            compilerVersion: 8.10.7
+            setup-method: ghcup
+            allow-failure: false
+            postgres-version: "14"
           - compiler: ghc-8.8.4
             compilerKind: ghc
             compilerVersion: 8.8.4
             setup-method: hvr-ppa
             allow-failure: false
+            postgres-version: "11"
+          - compiler: ghc-8.8.4
+            compilerKind: ghc
+            compilerVersion: 8.8.4
+            setup-method: hvr-ppa
+            allow-failure: false
+            postgres-version: "14"
       fail-fast: false
     steps:
       - name: apt
@@ -153,7 +193,7 @@ jobs:
       - name: cache (tools)
         uses: actions/cache@v2
         with:
-          key: ${{ runner.os }}-${{ matrix.compiler }}-tools-82ff35eb
+          key: ${{ runner.os }}-${{ matrix.compiler }}-tools-ca962b92
           path: ~/.haskell-ci-tools
       - name: install cabal-plan
         run: |
