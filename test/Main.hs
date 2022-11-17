@@ -1497,7 +1497,7 @@ testCaseSteps' :: TestName -> ConnectionSourceM (LogT IO)
 testCaseSteps' testName connSource f =
   testCaseSteps testName $ \step' -> do
   let step s = liftIO $ step' s
-  withSimpleStdOutLogger $ \logger ->
+  withStdOutLogger $ \logger ->
     runLogT "hpqtypes-extras-test" logger defaultLogLevel $
     runDBT connSource defaultTransactionSettings $
     f step
