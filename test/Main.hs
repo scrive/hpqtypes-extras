@@ -1199,6 +1199,64 @@ testTriggers step = do
       runSQL_ "DELETE FROM table_versions WHERE name = 'bank'";
       migrate [tableBankSchema1] [createTableMigration tableBankSchema1]
 
+testSqlWith :: HasCallStack => (String -> TestM ()) -> TestM ()
+testSqlWith step = do
+  step "Running sql WITH tests"
+  testPass
+  runSQL_ "DELETE FROM bank"
+  step "Checking for WITH MATERIALIZED support"
+  checkAndRememberMaterializationSupport 
+  step "Running sql WITH tests again with WITH MATERIALIZED support flag set"
+  testPass
+  where
+    migrate tables migrations = do
+      migrateDatabase defaultExtrasOptions ["pgcrypto"] [] [] tables migrations
+      checkDatabase defaultExtrasOptions [] [] tables
+    testPass = do
+      step "create the initial database"
+      migrate [tableBankSchema1] [createTableMigration tableBankSchema1]
+      step "inserting initial data"
+      runQuery_ . sqlInsert "bank" $ do
+        sqlSetList "name" (["HSBC" :: T.Text, "other"])
+        sqlSetList "location" (["13 Foo St., Tucson" :: T.Text, "no address"])
+        sqlResult "id"
+      step "testing WITH .. INSERT SELECT"
+      runQuery_ . sqlInsertSelect "bank" "bank_name" $ do
+        sqlWith "bank_name" $ do
+          sqlSelect "bank" $ do
+            sqlResult "'another'"
+            sqlLimit (1 :: Int)
+        sqlFrom "bank_name"
+        sqlSetCmd "name" "bank_name"
+        sqlSet "location" ("Other side" :: T.Text)
+      step "testing WITH .. UPDATE"
+      runQuery_ . sqlUpdate "bank" $ do
+        sqlWith "other_bank" $ do
+          sqlSelect "bank" $ do
+            sqlWhereEq "name" ("other" :: T.Text)
+            sqlResult "id"
+        sqlFrom "other_bank"
+        sqlSet "location" ("abcd" :: T.Text)
+        sqlWhereInSql "bank.id" $ mkSQL "other_bank.id"
+        sqlResult "bank.id"
+      step "testing WITH .. DELETE"
+      runQuery_ . sqlDelete "bank" $ do
+        sqlWith "other_bank" $ do
+          sqlSelect "bank" $ do
+            sqlWhereEq "name" ("other" :: T.Text)
+            sqlResult "id"
+        sqlFrom "other_bank"
+        sqlWhereInSql "bank.id" $ mkSQL "other_bank.id"
+      step "testing WITH .. SELECT"
+      runQuery_ . sqlSelect "bank" $ do
+        sqlWith "other_bank" $ do
+          sqlSelect "bank" $ do
+            sqlResult "name"
+        sqlFrom "other_bank"
+        sqlResult "other_bank.name"
+      (results :: [T.Text]) <- fetchMany runIdentity
+      liftIO $ assertEqual "Wrong number of banks left" 2 (length results)
+
 migrationTest1 :: ConnectionSourceM (LogT IO) -> TestTree
 migrationTest1 connSource =
   testCaseSteps' "Migration test 1" connSource $ \step -> do
@@ -1333,6 +1391,12 @@ triggerTests connSource =
   testCaseSteps' "Trigger tests" connSource $ \step -> do
     freshTestDB  step
     testTriggers step
+
+sqlWithTests :: ConnectionSourceM (LogT IO) -> TestTree
+sqlWithTests connSource =
+  testCaseSteps' "sql WITH tests" connSource $ \step -> do
+    freshTestDB step
+    testSqlWith step
 
 eitherExc :: MonadCatch m => (SomeException -> m ()) -> (a -> m ()) -> m a -> m ()
 eitherExc left right c = try c >>= either left right
@@ -1516,6 +1580,7 @@ main = do
                          , migrationTest4 connSource
                          , migrationTest5 connSource
                          , triggerTests connSource
+                         , sqlWithTests connSource
                          ]
   where
     ings =

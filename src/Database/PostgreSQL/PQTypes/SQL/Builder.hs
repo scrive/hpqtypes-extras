@@ -126,7 +126,9 @@ module Database.PostgreSQL.PQTypes.SQL.Builder
   , sqlLimit
   , sqlDistinct
   , sqlWith
+  , sqlWithMaterialized
   , sqlUnion
+  , checkAndRememberMaterializationSupport
 
   , sqlSelect
   , sqlSelect2
@@ -166,12 +168,17 @@ module Database.PostgreSQL.PQTypes.SQL.Builder
   where
 
 import Control.Monad.State
+import Control.Monad.Catch
+import Data.Int
+import Data.IORef
+import Data.Either
 import Data.List
 import Data.Maybe
 import Data.Monoid.Utils
 import Data.String
 import Data.Typeable
 import Database.PostgreSQL.PQTypes
+import System.IO.Unsafe
 
 class Sqlable a where
   toSQLCommand :: a -> SQL
@@ -231,7 +238,7 @@ data SqlSelect = SqlSelect
   , sqlSelectHaving   :: [SQL]
   , sqlSelectOffset   :: Integer
   , sqlSelectLimit    :: Integer
-  , sqlSelectWith     :: [(SQL, SQL)]
+  , sqlSelectWith     :: [(SQL, SQL, Materialized)]
   }
 
 data SqlUpdate = SqlUpdate
@@ -240,7 +247,7 @@ data SqlUpdate = SqlUpdate
   , sqlUpdateWhere  :: [SqlCondition]
   , sqlUpdateSet    :: [(SQL,SQL)]
   , sqlUpdateResult :: [SQL]
-  , sqlUpdateWith   :: [(SQL, SQL)]
+  , sqlUpdateWith   :: [(SQL, SQL, Materialized)]
   }
 
 data SqlInsert = SqlInsert
@@ -248,7 +255,7 @@ data SqlInsert = SqlInsert
   , sqlInsertOnConflict :: Maybe (SQL, Maybe SQL)
   , sqlInsertSet        :: [(SQL, Multiplicity SQL)]
   , sqlInsertResult     :: [SQL]
-  , sqlInsertWith       :: [(SQL, SQL)]
+  , sqlInsertWith       :: [(SQL, SQL, Materialized)]
   }
 
 data SqlInsertSelect = SqlInsertSelect
@@ -264,7 +271,7 @@ data SqlInsertSelect = SqlInsertSelect
   , sqlInsertSelectHaving     :: [SQL]
   , sqlInsertSelectOffset     :: Integer
   , sqlInsertSelectLimit      :: Integer
-  , sqlInsertSelectWith       :: [(SQL, SQL)]
+  , sqlInsertSelectWith       :: [(SQL, SQL, Materialized)]
   }
 
 data SqlDelete = SqlDelete
@@ -272,7 +279,7 @@ data SqlDelete = SqlDelete
   , sqlDeleteUsing  :: SQL
   , sqlDeleteWhere  :: [SqlCondition]
   , sqlDeleteResult :: [SQL]
-  , sqlDeleteWith   :: [(SQL, SQL)]
+  , sqlDeleteWith   :: [(SQL, SQL, Materialized)]
   }
 
 -- | This is not exported and is used as an implementation detail in
@@ -331,7 +338,7 @@ instance IsSQL SqlDelete where
 instance Sqlable SqlSelect where
   toSQLCommand cmd = smconcat
     [ emitClausesSepComma "WITH" $
-      map (\(name,command) -> name <+> "AS" <+> parenthesize command) (sqlSelectWith cmd)
+      map (\(name,command,mat) -> name <+> "AS" <+> materializedClause mat <+> parenthesize command) (sqlSelectWith cmd)
     , if hasUnion
       then emitClausesSep "" "UNION" (mainSelectClause : sqlSelectUnion cmd)
       else mainSelectClause
@@ -371,7 +378,7 @@ emitClauseOnConflictForInsert = \case
 
 instance Sqlable SqlInsert where
   toSQLCommand cmd =
-    emitClausesSepComma "WITH" (map (\(name,command) -> name <+> "AS" <+> parenthesize command) (sqlInsertWith cmd)) <+>
+    emitClausesSepComma "WITH" (map (\(name,command,mat) -> name <+> "AS" <+> materializedClause mat <+> parenthesize command) (sqlInsertWith cmd)) <+>
     "INSERT INTO" <+> sqlInsertWhat cmd <+>
     parenthesize (sqlConcatComma (map fst (sqlInsertSet cmd))) <+>
     emitClausesSep "VALUES" "," (map sqlConcatComma (transpose (map (makeLongEnough . snd) (sqlInsertSet cmd)))) <+>
@@ -390,7 +397,7 @@ instance Sqlable SqlInsertSelect where
     -- WITH clause needs to be at the top level, so we emit it here and not
     -- include it in the SqlSelect below.
     [ emitClausesSepComma "WITH" $
-      map (\(name,command) -> name <+> "AS" <+> parenthesize command) (sqlInsertSelectWith cmd)
+      map (\(name,command,mat) -> name <+> "AS" <+> materializedClause mat <+> parenthesize command) (sqlInsertSelectWith cmd)
     , "INSERT INTO" <+> sqlInsertSelectWhat cmd
     , parenthesize . sqlConcatComma . map fst $ sqlInsertSelectSet cmd
     , parenthesize . toSQLCommand $ SqlSelect { sqlSelectFrom    = sqlInsertSelectFrom cmd
@@ -409,9 +416,30 @@ instance Sqlable SqlInsertSelect where
     , emitClausesSepComma "RETURNING" $ sqlInsertSelectResult cmd
     ]
 
+-- This function has to be called as one of first things in your program
+-- for the library to make sure that it is aware if the "WITH MATERIALIZED"
+-- clause is supported by your PostgreSQL version.
+checkAndRememberMaterializationSupport :: (MonadDB m, MonadIO m, MonadMask m) => m ()
+checkAndRememberMaterializationSupport = do
+  res :: Either DBException Int64 <- try . withNewConnection $ do
+    runSQL01_ $ "WITH t(n) AS MATERIALIZED (SELECT 1) SELECT n FROM t LIMIT 1"
+    fetchOne runIdentity
+  liftIO $ writeIORef withMaterializedSupported (isRight res)
+
+withMaterializedSupported :: IORef Bool
+{-# NOINLINE withMaterializedSupported #-}
+withMaterializedSupported = unsafePerformIO $ newIORef False
+
+isWithMaterializedSupported :: Bool
+isWithMaterializedSupported = unsafePerformIO $ readIORef withMaterializedSupported
+
+materializedClause :: Materialized -> SQL
+materializedClause Materialized = if isWithMaterializedSupported then "MATERIALIZED" else ""
+materializedClause NonMaterialized = if isWithMaterializedSupported then "NOT MATERIALIZED" else ""
+
 instance Sqlable SqlUpdate where
   toSQLCommand cmd =
-    emitClausesSepComma "WITH" (map (\(name,command) -> name <+> "AS" <+> parenthesize command) (sqlUpdateWith cmd)) <+>
+    emitClausesSepComma "WITH" (map (\(name,command,mat) -> name <+> "AS" <+> materializedClause mat <+> parenthesize command) (sqlUpdateWith cmd)) <+>
     "UPDATE" <+> sqlUpdateWhat cmd <+> "SET" <+>
     sqlConcatComma (map (\(name, command) -> name <> "=" <> command) (sqlUpdateSet cmd)) <+>
     emitClause "FROM" (sqlUpdateFrom cmd) <+>
@@ -420,7 +448,7 @@ instance Sqlable SqlUpdate where
 
 instance Sqlable SqlDelete where
   toSQLCommand cmd =
-    emitClausesSepComma "WITH" (map (\(name,command) -> name <+> "AS" <+> parenthesize command) (sqlDeleteWith cmd)) <+>
+    emitClausesSepComma "WITH" (map (\(name,command,mat) -> name <+> "AS" <+> materializedClause mat <+> parenthesize command) (sqlDeleteWith cmd)) <+>
     "DELETE FROM" <+> sqlDeleteFrom cmd <+>
     emitClause "USING" (sqlDeleteUsing cmd) <+>
         emitClausesSep "WHERE" "AND" (map toSQLCommand $ sqlDeleteWhere cmd) <+>
@@ -475,24 +503,30 @@ sqlDelete table refine =
                                , sqlDeleteWith   = []
                                })
 
+
+data Materialized = Materialized | NonMaterialized
+
 class SqlWith a where
-  sqlWith1 :: a -> SQL -> SQL -> a
+  sqlWith1 :: a -> SQL -> SQL -> Materialized -> a
 
 
 instance SqlWith SqlSelect where
-  sqlWith1 cmd name sql = cmd { sqlSelectWith = sqlSelectWith cmd ++ [(name,sql)] }
+  sqlWith1 cmd name sql mat = cmd { sqlSelectWith = sqlSelectWith cmd ++ [(name,sql, mat)] }
 
 instance SqlWith SqlInsertSelect where
-  sqlWith1 cmd name sql = cmd { sqlInsertSelectWith = sqlInsertSelectWith cmd ++ [(name,sql)] }
+  sqlWith1 cmd name sql mat = cmd { sqlInsertSelectWith = sqlInsertSelectWith cmd ++ [(name,sql,mat)] }
 
 instance SqlWith SqlUpdate where
-  sqlWith1 cmd name sql = cmd { sqlUpdateWith = sqlUpdateWith cmd ++ [(name,sql)] }
+  sqlWith1 cmd name sql mat = cmd { sqlUpdateWith = sqlUpdateWith cmd ++ [(name,sql,mat)] }
 
 instance SqlWith SqlDelete where
-  sqlWith1 cmd name sql = cmd { sqlDeleteWith = sqlDeleteWith cmd ++ [(name,sql)] }
+  sqlWith1 cmd name sql mat = cmd { sqlDeleteWith = sqlDeleteWith cmd ++ [(name,sql,mat)] }
 
 sqlWith :: (MonadState v m, SqlWith v, Sqlable s) => SQL -> s -> m ()
-sqlWith name sql = modify (\cmd -> sqlWith1 cmd name (toSQLCommand sql))
+sqlWith name sql = modify (\cmd -> sqlWith1 cmd name (toSQLCommand sql) NonMaterialized)
+
+sqlWithMaterialized :: (MonadState v m, SqlWith v, Sqlable s) => SQL -> s -> m ()
+sqlWithMaterialized name sql = modify (\cmd -> sqlWith1 cmd name (toSQLCommand sql) Materialized)
 
 -- | Note: WHERE clause of the main SELECT is treated specially, i.e. it only
 -- applies to the main SELECT, not the whole union.
