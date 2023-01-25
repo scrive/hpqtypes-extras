@@ -37,7 +37,7 @@
 # hpqtypes-extras-1.12.0.1 (2021-10-11)
 * Add support for log-base-0.11.0.0
 
-# hpqtypes-extras-1.12.0.0 (2021-10-??)
+# hpqtypes-extras-1.12.0.0 (2021-09-29)
 * Use plain exceptions instead of DBExtraException
 
 # hpqtypes-extras-1.11.0.0 (2021-03-29)
