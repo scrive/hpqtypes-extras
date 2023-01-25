@@ -91,6 +91,7 @@ module Database.PostgreSQL.PQTypes.SQL.Builder
   , sqlWhereEq
   , sqlWhereEqSql
   , sqlWhereNotEq
+  , sqlWhereEqualsAny
   , sqlWhereIn
   , sqlWhereInSql
   , sqlWhereNotIn
@@ -542,6 +543,13 @@ sqlWhereLike name value = sqlWhere $ name <+> "LIKE" <?> value
 
 sqlWhereILike :: (MonadState v m, SqlWhere v, Show a, ToSQL a) => SQL -> a -> m ()
 sqlWhereILike name value = sqlWhere  $ name <+> "ILIKE" <?> value
+
+-- | Similar to 'sqlWhereIn', but uses @ANY@ instead of @SELECT UNNEST@.
+sqlWhereEqualsAny :: (MonadState v m, SqlWhere v, Show a, ToSQL a) => SQL -> [a] -> m ()
+sqlWhereEqualsAny name = \case
+  [] -> sqlWhere "FALSE"
+  [value] -> sqlWhereEq name value
+  values -> sqlWhere $ name <+> "= ANY(" <?> Array1 values <+> ")"
 
 sqlWhereIn :: (MonadState v m, SqlWhere v, Show a, ToSQL a) => SQL -> [a] -> m ()
 sqlWhereIn _name [] = sqlWhere "FALSE"
