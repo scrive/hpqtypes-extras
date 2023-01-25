@@ -1496,7 +1496,7 @@ migrationTest5 connSource =
     copyColumnSql primaryKeys =
       runQuery_ . sqlUpdate "bank" $ do
         sqlSetCmd "name_new" "bank.name"
-        sqlWhereIn "bank.id" $ runIdentity <$> primaryKeys
+        sqlWhereEqualsAny "bank.id" $ runIdentity <$> primaryKeys
 
     addBoolColumnMigration = Migration
       { mgrTableName = "bank"
