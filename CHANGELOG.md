@@ -1,3 +1,7 @@
+# hpqtypes-extras-1.16.3.0 (2023-01-25)
+* Add support for `WITH MATERIALIZED` with backward compatibility.
+* Add `sqlWhereEqualsAny`.
+
 # hpqtypes-extras-1.16.2.0 (2022-10-27)
 * Add support for setting collation method for columns.
 
