@@ -64,13 +64,13 @@ data MigrationAction m =
   -- Name of the table that the cursor is associated with. It has to be the same as in the
   -- cursor SQL, see the second parameter.
   --
-  -- SQL that will be used for the cursor.
+  -- SQL providing a list of primary keys from the associated table that will be used for the cursor.
   --
-  -- Function that takes a list of primary keys provided by the cursor SQL and
+  -- Modification function that takes a batch of primary keys provided by the cursor SQL and
   -- runs an arbitrary computation within MonadDB. The function might be called
-  -- repeatedly depending on the number of primary keys. See the last argument.
+  -- repeatedly depending on the batch size and total number of selected primary keys. See the last argument.
   --
-  -- Number of primary keys fetched at once by the cursor SQL.
+  -- Batch size of primary keys to be fetched at once by the cursor SQL and be given to the modification function.
   -- To handle multi-column primary keys, the following needs to be done:
   --
   --   1. Get the list of tuples from PostgreSQL.
