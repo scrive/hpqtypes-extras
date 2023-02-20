@@ -66,9 +66,9 @@ data MigrationAction m =
   --
   -- SQL providing a list of primary keys from the associated table that will be used for the cursor.
   --
-  -- Modification function that takes a batch of primary keys provided by the cursor SQL and
-  -- runs an arbitrary computation within MonadDB. The function might be called
-  -- repeatedly depending on the batch size and total number of selected primary keys. See the last argument.
+  -- Function that takes a batch of primary keys provided by the cursor SQL and runs an arbitrary computation
+  -- within MonadDB. The function might be called repeatedly depending on the batch size and total number of
+  -- selected primary keys. See the last argument.
   --
   -- Batch size of primary keys to be fetched at once by the cursor SQL and be given to the modification function.
   -- To handle multi-column primary keys, the following needs to be done:
