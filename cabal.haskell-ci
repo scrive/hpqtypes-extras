@@ -3,4 +3,3 @@ benchmarks:     True
 doctest:        True
 tests:          True
 postgresql:     True
-postgresql-versions: 11 14
