@@ -1,6 +1,6 @@
-/TAGS
-/dist/
-/dist-newstyle/
-cabal.project
+TAGS
+TAGS.mtime
+dist/
+dist-newstyle/
 cabal.project.local
 .ghc.environment.*

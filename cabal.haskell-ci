@@ -1,6 +1,8 @@
 branches:       master
-benchmarks:     True
-doctest:        True
+doctest:        False
 tests:          True
 postgresql:     True
-postgresql-versions: 11 14
+
+postgresql-versions: 11 15
+
+ghcup-jobs:     True
