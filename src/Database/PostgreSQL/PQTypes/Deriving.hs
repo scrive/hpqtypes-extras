@@ -15,6 +15,7 @@ import Data.Map.Strict (Map)
 import Data.Text (Text)
 import Data.Typeable
 import Database.PostgreSQL.PQTypes
+import Foreign.Storable
 import qualified Data.Map.Strict as Map
 
 -- | Helper newtype to be used with @deriving via@ to derive @(PQFormat, ToSQL,
@@ -93,6 +94,7 @@ instance
 
 instance
   ( EnumEncoding a
+  , Storable (PQBase (EnumBase a))
   , PQFormat (EnumBase a)
   , FromSQL (EnumBase a)
   , Show (EnumBase a)

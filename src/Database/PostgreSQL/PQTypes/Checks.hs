@@ -15,10 +15,11 @@ module Database.PostgreSQL.PQTypes.Checks (
 
 import Control.Arrow ((&&&))
 import Control.Concurrent (threadDelay)
+import Control.Monad
 import Control.Monad.Catch
 import Control.Monad.Reader
 import Data.Int
-import Data.Function (on)
+import Data.Function
 import Data.List (partition)
 import Data.Maybe
 import Data.Monoid.Utils
