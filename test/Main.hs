@@ -1205,7 +1205,7 @@ testSqlWith step = do
   testPass
   runSQL_ "DELETE FROM bank"
   step "Checking for WITH MATERIALIZED support"
-  checkAndRememberMaterializationSupport 
+  checkAndRememberMaterializationSupport
   step "Running sql WITH tests again with WITH MATERIALIZED support flag set"
   testPass
   where
@@ -1256,6 +1256,45 @@ testSqlWith step = do
         sqlResult "other_bank.name"
       (results :: [T.Text]) <- fetchMany runIdentity
       liftIO $ assertEqual "Wrong number of banks left" 2 (length results)
+
+testUnion :: HasCallStack => (String -> TestM ()) -> TestM ()
+testUnion step = do
+  step "Running SQL UNION tests"
+  testPass
+  where
+    testPass = do
+      runQuery_ . sqlSelect "" $ do
+        sqlResult "true"
+        sqlUnion
+          [ sqlSelect "" $ do
+              sqlResult "false"
+          , sqlSelect "" $ do
+              sqlResult "true"
+          ]
+      result <- fetchMany runIdentity
+      liftIO $ assertEqual "UNION of booleans"
+        [False, True]
+        result
+
+
+testUnionAll :: HasCallStack => (String -> TestM ()) -> TestM ()
+testUnionAll step = do
+  step "Running SQL UNION ALL tests"
+  testPass
+  where
+    testPass = do
+      runQuery_ . sqlSelect "" $ do
+        sqlResult "true"
+        sqlUnionAll
+          [ sqlSelect "" $ do
+              sqlResult "false"
+          , sqlSelect "" $ do
+              sqlResult "true"
+          ]
+      result <- fetchMany runIdentity
+      liftIO $ assertEqual "UNION ALL of booleans"
+        [True, False, True]
+        result
 
 migrationTest1 :: ConnectionSourceM (LogT IO) -> TestTree
 migrationTest1 connSource =
@@ -1397,6 +1436,18 @@ sqlWithTests connSource =
   testCaseSteps' "sql WITH tests" connSource $ \step -> do
     freshTestDB step
     testSqlWith step
+
+unionTests :: ConnectionSourceM (LogT IO) -> TestTree
+unionTests connSource =
+  testCaseSteps' "SQL UNION Tests" connSource $ \step -> do
+    freshTestDB step
+    testUnion step
+
+unionAllTests :: ConnectionSourceM (LogT IO) -> TestTree
+unionAllTests connSource =
+  testCaseSteps' "SQL UNION ALL Tests" connSource $ \step -> do
+    freshTestDB step
+    testUnionAll step
 
 eitherExc :: MonadCatch m => (SomeException -> m ()) -> (a -> m ()) -> m a -> m ()
 eitherExc left right c = try c >>= either left right
@@ -1581,6 +1632,8 @@ main = do
                          , migrationTest5 connSource
                          , triggerTests connSource
                          , sqlWithTests connSource
+                         , unionTests connSource
+                         , unionAllTests connSource
                          ]
   where
     ings =
