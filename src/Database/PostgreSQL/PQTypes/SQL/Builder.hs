@@ -423,7 +423,7 @@ instance Sqlable SqlInsertSelect where
 checkAndRememberMaterializationSupport :: (MonadDB m, MonadIO m, MonadMask m) => m ()
 checkAndRememberMaterializationSupport = do
   res :: Either DBException Int64 <- try . withNewConnection $ do
-    runSQL01_ $ "WITH t(n) AS MATERIALIZED (SELECT 1) SELECT n FROM t LIMIT 1"
+    runSQL01_ $ "WITH t(n) AS MATERIALIZED (SELECT (1 :: bigint)) SELECT n FROM t LIMIT 1"
     fetchOne runIdentity
   liftIO $ writeIORef withMaterializedSupported (isRight res)
 
