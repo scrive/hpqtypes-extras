@@ -1,5 +1,6 @@
-# hpqtypes-extras-1.16.3.1 (2023-??-??)
+# hpqtypes-extras-1.16.3.1 (2023-04-13)
 * Add support for GHC 9.6.
+* Fix checkAndRememberMaterializationSupport's query.
 
 # hpqtypes-extras-1.16.3.0 (2023-01-25)
 * Add support for `WITH MATERIALIZED` with backward compatibility.
