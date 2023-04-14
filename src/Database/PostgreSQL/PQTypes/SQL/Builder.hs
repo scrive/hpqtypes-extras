@@ -1,3 +1,8 @@
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleInstances #-}
+
+-- TODO: clean this up, add more documentation.
+
 {- |
 
 Module "Database.PostgreSQL.PQTypes.SQL.Builder" offers a nice
@@ -81,98 +86,88 @@ sqlUpdate "document_tags" $ do
   sqlWhere "name = 'abc'"
 :}
 SQL " UPDATE document_tags SET value=<123>  WHERE (name = 'abc') "
-
 -}
+module Database.PostgreSQL.PQTypes.SQL.Builder (
+  sqlWhere,
+  sqlWhereEq,
+  sqlWhereEqSql,
+  sqlWhereNotEq,
+  sqlWhereEqualsAny,
+  sqlWhereIn,
+  sqlWhereInSql,
+  sqlWhereNotIn,
+  sqlWhereNotInSql,
+  sqlWhereExists,
+  sqlWhereNotExists,
+  sqlWhereLike,
+  sqlWhereILike,
+  sqlWhereIsNULL,
+  sqlWhereIsNotNULL,
+  sqlFrom,
+  sqlJoin,
+  sqlJoinOn,
+  sqlLeftJoinOn,
+  sqlRightJoinOn,
+  sqlFullJoinOn,
+  sqlOnConflictDoNothing,
+  sqlOnConflictOnColumns,
+  sqlOnConflictOnColumnsDoNothing,
+  sqlSet,
+  sqlSetInc,
+  sqlSetList,
+  sqlSetListWithDefaults,
+  sqlSetCmd,
+  sqlSetCmdList,
+  sqlCopyColumn,
+  sqlResult,
+  sqlOrderBy,
+  sqlGroupBy,
+  sqlHaving,
+  sqlOffset,
+  sqlLimit,
+  sqlDistinct,
+  sqlWith,
+  sqlWithMaterialized,
+  sqlUnion,
+  checkAndRememberMaterializationSupport,
+  sqlSelect,
+  sqlSelect2,
+  SqlSelect (..),
+  sqlInsert,
+  SqlInsert (..),
+  sqlInsertSelect,
+  SqlInsertSelect (..),
+  sqlUpdate,
+  SqlUpdate (..),
+  sqlDelete,
+  SqlDelete (..),
+  sqlWhereAny,
+  SqlResult,
+  SqlSet,
+  SqlFrom,
+  SqlWhere,
+  SqlWith,
+  SqlOrderBy,
+  SqlGroupByHaving,
+  SqlOffsetLimit,
+  SqlDistinct,
+  SqlCondition (..),
+  sqlGetWhereConditions,
+  Sqlable (..),
+  sqlOR,
+  sqlConcatComma,
+  sqlConcatAND,
+  sqlConcatOR,
+  parenthesize,
+  AscDesc (..),
+)
+where
 
--- TODO: clean this up, add more documentation.
-
-module Database.PostgreSQL.PQTypes.SQL.Builder
-  ( sqlWhere
-  , sqlWhereEq
-  , sqlWhereEqSql
-  , sqlWhereNotEq
-  , sqlWhereEqualsAny
-  , sqlWhereIn
-  , sqlWhereInSql
-  , sqlWhereNotIn
-  , sqlWhereNotInSql
-  , sqlWhereExists
-  , sqlWhereNotExists
-  , sqlWhereLike
-  , sqlWhereILike
-  , sqlWhereIsNULL
-  , sqlWhereIsNotNULL
-
-  , sqlFrom
-  , sqlJoin
-  , sqlJoinOn
-  , sqlLeftJoinOn
-  , sqlRightJoinOn
-  , sqlFullJoinOn
-  , sqlOnConflictDoNothing
-  , sqlOnConflictOnColumns
-  , sqlOnConflictOnColumnsDoNothing
-  , sqlSet
-  , sqlSetInc
-  , sqlSetList
-  , sqlSetListWithDefaults
-  , sqlSetCmd
-  , sqlSetCmdList
-  , sqlCopyColumn
-  , sqlResult
-  , sqlOrderBy
-  , sqlGroupBy
-  , sqlHaving
-  , sqlOffset
-  , sqlLimit
-  , sqlDistinct
-  , sqlWith
-  , sqlWithMaterialized
-  , sqlUnion
-  , checkAndRememberMaterializationSupport
-
-  , sqlSelect
-  , sqlSelect2
-  , SqlSelect(..)
-  , sqlInsert
-  , SqlInsert(..)
-  , sqlInsertSelect
-  , SqlInsertSelect(..)
-  , sqlUpdate
-  , SqlUpdate(..)
-  , sqlDelete
-  , SqlDelete(..)
-
-  , sqlWhereAny
-
-  , SqlResult
-  , SqlSet
-  , SqlFrom
-  , SqlWhere
-  , SqlWith
-  , SqlOrderBy
-  , SqlGroupByHaving
-  , SqlOffsetLimit
-  , SqlDistinct
-
-  , SqlCondition(..)
-  , sqlGetWhereConditions
-
-  , Sqlable(..)
-  , sqlOR
-  , sqlConcatComma
-  , sqlConcatAND
-  , sqlConcatOR
-  , parenthesize
-  , AscDesc(..)
-  )
-  where
-
-import Control.Monad.State
 import Control.Monad.Catch
-import Data.Int
-import Data.IORef
+import Control.Monad.State
 import Data.Either
+import Data.IORef
+import Data.Int
 import Data.List
 import Data.Maybe
 import Data.Monoid.Utils
@@ -205,86 +200,90 @@ sqlConcatOR = smintercalate "OR" . map parenthesize
 parenthesize :: SQL -> SQL
 parenthesize s = "(" <> s <> ")"
 
--- | 'AscDesc' marks ORDER BY order as ascending or descending.
--- Conversion to SQL adds DESC marker to descending and no marker
--- to ascending order.
+{- | 'AscDesc' marks ORDER BY order as ascending or descending.
+Conversion to SQL adds DESC marker to descending and no marker
+to ascending order.
+-}
 data AscDesc a = Asc a | Desc a
   deriving (Eq, Show)
 
 data Multiplicity a = Single a | Many [a]
   deriving (Eq, Ord, Show, Typeable)
 
--- | 'SqlCondition' are clauses that are part of the WHERE block in
--- SQL statements. Each statement has a list of conditions, all of
--- them must be fulfilled.  Sometimes we need to inspect internal
--- structure of a condition. For now it seems that the only
--- interesting case is EXISTS (SELECT ...), because that internal
--- SELECT can have explainable clauses.
-data SqlCondition = SqlPlainCondition SQL
-                  | SqlExistsCondition SqlSelect
-                    deriving (Typeable, Show)
+{- | 'SqlCondition' are clauses that are part of the WHERE block in
+SQL statements. Each statement has a list of conditions, all of
+them must be fulfilled.  Sometimes we need to inspect internal
+structure of a condition. For now it seems that the only
+interesting case is EXISTS (SELECT ...), because that internal
+SELECT can have explainable clauses.
+-}
+data SqlCondition
+  = SqlPlainCondition SQL
+  | SqlExistsCondition SqlSelect
+  deriving (Typeable, Show)
 
 instance Sqlable SqlCondition where
   toSQLCommand (SqlPlainCondition a) = a
-  toSQLCommand (SqlExistsCondition a) = "EXISTS (" <> toSQLCommand (a { sqlSelectResult = ["TRUE"] }) <> ")"
+  toSQLCommand (SqlExistsCondition a) = "EXISTS (" <> toSQLCommand (a{sqlSelectResult = ["TRUE"]}) <> ")"
 
 data SqlSelect = SqlSelect
-  { sqlSelectFrom     :: SQL
-  , sqlSelectUnion    :: [SQL]
+  { sqlSelectFrom :: SQL
+  , sqlSelectUnion :: [SQL]
   , sqlSelectDistinct :: Bool
-  , sqlSelectResult   :: [SQL]
-  , sqlSelectWhere    :: [SqlCondition]
-  , sqlSelectOrderBy  :: [SQL]
-  , sqlSelectGroupBy  :: [SQL]
-  , sqlSelectHaving   :: [SQL]
-  , sqlSelectOffset   :: Integer
-  , sqlSelectLimit    :: Integer
-  , sqlSelectWith     :: [(SQL, SQL, Materialized)]
+  , sqlSelectResult :: [SQL]
+  , sqlSelectWhere :: [SqlCondition]
+  , sqlSelectOrderBy :: [SQL]
+  , sqlSelectGroupBy :: [SQL]
+  , sqlSelectHaving :: [SQL]
+  , sqlSelectOffset :: Integer
+  , sqlSelectLimit :: Integer
+  , sqlSelectWith :: [(SQL, SQL, Materialized)]
   }
 
-data SqlUpdate = SqlUpdate
-  { sqlUpdateWhat   :: SQL
-  , sqlUpdateFrom   :: SQL
-  , sqlUpdateWhere  :: [SqlCondition]
-  , sqlUpdateSet    :: [(SQL,SQL)]
+data SqlUpdate (mat :: MaterializedSupported) = SqlUpdate
+  { sqlUpdateWhat :: SQL
+  , sqlUpdateFrom :: SQL
+  , sqlUpdateWhere :: [SqlCondition]
+  , sqlUpdateSet :: [(SQL, SQL)]
   , sqlUpdateResult :: [SQL]
-  , sqlUpdateWith   :: [(SQL, SQL, Materialized)]
+  , sqlUpdateWith :: [(SQL, SQL, Materialized)]
   }
 
 data SqlInsert = SqlInsert
-  { sqlInsertWhat       :: SQL
+  { sqlInsertWhat :: SQL
   , sqlInsertOnConflict :: Maybe (SQL, Maybe SQL)
-  , sqlInsertSet        :: [(SQL, Multiplicity SQL)]
-  , sqlInsertResult     :: [SQL]
-  , sqlInsertWith       :: [(SQL, SQL, Materialized)]
+  , sqlInsertSet :: [(SQL, Multiplicity SQL)]
+  , sqlInsertResult :: [SQL]
+  , sqlInsertWith :: [(SQL, SQL, Materialized)]
   }
 
 data SqlInsertSelect = SqlInsertSelect
-  { sqlInsertSelectWhat       :: SQL
+  { sqlInsertSelectWhat :: SQL
   , sqlInsertSelectOnConflict :: Maybe (SQL, Maybe SQL)
-  , sqlInsertSelectDistinct   :: Bool
-  , sqlInsertSelectSet        :: [(SQL, SQL)]
-  , sqlInsertSelectResult     :: [SQL]
-  , sqlInsertSelectFrom       :: SQL
-  , sqlInsertSelectWhere      :: [SqlCondition]
-  , sqlInsertSelectOrderBy    :: [SQL]
-  , sqlInsertSelectGroupBy    :: [SQL]
-  , sqlInsertSelectHaving     :: [SQL]
-  , sqlInsertSelectOffset     :: Integer
-  , sqlInsertSelectLimit      :: Integer
-  , sqlInsertSelectWith       :: [(SQL, SQL, Materialized)]
+  , sqlInsertSelectDistinct :: Bool
+  , sqlInsertSelectSet :: [(SQL, SQL)]
+  , sqlInsertSelectResult :: [SQL]
+  , sqlInsertSelectFrom :: SQL
+  , sqlInsertSelectWhere :: [SqlCondition]
+  , sqlInsertSelectOrderBy :: [SQL]
+  , sqlInsertSelectGroupBy :: [SQL]
+  , sqlInsertSelectHaving :: [SQL]
+  , sqlInsertSelectOffset :: Integer
+  , sqlInsertSelectLimit :: Integer
+  , sqlInsertSelectWith :: [(SQL, SQL, Materialized)]
   }
 
 data SqlDelete = SqlDelete
-  { sqlDeleteFrom   :: SQL
-  , sqlDeleteUsing  :: SQL
-  , sqlDeleteWhere  :: [SqlCondition]
+  { sqlDeleteFrom :: SQL
+  , sqlDeleteUsing :: SQL
+  , sqlDeleteWhere :: [SqlCondition]
   , sqlDeleteResult :: [SQL]
-  , sqlDeleteWith   :: [(SQL, SQL, Materialized)]
+  , sqlDeleteWith :: [(SQL, SQL, Materialized)]
   }
 
--- | This is not exported and is used as an implementation detail in
--- 'sqlWhereAll'.
+{- | This is not exported and is used as an implementation detail in
+'sqlWhereAll'.
+-}
 data SqlAll = SqlAll
   { sqlAllWhere :: [SqlCondition]
   }
@@ -311,7 +310,7 @@ emitClause :: Sqlable sql => SQL -> sql -> SQL
 emitClause name s = case toSQLCommand s of
   sql
     | isSqlEmpty sql -> ""
-    | otherwise   -> name <+> sql
+    | otherwise -> name <+> sql
 
 emitClausesSep :: SQL -> SQL -> [SQL] -> SQL
 emitClausesSep _name _sep [] = mempty
@@ -337,85 +336,92 @@ instance IsSQL SqlDelete where
   withSQL = withSQL . toSQLCommand
 
 instance Sqlable SqlSelect where
-  toSQLCommand cmd = smconcat
-    [ emitClausesSepComma "WITH" $
-      map (\(name,command,mat) -> name <+> "AS" <+> materializedClause mat <+> parenthesize command) (sqlSelectWith cmd)
-    , if hasUnion
-      then emitClausesSep "" "UNION" (mainSelectClause : sqlSelectUnion cmd)
-      else mainSelectClause
-    , emitClausesSepComma "GROUP BY" (sqlSelectGroupBy cmd)
-    , emitClausesSep "HAVING" "AND" (sqlSelectHaving cmd)
-    , orderByClause
-    , if sqlSelectOffset cmd > 0
-      then unsafeSQL ("OFFSET " ++ show (sqlSelectOffset cmd))
-      else ""
-    , if sqlSelectLimit cmd >= 0
-      then limitClause
-      else ""
-    ]
-    where
-      mainSelectClause = smconcat
+  toSQLCommand cmd =
+    smconcat
+      [ emitClausesSepComma "WITH" $
+          map (\(name, command, mat) -> name <+> "AS" <+> materializedClause mat <+> parenthesize command) (sqlSelectWith cmd)
+      , if hasUnion
+          then emitClausesSep "" "UNION" (mainSelectClause : sqlSelectUnion cmd)
+          else mainSelectClause
+      , emitClausesSepComma "GROUP BY" (sqlSelectGroupBy cmd)
+      , emitClausesSep "HAVING" "AND" (sqlSelectHaving cmd)
+      , orderByClause
+      , if sqlSelectOffset cmd > 0
+          then unsafeSQL ("OFFSET " ++ show (sqlSelectOffset cmd))
+          else ""
+      , if sqlSelectLimit cmd >= 0
+          then limitClause
+          else ""
+      ]
+   where
+    mainSelectClause =
+      smconcat
         [ "SELECT" <+> (if sqlSelectDistinct cmd then "DISTINCT" else mempty)
         , sqlConcatComma (sqlSelectResult cmd)
         , emitClause "FROM" (sqlSelectFrom cmd)
         , emitClausesSep "WHERE" "AND" (map toSQLCommand $ sqlSelectWhere cmd)
-        -- If there's a union, the result is sorted and has a limit, applying
-        -- the order and limit to the main subquery won't reduce the overall
-        -- query result, but might reduce its processing time.
-        , if hasUnion && not (null $ sqlSelectOrderBy cmd) && sqlSelectLimit cmd >= 0
-          then smconcat [orderByClause, limitClause]
-          else ""
+        , -- If there's a union, the result is sorted and has a limit, applying
+          -- the order and limit to the main subquery won't reduce the overall
+          -- query result, but might reduce its processing time.
+          if hasUnion && not (null $ sqlSelectOrderBy cmd) && sqlSelectLimit cmd >= 0
+            then smconcat [orderByClause, limitClause]
+            else ""
         ]
 
-      hasUnion      = not . null $ sqlSelectUnion cmd
-      orderByClause = emitClausesSepComma "ORDER BY" $ sqlSelectOrderBy cmd
-      limitClause   = unsafeSQL $ "LIMIT" <+> show (sqlSelectLimit cmd)
+    hasUnion = not . null $ sqlSelectUnion cmd
+    orderByClause = emitClausesSepComma "ORDER BY" $ sqlSelectOrderBy cmd
+    limitClause = unsafeSQL $ "LIMIT" <+> show (sqlSelectLimit cmd)
 
 emitClauseOnConflictForInsert :: Maybe (SQL, Maybe SQL) -> SQL
 emitClauseOnConflictForInsert = \case
-       Nothing                   -> ""
-       Just (condition, maction) -> emitClause "ON CONFLICT" $
-         condition <+> "DO" <+> fromMaybe "NOTHING" maction
+  Nothing -> ""
+  Just (condition, maction) ->
+    emitClause "ON CONFLICT" $
+      condition <+> "DO" <+> fromMaybe "NOTHING" maction
 
 instance Sqlable SqlInsert where
   toSQLCommand cmd =
-    emitClausesSepComma "WITH" (map (\(name,command,mat) -> name <+> "AS" <+> materializedClause mat <+> parenthesize command) (sqlInsertWith cmd)) <+>
-    "INSERT INTO" <+> sqlInsertWhat cmd <+>
-    parenthesize (sqlConcatComma (map fst (sqlInsertSet cmd))) <+>
-    emitClausesSep "VALUES" "," (map sqlConcatComma (transpose (map (makeLongEnough . snd) (sqlInsertSet cmd)))) <+>
-    emitClauseOnConflictForInsert (sqlInsertOnConflict cmd) <+>
-    emitClausesSepComma "RETURNING" (sqlInsertResult cmd)
+    emitClausesSepComma "WITH" (map (\(name, command, mat) -> name <+> "AS" <+> materializedClause mat <+> parenthesize command) (sqlInsertWith cmd))
+      <+> "INSERT INTO"
+      <+> sqlInsertWhat cmd
+      <+> parenthesize (sqlConcatComma (map fst (sqlInsertSet cmd)))
+      <+> emitClausesSep "VALUES" "," (map sqlConcatComma (transpose (map (makeLongEnough . snd) (sqlInsertSet cmd))))
+      <+> emitClauseOnConflictForInsert (sqlInsertOnConflict cmd)
+      <+> emitClausesSepComma "RETURNING" (sqlInsertResult cmd)
    where
-     -- this is the longest list of values
-     longest = maximum (1 : (map (lengthOfEither . snd) (sqlInsertSet cmd)))
-     lengthOfEither (Single _) = 1
-     lengthOfEither (Many x)   = length x
-     makeLongEnough (Single x) = take longest (repeat x)
-     makeLongEnough (Many x)   = take longest (x ++ repeat "DEFAULT")
+    -- this is the longest list of values
+    longest = maximum (1 : (map (lengthOfEither . snd) (sqlInsertSet cmd)))
+    lengthOfEither (Single _) = 1
+    lengthOfEither (Many x) = length x
+    makeLongEnough (Single x) = take longest (repeat x)
+    makeLongEnough (Many x) = take longest (x ++ repeat "DEFAULT")
 
 instance Sqlable SqlInsertSelect where
-  toSQLCommand cmd = smconcat
-    -- WITH clause needs to be at the top level, so we emit it here and not
-    -- include it in the SqlSelect below.
-    [ emitClausesSepComma "WITH" $
-      map (\(name,command,mat) -> name <+> "AS" <+> materializedClause mat <+> parenthesize command) (sqlInsertSelectWith cmd)
-    , "INSERT INTO" <+> sqlInsertSelectWhat cmd
-    , parenthesize . sqlConcatComma . map fst $ sqlInsertSelectSet cmd
-    , parenthesize . toSQLCommand $ SqlSelect { sqlSelectFrom    = sqlInsertSelectFrom cmd
-                                              , sqlSelectUnion   = []
-                                              , sqlSelectDistinct = sqlInsertSelectDistinct cmd
-                                              , sqlSelectResult  = fmap snd $ sqlInsertSelectSet cmd
-                                              , sqlSelectWhere   = sqlInsertSelectWhere cmd
-                                              , sqlSelectOrderBy = sqlInsertSelectOrderBy cmd
-                                              , sqlSelectGroupBy = sqlInsertSelectGroupBy cmd
-                                              , sqlSelectHaving  = sqlInsertSelectHaving cmd
-                                              , sqlSelectOffset  = sqlInsertSelectOffset cmd
-                                              , sqlSelectLimit   = sqlInsertSelectLimit cmd
-                                              , sqlSelectWith    = []
-                                              }
-    , emitClauseOnConflictForInsert (sqlInsertSelectOnConflict cmd)
-    , emitClausesSepComma "RETURNING" $ sqlInsertSelectResult cmd
-    ]
+  toSQLCommand cmd =
+    smconcat
+      -- WITH clause needs to be at the top level, so we emit it here and not
+      -- include it in the SqlSelect below.
+      [ emitClausesSepComma "WITH" $
+          map (\(name, command, mat) -> name <+> "AS" <+> materializedClause mat <+> parenthesize command) (sqlInsertSelectWith cmd)
+      , "INSERT INTO" <+> sqlInsertSelectWhat cmd
+      , parenthesize . sqlConcatComma . map fst $ sqlInsertSelectSet cmd
+      , parenthesize . toSQLCommand $
+          SqlSelect
+            { sqlSelectFrom = sqlInsertSelectFrom cmd
+            , sqlSelectUnion = []
+            , sqlSelectDistinct = sqlInsertSelectDistinct cmd
+            , sqlSelectResult = fmap snd $ sqlInsertSelectSet cmd
+            , sqlSelectWhere = sqlInsertSelectWhere cmd
+            , sqlSelectOrderBy = sqlInsertSelectOrderBy cmd
+            , sqlSelectGroupBy = sqlInsertSelectGroupBy cmd
+            , sqlSelectHaving = sqlInsertSelectHaving cmd
+            , sqlSelectOffset = sqlInsertSelectOffset cmd
+            , sqlSelectLimit = sqlInsertSelectLimit cmd
+            , sqlSelectWith = []
+            }
+      , emitClauseOnConflictForInsert (sqlInsertSelectOnConflict cmd)
+      , emitClausesSepComma "RETURNING" $ sqlInsertSelectResult cmd
+      ]
 
 -- This function has to be called as one of first things in your program
 -- for the library to make sure that it is aware if the "WITH MATERIALIZED"
@@ -438,28 +444,32 @@ materializedClause :: Materialized -> SQL
 materializedClause Materialized = if isWithMaterializedSupported then "MATERIALIZED" else ""
 materializedClause NonMaterialized = if isWithMaterializedSupported then "NOT MATERIALIZED" else ""
 
-instance Sqlable SqlUpdate where
+data MaterializedSupported = MaterializedSupported | MaterializedNotSupported
+
+instance Sqlable (SqlUpdate 'MaterializedSupported) where
   toSQLCommand cmd =
-    emitClausesSepComma "WITH" (map (\(name,command,mat) -> name <+> "AS" <+> materializedClause mat <+> parenthesize command) (sqlUpdateWith cmd)) <+>
-    "UPDATE" <+> sqlUpdateWhat cmd <+> "SET" <+>
-    sqlConcatComma (map (\(name, command) -> name <> "=" <> command) (sqlUpdateSet cmd)) <+>
-    emitClause "FROM" (sqlUpdateFrom cmd) <+>
-    emitClausesSep "WHERE" "AND" (map toSQLCommand $ sqlUpdateWhere cmd) <+>
-    emitClausesSepComma "RETURNING" (sqlUpdateResult cmd)
+    emitClausesSepComma "WITH" (map (\(name, command, mat) -> name <+> "AS" <+> materializedClause mat <+> parenthesize command) (sqlUpdateWith cmd))
+      <+> "UPDATE"
+      <+> sqlUpdateWhat cmd
+      <+> "SET"
+      <+> sqlConcatComma (map (\(name, command) -> name <> "=" <> command) (sqlUpdateSet cmd))
+      <+> emitClause "FROM" (sqlUpdateFrom cmd)
+      <+> emitClausesSep "WHERE" "AND" (map toSQLCommand $ sqlUpdateWhere cmd)
+      <+> emitClausesSepComma "RETURNING" (sqlUpdateResult cmd)
 
 instance Sqlable SqlDelete where
   toSQLCommand cmd =
-    emitClausesSepComma "WITH" (map (\(name,command,mat) -> name <+> "AS" <+> materializedClause mat <+> parenthesize command) (sqlDeleteWith cmd)) <+>
-    "DELETE FROM" <+> sqlDeleteFrom cmd <+>
-    emitClause "USING" (sqlDeleteUsing cmd) <+>
-        emitClausesSep "WHERE" "AND" (map toSQLCommand $ sqlDeleteWhere cmd) <+>
-    emitClausesSepComma "RETURNING" (sqlDeleteResult cmd)
+    emitClausesSepComma "WITH" (map (\(name, command, mat) -> name <+> "AS" <+> materializedClause mat <+> parenthesize command) (sqlDeleteWith cmd))
+      <+> "DELETE FROM"
+      <+> sqlDeleteFrom cmd
+      <+> emitClause "USING" (sqlDeleteUsing cmd)
+      <+> emitClausesSep "WHERE" "AND" (map toSQLCommand $ sqlDeleteWhere cmd)
+      <+> emitClausesSepComma "RETURNING" (sqlDeleteResult cmd)
 
 instance Sqlable SqlAll where
   toSQLCommand cmd | null (sqlAllWhere cmd) = "TRUE"
   toSQLCommand cmd =
     "(" <+> smintercalate "AND" (map (parenthesize . toSQLCommand) (sqlAllWhere cmd)) <+> ")"
-
 
 sqlSelect :: SQL -> State SqlSelect () -> SqlSelect
 sqlSelect table refine =
@@ -475,21 +485,24 @@ sqlInsert table refine =
 
 sqlInsertSelect :: SQL -> SQL -> State SqlInsertSelect () -> SqlInsertSelect
 sqlInsertSelect table from refine =
-  execState refine (SqlInsertSelect
-                    { sqlInsertSelectWhat       = table
-                    , sqlInsertSelectOnConflict = Nothing
-                    , sqlInsertSelectDistinct   = False
-                    , sqlInsertSelectSet        = []
-                    , sqlInsertSelectResult     = []
-                    , sqlInsertSelectFrom       = from
-                    , sqlInsertSelectWhere      = []
-                    , sqlInsertSelectOrderBy    = []
-                    , sqlInsertSelectGroupBy    = []
-                    , sqlInsertSelectHaving     = []
-                    , sqlInsertSelectOffset     = 0
-                    , sqlInsertSelectLimit      = -1
-                    , sqlInsertSelectWith       = []
-                    })
+  execState
+    refine
+    ( SqlInsertSelect
+        { sqlInsertSelectWhat = table
+        , sqlInsertSelectOnConflict = Nothing
+        , sqlInsertSelectDistinct = False
+        , sqlInsertSelectSet = []
+        , sqlInsertSelectResult = []
+        , sqlInsertSelectFrom = from
+        , sqlInsertSelectWhere = []
+        , sqlInsertSelectOrderBy = []
+        , sqlInsertSelectGroupBy = []
+        , sqlInsertSelectHaving = []
+        , sqlInsertSelectOffset = 0
+        , sqlInsertSelectLimit = -1
+        , sqlInsertSelectWith = []
+        }
+    )
 
 sqlUpdate :: SQL -> State SqlUpdate () -> SqlUpdate
 sqlUpdate table refine =
@@ -497,31 +510,33 @@ sqlUpdate table refine =
 
 sqlDelete :: SQL -> State SqlDelete () -> SqlDelete
 sqlDelete table refine =
-  execState refine (SqlDelete  { sqlDeleteFrom   = table
-                               , sqlDeleteUsing  = mempty
-                               , sqlDeleteWhere  = []
-                               , sqlDeleteResult = []
-                               , sqlDeleteWith   = []
-                               })
-
+  execState
+    refine
+    ( SqlDelete
+        { sqlDeleteFrom = table
+        , sqlDeleteUsing = mempty
+        , sqlDeleteWhere = []
+        , sqlDeleteResult = []
+        , sqlDeleteWith = []
+        }
+    )
 
 data Materialized = Materialized | NonMaterialized
 
 class SqlWith a where
   sqlWith1 :: a -> SQL -> SQL -> Materialized -> a
 
-
 instance SqlWith SqlSelect where
-  sqlWith1 cmd name sql mat = cmd { sqlSelectWith = sqlSelectWith cmd ++ [(name,sql, mat)] }
+  sqlWith1 cmd name sql mat = cmd{sqlSelectWith = sqlSelectWith cmd ++ [(name, sql, mat)]}
 
 instance SqlWith SqlInsertSelect where
-  sqlWith1 cmd name sql mat = cmd { sqlInsertSelectWith = sqlInsertSelectWith cmd ++ [(name,sql,mat)] }
+  sqlWith1 cmd name sql mat = cmd{sqlInsertSelectWith = sqlInsertSelectWith cmd ++ [(name, sql, mat)]}
 
 instance SqlWith SqlUpdate where
-  sqlWith1 cmd name sql mat = cmd { sqlUpdateWith = sqlUpdateWith cmd ++ [(name,sql,mat)] }
+  sqlWith1 cmd name sql mat = cmd{sqlUpdateWith = sqlUpdateWith cmd ++ [(name, sql, mat)]}
 
 instance SqlWith SqlDelete where
-  sqlWith1 cmd name sql mat = cmd { sqlDeleteWith = sqlDeleteWith cmd ++ [(name,sql,mat)] }
+  sqlWith1 cmd name sql mat = cmd{sqlDeleteWith = sqlDeleteWith cmd ++ [(name, sql, mat)]}
 
 sqlWith :: (MonadState v m, SqlWith v, Sqlable s) => SQL -> s -> m ()
 sqlWith name sql = modify (\cmd -> sqlWith1 cmd name (toSQLCommand sql) NonMaterialized)
@@ -529,37 +544,39 @@ sqlWith name sql = modify (\cmd -> sqlWith1 cmd name (toSQLCommand sql) NonMater
 sqlWithMaterialized :: (MonadState v m, SqlWith v, Sqlable s) => SQL -> s -> m ()
 sqlWithMaterialized name sql = modify (\cmd -> sqlWith1 cmd name (toSQLCommand sql) Materialized)
 
--- | Note: WHERE clause of the main SELECT is treated specially, i.e. it only
--- applies to the main SELECT, not the whole union.
+{- | Note: WHERE clause of the main SELECT is treated specially, i.e. it only
+applies to the main SELECT, not the whole union.
+-}
 sqlUnion :: (MonadState SqlSelect m, Sqlable sql) => [sql] -> m ()
-sqlUnion sqls = modify (\cmd -> cmd { sqlSelectUnion = map toSQLCommand sqls })
+sqlUnion sqls = modify (\cmd -> cmd{sqlSelectUnion = map toSQLCommand sqls})
 
 class SqlWhere a where
   sqlWhere1 :: a -> SqlCondition -> a
   sqlGetWhereConditions :: a -> [SqlCondition]
 
 instance SqlWhere SqlSelect where
-  sqlWhere1 cmd cond = cmd { sqlSelectWhere = sqlSelectWhere cmd ++ [cond] }
+  sqlWhere1 cmd cond = cmd{sqlSelectWhere = sqlSelectWhere cmd ++ [cond]}
   sqlGetWhereConditions = sqlSelectWhere
 
 instance SqlWhere SqlInsertSelect where
-  sqlWhere1 cmd cond = cmd { sqlInsertSelectWhere = sqlInsertSelectWhere cmd ++ [cond] }
+  sqlWhere1 cmd cond = cmd{sqlInsertSelectWhere = sqlInsertSelectWhere cmd ++ [cond]}
   sqlGetWhereConditions = sqlInsertSelectWhere
 
 instance SqlWhere SqlUpdate where
-  sqlWhere1 cmd cond = cmd { sqlUpdateWhere = sqlUpdateWhere cmd ++ [cond] }
+  sqlWhere1 cmd cond = cmd{sqlUpdateWhere = sqlUpdateWhere cmd ++ [cond]}
   sqlGetWhereConditions = sqlUpdateWhere
 
 instance SqlWhere SqlDelete where
-  sqlWhere1 cmd cond = cmd { sqlDeleteWhere = sqlDeleteWhere cmd ++ [cond] }
+  sqlWhere1 cmd cond = cmd{sqlDeleteWhere = sqlDeleteWhere cmd ++ [cond]}
   sqlGetWhereConditions = sqlDeleteWhere
 
 instance SqlWhere SqlAll where
-  sqlWhere1 cmd cond = cmd { sqlAllWhere = sqlAllWhere cmd ++ [cond] }
+  sqlWhere1 cmd cond = cmd{sqlAllWhere = sqlAllWhere cmd ++ [cond]}
   sqlGetWhereConditions = sqlAllWhere
 
--- | The @WHERE@ part of an SQL query. See above for a usage
--- example. See also 'SqlCondition'.
+{- | The @WHERE@ part of an SQL query. See above for a usage
+example. See also 'SqlCondition'.
+-}
 sqlWhere :: (MonadState v m, SqlWhere v) => SQL -> m ()
 sqlWhere sql = modify (\cmd -> sqlWhere1 cmd (SqlPlainCondition sql))
 
@@ -576,7 +593,7 @@ sqlWhereLike :: (MonadState v m, SqlWhere v, Show a, ToSQL a) => SQL -> a -> m (
 sqlWhereLike name value = sqlWhere $ name <+> "LIKE" <?> value
 
 sqlWhereILike :: (MonadState v m, SqlWhere v, Show a, ToSQL a) => SQL -> a -> m ()
-sqlWhereILike name value = sqlWhere  $ name <+> "ILIKE" <?> value
+sqlWhereILike name value = sqlWhere $ name <+> "ILIKE" <?> value
 
 -- | Similar to 'sqlWhereIn', but uses @ANY@ instead of @SELECT UNNEST@.
 sqlWhereEqualsAny :: (MonadState v m, SqlWhere v, Show a, ToSQL a) => SQL -> [a] -> m ()
@@ -609,7 +626,7 @@ sqlWhereExists sql = do
 
 sqlWhereNotExists :: (MonadState v m, SqlWhere v) => SqlSelect -> m ()
 sqlWhereNotExists sqlSelectD = do
-  sqlWhere ("NOT EXISTS (" <+> toSQLCommand (sqlSelectD { sqlSelectResult = ["TRUE"] }) <+> ")")
+  sqlWhere ("NOT EXISTS (" <+> toSQLCommand (sqlSelectD{sqlSelectResult = ["TRUE"]}) <+> ")")
 
 sqlWhereIsNULL :: (MonadState v m, SqlWhere v) => SQL -> m ()
 sqlWhereIsNULL col = sqlWhere $ col <+> "IS NULL"
@@ -617,31 +634,41 @@ sqlWhereIsNULL col = sqlWhere $ col <+> "IS NULL"
 sqlWhereIsNotNULL :: (MonadState v m, SqlWhere v) => SQL -> m ()
 sqlWhereIsNotNULL col = sqlWhere $ col <+> "IS NOT NULL"
 
--- | Add a condition in the WHERE statement that holds if any of the given
--- condition holds.
+{- | Add a condition in the WHERE statement that holds if any of the given
+condition holds.
+-}
 sqlWhereAny :: (MonadState v m, SqlWhere v) => [State SqlAll ()] -> m ()
 sqlWhereAny = sqlWhere . sqlWhereAnyImpl
 
 sqlWhereAnyImpl :: [State SqlAll ()] -> SQL
 sqlWhereAnyImpl [] = "FALSE"
 sqlWhereAnyImpl l =
-  "(" <+> smintercalate "OR" (map (parenthesize . toSQLCommand
-                                   . flip execState (SqlAll [])) l) <+> ")"
+  "("
+    <+> smintercalate
+      "OR"
+      ( map
+          ( parenthesize
+              . toSQLCommand
+              . flip execState (SqlAll [])
+          )
+          l
+      )
+    <+> ")"
 
 class SqlFrom a where
   sqlFrom1 :: a -> SQL -> a
 
 instance SqlFrom SqlSelect where
-  sqlFrom1 cmd sql = cmd { sqlSelectFrom = sqlSelectFrom cmd <+> sql }
+  sqlFrom1 cmd sql = cmd{sqlSelectFrom = sqlSelectFrom cmd <+> sql}
 
 instance SqlFrom SqlInsertSelect where
-  sqlFrom1 cmd sql = cmd { sqlInsertSelectFrom = sqlInsertSelectFrom cmd <+> sql }
+  sqlFrom1 cmd sql = cmd{sqlInsertSelectFrom = sqlInsertSelectFrom cmd <+> sql}
 
 instance SqlFrom SqlUpdate where
-  sqlFrom1 cmd sql = cmd { sqlUpdateFrom = sqlUpdateFrom cmd <+> sql }
+  sqlFrom1 cmd sql = cmd{sqlUpdateFrom = sqlUpdateFrom cmd <+> sql}
 
 instance SqlFrom SqlDelete where
-  sqlFrom1 cmd sql = cmd { sqlDeleteUsing = sqlDeleteUsing cmd <+> sql }
+  sqlFrom1 cmd sql = cmd{sqlDeleteUsing = sqlDeleteUsing cmd <+> sql}
 
 sqlFrom :: (MonadState v m, SqlFrom v) => SQL -> m ()
 sqlFrom sql = modify (\cmd -> sqlFrom1 cmd sql)
@@ -650,46 +677,58 @@ sqlJoin :: (MonadState v m, SqlFrom v) => SQL -> m ()
 sqlJoin table = sqlFrom (", " <+> table)
 
 sqlJoinOn :: (MonadState v m, SqlFrom v) => SQL -> SQL -> m ()
-sqlJoinOn table condition = sqlFrom (" JOIN " <+>
-                                     table <+>
-                                     " ON " <+>
-                                     condition)
+sqlJoinOn table condition =
+  sqlFrom
+    ( " JOIN "
+        <+> table
+        <+> " ON "
+        <+> condition
+    )
 
 sqlLeftJoinOn :: (MonadState v m, SqlFrom v) => SQL -> SQL -> m ()
-sqlLeftJoinOn table condition = sqlFrom (" LEFT JOIN " <+>
-                                         table <+>
-                                         " ON " <+>
-                                         condition)
+sqlLeftJoinOn table condition =
+  sqlFrom
+    ( " LEFT JOIN "
+        <+> table
+        <+> " ON "
+        <+> condition
+    )
 
 sqlRightJoinOn :: (MonadState v m, SqlFrom v) => SQL -> SQL -> m ()
-sqlRightJoinOn table condition = sqlFrom (" RIGHT JOIN " <+>
-                                          table <+>
-                                          " ON " <+>
-                                          condition)
+sqlRightJoinOn table condition =
+  sqlFrom
+    ( " RIGHT JOIN "
+        <+> table
+        <+> " ON "
+        <+> condition
+    )
 
 sqlFullJoinOn :: (MonadState v m, SqlFrom v) => SQL -> SQL -> m ()
-sqlFullJoinOn table condition = sqlFrom (" FULL JOIN " <+>
-                                         table <+>
-                                         " ON " <+>
-                                         condition)
+sqlFullJoinOn table condition =
+  sqlFrom
+    ( " FULL JOIN "
+        <+> table
+        <+> " ON "
+        <+> condition
+    )
 
 class SqlSet a where
   sqlSet1 :: a -> SQL -> SQL -> a
 
 instance SqlSet SqlUpdate where
-  sqlSet1 cmd name v = cmd { sqlUpdateSet = sqlUpdateSet cmd ++ [(name, v)] }
+  sqlSet1 cmd name v = cmd{sqlUpdateSet = sqlUpdateSet cmd ++ [(name, v)]}
 
 instance SqlSet SqlInsert where
-  sqlSet1 cmd name v = cmd { sqlInsertSet = sqlInsertSet cmd ++ [(name, Single v)] }
+  sqlSet1 cmd name v = cmd{sqlInsertSet = sqlInsertSet cmd ++ [(name, Single v)]}
 
 instance SqlSet SqlInsertSelect where
-  sqlSet1 cmd name v = cmd { sqlInsertSelectSet = sqlInsertSelectSet cmd ++ [(name, v)] }
+  sqlSet1 cmd name v = cmd{sqlInsertSelectSet = sqlInsertSelectSet cmd ++ [(name, v)]}
 
 sqlSetCmd :: (MonadState v m, SqlSet v) => SQL -> SQL -> m ()
 sqlSetCmd name sql = modify (\cmd -> sqlSet1 cmd name sql)
 
 sqlSetCmdList :: (MonadState SqlInsert m) => SQL -> [SQL] -> m ()
-sqlSetCmdList name as = modify (\cmd -> cmd { sqlInsertSet = sqlInsertSet cmd ++ [(name, Many as)] })
+sqlSetCmdList name as = modify (\cmd -> cmd{sqlInsertSet = sqlInsertSet cmd ++ [(name, Many as)]})
 
 sqlSet :: (MonadState v m, SqlSet v, Show a, ToSQL a) => SQL -> a -> m ()
 sqlSet name a = sqlSetCmd name (sqlParam a)
@@ -712,20 +751,20 @@ class SqlOnConflict a where
   sqlOnConflictOnColumns1 :: Sqlable sql => a -> [SQL] -> sql -> a
 
 instance SqlOnConflict SqlInsert where
-  sqlOnConflictDoNothing1 cmd = 
-    cmd { sqlInsertOnConflict = Just ("", Nothing) }
-  sqlOnConflictOnColumns1 cmd columns sql = 
-    cmd { sqlInsertOnConflict = Just (parenthesize $ sqlConcatComma columns, Just $ toSQLCommand sql) }
-  sqlOnConflictOnColumnsDoNothing1 cmd columns = 
-    cmd { sqlInsertOnConflict = Just (parenthesize $ sqlConcatComma columns, Nothing) }
+  sqlOnConflictDoNothing1 cmd =
+    cmd{sqlInsertOnConflict = Just ("", Nothing)}
+  sqlOnConflictOnColumns1 cmd columns sql =
+    cmd{sqlInsertOnConflict = Just (parenthesize $ sqlConcatComma columns, Just $ toSQLCommand sql)}
+  sqlOnConflictOnColumnsDoNothing1 cmd columns =
+    cmd{sqlInsertOnConflict = Just (parenthesize $ sqlConcatComma columns, Nothing)}
 
 instance SqlOnConflict SqlInsertSelect where
-  sqlOnConflictDoNothing1 cmd = 
-    cmd { sqlInsertSelectOnConflict = Just ("", Nothing) }
-  sqlOnConflictOnColumns1 cmd columns sql = 
-    cmd { sqlInsertSelectOnConflict = Just (parenthesize $ sqlConcatComma columns, Just $ toSQLCommand sql) }
-  sqlOnConflictOnColumnsDoNothing1 cmd columns = 
-    cmd { sqlInsertSelectOnConflict = Just (parenthesize $ sqlConcatComma columns, Nothing) }
+  sqlOnConflictDoNothing1 cmd =
+    cmd{sqlInsertSelectOnConflict = Just ("", Nothing)}
+  sqlOnConflictOnColumns1 cmd columns sql =
+    cmd{sqlInsertSelectOnConflict = Just (parenthesize $ sqlConcatComma columns, Just $ toSQLCommand sql)}
+  sqlOnConflictOnColumnsDoNothing1 cmd columns =
+    cmd{sqlInsertSelectOnConflict = Just (parenthesize $ sqlConcatComma columns, Nothing)}
 
 sqlOnConflictDoNothing :: (MonadState v m, SqlOnConflict v) => m ()
 sqlOnConflictDoNothing = modify sqlOnConflictDoNothing1
@@ -740,19 +779,19 @@ class SqlResult a where
   sqlResult1 :: a -> SQL -> a
 
 instance SqlResult SqlSelect where
-  sqlResult1 cmd sql = cmd { sqlSelectResult = sqlSelectResult cmd ++ [sql] }
+  sqlResult1 cmd sql = cmd{sqlSelectResult = sqlSelectResult cmd ++ [sql]}
 
 instance SqlResult SqlInsert where
-  sqlResult1 cmd sql = cmd { sqlInsertResult = sqlInsertResult cmd ++ [sql] }
+  sqlResult1 cmd sql = cmd{sqlInsertResult = sqlInsertResult cmd ++ [sql]}
 
 instance SqlResult SqlInsertSelect where
-  sqlResult1 cmd sql = cmd { sqlInsertSelectResult = sqlInsertSelectResult cmd ++ [sql] }
+  sqlResult1 cmd sql = cmd{sqlInsertSelectResult = sqlInsertSelectResult cmd ++ [sql]}
 
 instance SqlResult SqlUpdate where
-  sqlResult1 cmd sql = cmd { sqlUpdateResult = sqlUpdateResult cmd ++ [sql] }
+  sqlResult1 cmd sql = cmd{sqlUpdateResult = sqlUpdateResult cmd ++ [sql]}
 
 instance SqlResult SqlDelete where
-  sqlResult1 cmd sql = cmd { sqlDeleteResult = sqlDeleteResult cmd ++ [sql] }
+  sqlResult1 cmd sql = cmd{sqlDeleteResult = sqlDeleteResult cmd ++ [sql]}
 
 sqlResult :: (MonadState v m, SqlResult v) => SQL -> m ()
 sqlResult sql = modify (\cmd -> sqlResult1 cmd sql)
@@ -761,11 +800,10 @@ class SqlOrderBy a where
   sqlOrderBy1 :: a -> SQL -> a
 
 instance SqlOrderBy SqlSelect where
-  sqlOrderBy1 cmd sql = cmd { sqlSelectOrderBy = sqlSelectOrderBy cmd ++ [sql] }
+  sqlOrderBy1 cmd sql = cmd{sqlSelectOrderBy = sqlSelectOrderBy cmd ++ [sql]}
 
 instance SqlOrderBy SqlInsertSelect where
-  sqlOrderBy1 cmd sql = cmd { sqlInsertSelectOrderBy = sqlInsertSelectOrderBy cmd ++ [sql] }
-
+  sqlOrderBy1 cmd sql = cmd{sqlInsertSelectOrderBy = sqlInsertSelectOrderBy cmd ++ [sql]}
 
 sqlOrderBy :: (MonadState v m, SqlOrderBy v) => SQL -> m ()
 sqlOrderBy sql = modify (\cmd -> sqlOrderBy1 cmd sql)
@@ -775,12 +813,12 @@ class SqlGroupByHaving a where
   sqlHaving1 :: a -> SQL -> a
 
 instance SqlGroupByHaving SqlSelect where
-  sqlGroupBy1 cmd sql = cmd { sqlSelectGroupBy = sqlSelectGroupBy cmd ++ [sql] }
-  sqlHaving1 cmd sql = cmd { sqlSelectHaving = sqlSelectHaving cmd ++ [sql] }
+  sqlGroupBy1 cmd sql = cmd{sqlSelectGroupBy = sqlSelectGroupBy cmd ++ [sql]}
+  sqlHaving1 cmd sql = cmd{sqlSelectHaving = sqlSelectHaving cmd ++ [sql]}
 
 instance SqlGroupByHaving SqlInsertSelect where
-  sqlGroupBy1 cmd sql = cmd { sqlInsertSelectGroupBy = sqlInsertSelectGroupBy cmd ++ [sql] }
-  sqlHaving1 cmd sql = cmd { sqlInsertSelectHaving = sqlInsertSelectHaving cmd ++ [sql] }
+  sqlGroupBy1 cmd sql = cmd{sqlInsertSelectGroupBy = sqlInsertSelectGroupBy cmd ++ [sql]}
+  sqlHaving1 cmd sql = cmd{sqlInsertSelectHaving = sqlInsertSelectHaving cmd ++ [sql]}
 
 sqlGroupBy :: (MonadState v m, SqlGroupByHaving v) => SQL -> m ()
 sqlGroupBy sql = modify (\cmd -> sqlGroupBy1 cmd sql)
@@ -788,18 +826,17 @@ sqlGroupBy sql = modify (\cmd -> sqlGroupBy1 cmd sql)
 sqlHaving :: (MonadState v m, SqlGroupByHaving v) => SQL -> m ()
 sqlHaving sql = modify (\cmd -> sqlHaving1 cmd sql)
 
-
 class SqlOffsetLimit a where
   sqlOffset1 :: a -> Integer -> a
   sqlLimit1 :: a -> Integer -> a
 
 instance SqlOffsetLimit SqlSelect where
-  sqlOffset1 cmd num = cmd { sqlSelectOffset = num }
-  sqlLimit1 cmd num = cmd { sqlSelectLimit = num }
+  sqlOffset1 cmd num = cmd{sqlSelectOffset = num}
+  sqlLimit1 cmd num = cmd{sqlSelectLimit = num}
 
 instance SqlOffsetLimit SqlInsertSelect where
-  sqlOffset1 cmd num = cmd { sqlInsertSelectOffset = num }
-  sqlLimit1 cmd num = cmd { sqlInsertSelectLimit = num }
+  sqlOffset1 cmd num = cmd{sqlInsertSelectOffset = num}
+  sqlLimit1 cmd num = cmd{sqlInsertSelectLimit = num}
 
 sqlOffset :: (MonadState v m, SqlOffsetLimit v, Integral int) => int -> m ()
 sqlOffset val = modify (\cmd -> sqlOffset1 cmd $ toInteger val)
@@ -811,10 +848,10 @@ class SqlDistinct a where
   sqlDistinct1 :: a -> a
 
 instance SqlDistinct SqlSelect where
-  sqlDistinct1 cmd = cmd { sqlSelectDistinct = True }
+  sqlDistinct1 cmd = cmd{sqlSelectDistinct = True}
 
 instance SqlDistinct SqlInsertSelect where
-  sqlDistinct1 cmd = cmd { sqlInsertSelectDistinct = True }
+  sqlDistinct1 cmd = cmd{sqlInsertSelectDistinct = True}
 
 sqlDistinct :: (MonadState v m, SqlDistinct v) => m ()
 sqlDistinct = modify (\cmd -> sqlDistinct1 cmd)
