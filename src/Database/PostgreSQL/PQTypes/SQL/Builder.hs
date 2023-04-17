@@ -129,6 +129,7 @@ module Database.PostgreSQL.PQTypes.SQL.Builder
   , sqlWith
   , sqlWithMaterialized
   , sqlUnion
+  , sqlUnionAll
   , checkAndRememberMaterializationSupport
 
   , sqlSelect
@@ -231,6 +232,7 @@ instance Sqlable SqlCondition where
 data SqlSelect = SqlSelect
   { sqlSelectFrom     :: SQL
   , sqlSelectUnion    :: [SQL]
+  , sqlSelectUnionAll :: [SQL]
   , sqlSelectDistinct :: Bool
   , sqlSelectResult   :: [SQL]
   , sqlSelectWhere    :: [SqlCondition]
@@ -340,8 +342,8 @@ instance Sqlable SqlSelect where
   toSQLCommand cmd = smconcat
     [ emitClausesSepComma "WITH" $
       map (\(name,command,mat) -> name <+> "AS" <+> materializedClause mat <+> parenthesize command) (sqlSelectWith cmd)
-    , if hasUnion
-      then emitClausesSep "" "UNION" (mainSelectClause : sqlSelectUnion cmd)
+    , if hasUnion || hasUnionAll
+      then emitClausesSep "" unionKeyword (mainSelectClause : unionCmd)
       else mainSelectClause
     , emitClausesSepComma "GROUP BY" (sqlSelectGroupBy cmd)
     , emitClausesSep "HAVING" "AND" (sqlSelectHaving cmd)
@@ -368,6 +370,19 @@ instance Sqlable SqlSelect where
         ]
 
       hasUnion      = not . null $ sqlSelectUnion cmd
+      hasUnionAll   = not . null $ sqlSelectUnionAll cmd
+      unionKeyword = case (hasUnion, hasUnionAll) of
+                        (False, True) -> "UNION ALL"
+                        (True, False) -> "UNION"
+                        -- False, False is caught by the (hasUnion || hasUnionAll) above.
+                        -- Hence, the catch-all is implicitly for (True, True).
+                        _ -> error "Having both `sqlSelectUnion` and `sqlSelectUnionAll` is not supported at the moment."
+      unionCmd = case (hasUnion, hasUnionAll) of
+                        (False, True) -> sqlSelectUnionAll cmd
+                        (True, False) -> sqlSelectUnion cmd
+                        -- False, False is caught by the (hasUnion || hasUnionAll) above.
+                        -- Hence, the catch-all is implicitly for (True, True).
+                        _ -> error "Having both `sqlSelectUnion` and `sqlSelectUnionAll` is not supported at the moment."
       orderByClause = emitClausesSepComma "ORDER BY" $ sqlSelectOrderBy cmd
       limitClause   = unsafeSQL $ "LIMIT" <+> show (sqlSelectLimit cmd)
 
@@ -403,6 +418,7 @@ instance Sqlable SqlInsertSelect where
     , parenthesize . sqlConcatComma . map fst $ sqlInsertSelectSet cmd
     , parenthesize . toSQLCommand $ SqlSelect { sqlSelectFrom    = sqlInsertSelectFrom cmd
                                               , sqlSelectUnion   = []
+                                              , sqlSelectUnionAll = []
                                               , sqlSelectDistinct = sqlInsertSelectDistinct cmd
                                               , sqlSelectResult  = fmap snd $ sqlInsertSelectSet cmd
                                               , sqlSelectWhere   = sqlInsertSelectWhere cmd
@@ -460,14 +476,13 @@ instance Sqlable SqlAll where
   toSQLCommand cmd =
     "(" <+> smintercalate "AND" (map (parenthesize . toSQLCommand) (sqlAllWhere cmd)) <+> ")"
 
-
 sqlSelect :: SQL -> State SqlSelect () -> SqlSelect
 sqlSelect table refine =
-  execState refine (SqlSelect table [] False [] [] [] [] [] 0 (-1) [])
+  execState refine (SqlSelect table [] [] False [] [] [] [] [] 0 (-1) [])
 
 sqlSelect2 :: SQL -> State SqlSelect () -> SqlSelect
 sqlSelect2 from refine =
-  execState refine (SqlSelect from [] False [] [] [] [] [] 0 (-1) [])
+  execState refine (SqlSelect from [] [] False [] [] [] [] [] 0 (-1) [])
 
 sqlInsert :: SQL -> State SqlInsert () -> SqlInsert
 sqlInsert table refine =
@@ -533,6 +548,13 @@ sqlWithMaterialized name sql = modify (\cmd -> sqlWith1 cmd name (toSQLCommand s
 -- applies to the main SELECT, not the whole union.
 sqlUnion :: (MonadState SqlSelect m, Sqlable sql) => [sql] -> m ()
 sqlUnion sqls = modify (\cmd -> cmd { sqlSelectUnion = map toSQLCommand sqls })
+
+-- | Note: WHERE clause of the main SELECT is treated specially, i.e. it only
+-- applies to the main SELECT, not the whole union.
+--
+-- @since 1.16.4.0
+sqlUnionAll :: (MonadState SqlSelect m, Sqlable sql) => [sql] -> m ()
+sqlUnionAll sqls = modify (\cmd -> cmd { sqlSelectUnionAll = map toSQLCommand sqls })
 
 class SqlWhere a where
   sqlWhere1 :: a -> SqlCondition -> a

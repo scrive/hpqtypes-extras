@@ -1,3 +1,6 @@
+# hpqtypes-extras-1.16.4.0 (2023-??-??)
+* Add support for the `UNION ALL` clause via `sqlUnionAll`.
+
 # hpqtypes-extras-1.16.3.1 (2023-04-13)
 * Add support for GHC 9.6.
 * Fix checkAndRememberMaterializationSupport's query.
