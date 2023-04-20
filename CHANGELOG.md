@@ -1,4 +1,4 @@
-# hpqtypes-extras-1.16.4.0 (2023-??-??)
+# hpqtypes-extras-1.16.4.0 (2023-04-20)
 * Add support for the `UNION ALL` clause via `sqlUnionAll`.
 
 # hpqtypes-extras-1.16.3.1 (2023-04-13)
