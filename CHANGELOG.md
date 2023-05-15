@@ -1,3 +1,6 @@
+# hpqtypes-extras-1.16.4.1 (2023-??-??)
+* Relax checks around indexes related to the `REINDEX` operation.
+
 # hpqtypes-extras-1.16.4.0 (2023-04-20)
 * Add support for the `UNION ALL` clause via `sqlUnionAll`.
 
