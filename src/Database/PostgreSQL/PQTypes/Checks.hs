@@ -545,7 +545,7 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version)
               -- Manually created indexes for ad-hoc improvements.
                  "local_" `T.isPrefixOf` unRawSQL name
               -- Indexes related to the REINDEX operation, see
-              -- https://www.postgresql.org/docs/current/sql-reindex.html.
+              -- https://www.postgresql.org/docs/15/sql-reindex.html
               || "_ccnew" `T.isSuffixOf` unRawSQL name
               || "_ccold" `T.isSuffixOf` unRawSQL name
 
