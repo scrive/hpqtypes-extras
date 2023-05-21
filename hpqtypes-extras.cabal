@@ -1,6 +1,6 @@
 cabal-version:       2.2
 name:                hpqtypes-extras
-version:             1.16.4.1
+version:             1.16.4.2
 synopsis:            Extra utilities for hpqtypes library
 description:         The following extras for hpqtypes library:
                      .
