@@ -25,6 +25,8 @@ createTable withConstraints table@Table{..} = do
   -- Create empty table and add the columns.
   runQuery_ $ sqlCreateTable tblName
   runQuery_ $ sqlAlterTable tblName $ map sqlAddColumn tblColumns
+  -- Add the primary key if applicable.
+  forM_ tblPrimaryKey $ \pk -> runQuery_ $ sqlAlterTable tblName [sqlAddPK tblName pk]
   -- Add indexes.
   forM_ tblIndexes $ runQuery_ . sqlCreateIndexMaybeDowntime tblName
   -- Add all the other constraints if applicable.
@@ -40,9 +42,8 @@ createTableConstraints :: MonadDB m => Table -> m ()
 createTableConstraints Table{..} = when (not $ null addConstraints) $ do
   runQuery_ $ sqlAlterTable tblName addConstraints
   where
-    addConstraints = concat [
-        [sqlAddPK tblName pk | Just pk <- return tblPrimaryKey]
-      , map sqlAddValidCheckMaybeDowntime tblChecks
+    addConstraints = concat
+      [ map sqlAddValidCheckMaybeDowntime tblChecks
       , map (sqlAddValidFKMaybeDowntime tblName) tblForeignKeys
       ]
 

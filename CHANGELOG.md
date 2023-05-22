@@ -1,3 +1,6 @@
+# hpqtypes-extras-1.16.4.2 (2023-??-??)
+* Make order of tables during schema creation irrelevant.
+
 # hpqtypes-extras-1.16.4.1 (2023-05-15)
 * Relax checks around indexes related to the `REINDEX` operation.
 
