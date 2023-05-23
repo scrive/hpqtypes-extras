@@ -1,4 +1,4 @@
-# hpqtypes-extras-1.16.4.2 (2023-??-??)
+# hpqtypes-extras-1.16.4.2 (2023-05-23)
 * Make order of tables during schema creation irrelevant.
 
 # hpqtypes-extras-1.16.4.1 (2023-05-15)
