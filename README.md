@@ -1,4 +1,7 @@
-# hpqtypes-extras [![Hackage version](https://img.shields.io/hackage/v/hpqtypes-extras.svg?label=Hackage)](https://hackage.haskell.org/package/hpqtypes-extras) [![Build Status](https://secure.travis-ci.org/scrive/hpqtypes-extras.svg?branch=master)](http://travis-ci.org/scrive/hpqtypes-extras)
+# hpqtypes-extras
+
+[![Build Status](https://github.com/scrive/hpqtypes-extras/workflows/Haskell-CI/badge.svg?branch=master)](https://github.com/scrive/hpqtypes-extras/actions?query=branch%3Amaster)
+[![Hackage](https://img.shields.io/hackage/v/hpqtypes-extras.svg)](https://hackage.haskell.org/package/hpqtypes-extras)
 
 The following extras
 for [hpqtypes](http://hackage.haskell.org/package/hpqtypes) library:
