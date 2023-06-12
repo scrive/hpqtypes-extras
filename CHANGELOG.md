@@ -1,3 +1,7 @@
+# hpqtypes-extras-1.16.4.3 (2023-??-??)
+* Synchronize timezone of a session with timezone of a database after changing
+  the latter.
+
 # hpqtypes-extras-1.16.4.2 (2023-05-23)
 * Make order of tables during schema creation irrelevant.
 

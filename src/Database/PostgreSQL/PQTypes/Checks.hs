@@ -157,6 +157,8 @@ setDBTimeZoneToUTC = do
     logInfo_ $ "Setting '" <> unRawSQL dbname
       <> "' database to return timestamps in UTC"
     runQuery_ $ "ALTER DATABASE" <+> dbname <+> "SET TIMEZONE = 'UTC'"
+    -- Setting the database timezone doesn't change the session timezone.
+    runSQL_ $ "SET timezone = 'UTC'"
 
 -- | Get the names of all user-defined tables that actually exist in
 -- the DB.
