@@ -39,13 +39,11 @@ createTable withConstraints table@Table{..} = do
     sqlSet "version" tblVersion
 
 createTableConstraints :: MonadDB m => Table -> m ()
-createTableConstraints Table{..} = when (not $ null addConstraints) $ do
+createTableConstraints Table{..} = unless (null addConstraints) $ do
   runQuery_ $ sqlAlterTable tblName addConstraints
   where
-    addConstraints = concat
-      [ map sqlAddValidCheckMaybeDowntime tblChecks
-      , map (sqlAddValidFKMaybeDowntime tblName) tblForeignKeys
-      ]
+    addConstraints = map sqlAddValidCheckMaybeDowntime tblChecks
+                     ++ map (sqlAddValidFKMaybeDowntime tblName) tblForeignKeys
 
 createTableTriggers :: MonadDB m => Table -> m ()
 createTableTriggers = mapM_ createTrigger . tblTriggers

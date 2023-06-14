@@ -405,7 +405,7 @@ instance Sqlable SqlInsert where
      longest = maximum (1 : (map (lengthOfEither . snd) (sqlInsertSet cmd)))
      lengthOfEither (Single _) = 1
      lengthOfEither (Many x)   = length x
-     makeLongEnough (Single x) = take longest (repeat x)
+     makeLongEnough (Single x) = replicate longest x
      makeLongEnough (Many x)   = take longest (x ++ repeat "DEFAULT")
 
 instance Sqlable SqlInsertSelect where
@@ -448,6 +448,7 @@ withMaterializedSupported :: IORef Bool
 withMaterializedSupported = unsafePerformIO $ newIORef False
 
 isWithMaterializedSupported :: Bool
+{-# NOINLINE isWithMaterializedSupported #-}
 isWithMaterializedSupported = unsafePerformIO $ readIORef withMaterializedSupported
 
 materializedClause :: Materialized -> SQL
@@ -832,4 +833,4 @@ instance SqlDistinct SqlInsertSelect where
   sqlDistinct1 cmd = cmd { sqlInsertSelectDistinct = True }
 
 sqlDistinct :: (MonadState v m, SqlDistinct v) => m ()
-sqlDistinct = modify (\cmd -> sqlDistinct1 cmd)
+sqlDistinct = modify sqlDistinct1

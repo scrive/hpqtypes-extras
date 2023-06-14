@@ -59,7 +59,7 @@ readNubList :: (Read a) => ([a] -> l a) -> R.ReadPrec (l a)
 readNubList toList = R.parens . R.prec 10 $ fmap toList R.readPrec
 
 ordNubBy :: Ord b => (a -> b) -> [a] -> [a]
-ordNubBy f l = go Set.empty l
+ordNubBy f = go Set.empty
   where
     go !_ [] = []
     go !s (x:xs)

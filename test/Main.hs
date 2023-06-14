@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Use head" #-}
 module Main where
 
 import Control.Monad.Catch
@@ -31,7 +33,7 @@ import Test.Tasty
 import Test.Tasty.HUnit
 import Test.Tasty.Options
 
-data ConnectionString = ConnectionString String
+newtype ConnectionString = ConnectionString String
   deriving Typeable
 
 instance IsOption ConnectionString where
@@ -104,8 +106,8 @@ tableBankMigration4 = Migration
 
 tableBankSchema4 :: Table
 tableBankSchema4 = tableBankSchema3 {
-    tblVersion = (tblVersion tableBankSchema3)  + 1
-  , tblColumns = (tblColumns tableBankSchema3) ++ [
+    tblVersion = tblVersion tableBankSchema3  + 1
+  , tblColumns = tblColumns tableBankSchema3 ++ [
       tblColumn
       { colName = "cash", colType = IntegerT
       , colNullable = False
@@ -121,7 +123,7 @@ tableBankMigration5fst = Migration
   , mgrFrom      = 2
   , mgrAction    = StandardMigration $ do
       runQuery_ $ sqlAlterTable (tblName tableBankSchema4) [
-        sqlDropColumn $ "cash"
+        sqlDropColumn "cash"
         ]
   }
 
@@ -136,7 +138,7 @@ tableBankMigration5snd = Migration
 
 tableBankSchema5 :: Table
 tableBankSchema5 = tableBankSchema4 {
-    tblVersion = (tblVersion tableBankSchema4) + 2
+    tblVersion = tblVersion tableBankSchema4 + 2
   , tblColumns = filter (\c -> colName c /= "cash")
       (tblColumns tableBankSchema4)
   , tblIndexes = [(indexOnColumn "name") { idxInclude = ["id", "location"] }]
@@ -428,7 +430,7 @@ schema6Tables =
           , tableBadGuySchema1
           , tableRobberySchema1
           , tableParticipatedInRobberySchema1
-              { tblVersion = (tblVersion tableParticipatedInRobberySchema1) + 1,
+              { tblVersion = tblVersion tableParticipatedInRobberySchema1 + 1,
                 tblPrimaryKey = Nothing }
           , tableWitnessSchema1
           , tableWitnessedRobberySchema1
@@ -441,8 +443,8 @@ schema6Migrations =
     , mgrFrom = tblVersion tableParticipatedInRobberySchema1
     , mgrAction =
       StandardMigration $ do
-        runQuery_ $ ("ALTER TABLE participated_in_robbery DROP CONSTRAINT \
-                     \pk__participated_in_robbery" :: RawSQL ())
+        runQuery_ ("ALTER TABLE participated_in_robbery DROP CONSTRAINT \
+                   \pk__participated_in_robbery" :: RawSQL ())
     }
 
 
@@ -1172,7 +1174,7 @@ testTriggers step = do
     verify triggers present = do
       dbTriggers <- getDBTriggers "bank"
       let trgs = map fst dbTriggers
-          ok = and $ map (`elem` trgs) triggers
+          ok = all (`elem` trgs) triggers
           err = "Triggers " <> (if present then "" else "not ") <> "present in the database."
           trans = if present then id else not
       liftIO . assertBool err $ trans ok
@@ -1217,8 +1219,8 @@ testSqlWith step = do
       migrate [tableBankSchema1] [createTableMigration tableBankSchema1]
       step "inserting initial data"
       runQuery_ . sqlInsert "bank" $ do
-        sqlSetList "name" (["HSBC" :: T.Text, "other"])
-        sqlSetList "location" (["13 Foo St., Tucson" :: T.Text, "no address"])
+        sqlSetList "name" ["HSBC" :: T.Text, "other"]
+        sqlSetList "location" ["13 Foo St., Tucson" :: T.Text, "no address"]
         sqlResult "id"
       step "testing WITH .. INSERT SELECT"
       runQuery_ . sqlInsertSelect "bank" "bank_name" $ do
@@ -1337,16 +1339,16 @@ migrationTest2 connSource =
     checkDatabase extrasOptionsWithUnknownObjects [] [] currentSchema
   assertException "checkDatabase should throw exception for wrong schema" $
     checkDatabase extrasOptions [] [] differentSchema
-  assertException ("checkDatabaseAllowUnknownObjects \
-                   \should throw exception for wrong scheme") $
+  assertException "checkDatabaseAllowUnknownObjects \
+                  \should throw exception for wrong scheme" $
     checkDatabase extrasOptionsWithUnknownObjects [] [] differentSchema
 
   runSQL_ "INSERT INTO table_versions (name, version) \
           \VALUES ('unknown_table', 0)"
   assertException "checkDatabase throw when extra entry in 'table_versions'" $
     checkDatabase extrasOptions [] [] currentSchema
-  assertNoException ("checkDatabaseAllowUnknownObjects \
-                     \accepts extra entry in 'table_versions'") $
+  assertNoException "checkDatabaseAllowUnknownObjects \
+                    \accepts extra entry in 'table_versions'" $
     checkDatabase extrasOptionsWithUnknownObjects [] [] currentSchema
   runSQL_ "DELETE FROM table_versions where name='unknown_table'"
 
@@ -1360,8 +1362,8 @@ migrationTest2 connSource =
           \VALUES ('unknown_table', 0)"
   assertException "checkDatabase should throw with unknown table" $
     checkDatabase extrasOptions [] [] currentSchema
-  assertNoException ("checkDatabaseAllowUnknownObjects \
-                     \accepts unknown tables with version") $
+  assertNoException "checkDatabaseAllowUnknownObjects \
+                    \accepts unknown tables with version" $
     checkDatabase extrasOptionsWithUnknownObjects [] [] currentSchema
 
   freshTestDB    step
@@ -1403,8 +1405,8 @@ migrationTest3 connSource =
   migrateDBToSchema2  step
   testDBSchema2       step badGuyIds robberyIds
 
-  assertException ( "Trying to run the same migration twice should fail, \
-                     \when starting with a createTable migration" ) $
+  assertException "Trying to run the same migration twice should fail, \
+                  \when starting with a createTable migration" $
     migrateDBToSchema2Hacky  step
 
   freshTestDB         step
@@ -1659,14 +1661,14 @@ foreignKeyIndexesTests connSource =
 
 
 assertNoException :: String -> TestM () -> TestM ()
-assertNoException t c = eitherExc
+assertNoException t = eitherExc
   (const $ liftIO $ assertFailure ("Exception thrown for: " ++ t))
-  (const $ return ()) c
+  (const $ return ())
 
 assertException :: String -> TestM () -> TestM ()
-assertException t c = eitherExc
+assertException t = eitherExc
   (const $ return ())
-  (const $ liftIO $ assertFailure ("No exception thrown for: " ++ t)) c
+  (const $ liftIO $ assertFailure ("No exception thrown for: " ++ t))
 
 assertDBException :: String -> TestM () -> TestM ()
 assertDBException t c =
