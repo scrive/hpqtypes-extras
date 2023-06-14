@@ -19,6 +19,7 @@ import Control.Monad
 import Control.Monad.Catch
 import Control.Monad.Reader
 import Data.Int
+import Data.Foldable (foldMap')
 import Data.Function
 import Data.List (partition)
 import Data.Maybe
@@ -435,6 +436,7 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version)
         , checkChecks tblChecks checks
         , checkIndexes tblIndexes indexes
         , checkForeignKeys tblForeignKeys fkeys
+        , checkForeignKeyIndexes tblForeignKeys tblIndexes
         , checkTriggers tblTriggers triggers
         ]
       where
@@ -557,6 +559,27 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version)
             checkEquality "FOREIGN KEYs" defs (map fst fkeys)
           , checkNames (fkName tblName) fkeys
           ]
+
+        checkForeignKeyIndexes :: [ForeignKey] -> [TableIndex] -> ValidationResult
+        checkForeignKeyIndexes foreignKeys indexes =
+          if (eoCheckForeignKeysIndexes options)
+          then foldMap' go foreignKeys
+          else mempty
+          -- The idea behind the following conversions to sets of columns is that the
+          -- order of index columns doesn't matter.
+          where
+            cname :: [IndexColumn] -> S.Set Text
+            cname = S.fromList . map (\(IndexColumn col _) -> unRawSQL col)
+
+            idxColumnsSets :: [S.Set Text]
+            idxColumnsSets = cname . idxColumns <$> indexes
+
+            go :: ForeignKey -> ValidationResult
+            go fk = let columns = map unRawSQL (fkColumns fk)
+                        fkColumnsSet = S.fromList columns
+                    in if (fkColumnsSet `elem` idxColumnsSets)
+                       then mempty
+                       else validationError $ mconcat ["\n  ● Foreign key '(", T.intercalate "," columns, ")' is missing an index"]
 
         checkTriggers :: [Trigger] -> [(Trigger, RawSQL ())] -> ValidationResult
         checkTriggers defs triggers =

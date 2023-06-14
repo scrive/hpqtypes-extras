@@ -1,3 +1,6 @@
+# hpqtypes-extras-1.17.0.0 (2023-??-??)
+* Add an optional check that all foreign keys have an index.
+
 # hpqtypes-extras-1.16.4.4 (2023-08-23)
 * Switch from `cryptonite` to `crypton`.
 * Make `sqlWhereEqualsAny`, `sqlWhereIn` and `sqlWhereNotIn` prepared-query
