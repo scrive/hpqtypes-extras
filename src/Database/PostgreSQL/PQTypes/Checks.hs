@@ -509,8 +509,8 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version)
                         -> ValidationResult
         checkPrimaryKey mdef mpk = mconcat [
             checkEquality "PRIMARY KEY" def (map fst pk)
-          , checkNames (const (pkName tblName)) pk
-          , if (eoEnforcePKs options)
+          , checkNames (const (unquoted $ pkName tblName)) pk
+          , if eoEnforcePKs options
             then checkPKPresence tblName mdef mpk
             else mempty
           ]
@@ -533,7 +533,7 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version)
                      -> ValidationResult
         checkIndexes defs allIndexes = mconcat
           $ checkEquality "INDEXes" defs (map fst indexes)
-          : checkNames (indexName tblName) indexes
+          : checkNames (unquoted . indexName tblName) indexes
           : map localIndexInfo localIndexes
           where
             localIndexInfo (index, name) = validationInfo $ T.concat
@@ -555,7 +555,7 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version)
                          -> ValidationResult
         checkForeignKeys defs fkeys = mconcat [
             checkEquality "FOREIGN KEYs" defs (map fst fkeys)
-          , checkNames (fkName tblName) fkeys
+          , checkNames (unquoted . fkName tblName) fkeys
           ]
 
         checkTriggers :: [Trigger] -> [(Trigger, RawSQL ())] -> ValidationResult
@@ -830,7 +830,7 @@ checkDBConsistency options domains tablesWithVersions migrations = do
             -- rerun, we need to remove it first (see
             -- https://www.postgresql.org/docs/9.6/sql-createindex.html for more
             -- information).
-            runQuery_ $ "DROP INDEX CONCURRENTLY IF EXISTS" <+> indexName tname idx
+            runQuery_ $ "DROP INDEX CONCURRENTLY IF EXISTS" <+> quoted (indexName tname idx)
             runQuery_ (sqlCreateIndexConcurrently tname idx)
           updateTableVersion
 

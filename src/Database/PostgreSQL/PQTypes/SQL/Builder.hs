@@ -132,6 +132,11 @@ module Database.PostgreSQL.PQTypes.SQL.Builder
   , sqlUnionAll
   , checkAndRememberMaterializationSupport
 
+  , sqlIdentifier
+  , SqlIdentifier
+  , quoted
+  , unquoted
+
   , sqlSelect
   , sqlSelect2
   , SqlSelect(..)
@@ -178,6 +183,7 @@ import Data.List
 import Data.Maybe
 import Data.Monoid.Utils
 import Data.String
+import qualified Data.Text as T
 import Data.Typeable
 import Database.PostgreSQL.PQTypes
 import System.IO.Unsafe
@@ -205,6 +211,18 @@ sqlConcatOR = smintercalate "OR" . map parenthesize
 
 parenthesize :: SQL -> SQL
 parenthesize s = "(" <> s <> ")"
+
+quoted :: SqlIdentifier -> RawSQL ()
+quoted (SqlIdentifier ident) = flip rawSQL () $ mconcat [ "\"", ident, "\"" ]
+
+unquoted :: SqlIdentifier -> RawSQL ()
+unquoted = flip rawSQL () . unSqlIdentifier
+
+sqlIdentifier :: RawSQL () -> SqlIdentifier
+sqlIdentifier = SqlIdentifier . T.take 63 . unRawSQL -- PostgreSQL's limit for identifier is 63 characters
+
+newtype SqlIdentifier = SqlIdentifier { unSqlIdentifier :: T.Text }
+  deriving (Eq, Show)
 
 -- | 'AscDesc' marks ORDER BY order as ascending or descending.
 -- Conversion to SQL adds DESC marker to descending and no marker
@@ -734,19 +752,19 @@ class SqlOnConflict a where
   sqlOnConflictOnColumns1 :: Sqlable sql => a -> [SQL] -> sql -> a
 
 instance SqlOnConflict SqlInsert where
-  sqlOnConflictDoNothing1 cmd = 
+  sqlOnConflictDoNothing1 cmd =
     cmd { sqlInsertOnConflict = Just ("", Nothing) }
-  sqlOnConflictOnColumns1 cmd columns sql = 
+  sqlOnConflictOnColumns1 cmd columns sql =
     cmd { sqlInsertOnConflict = Just (parenthesize $ sqlConcatComma columns, Just $ toSQLCommand sql) }
-  sqlOnConflictOnColumnsDoNothing1 cmd columns = 
+  sqlOnConflictOnColumnsDoNothing1 cmd columns =
     cmd { sqlInsertOnConflict = Just (parenthesize $ sqlConcatComma columns, Nothing) }
 
 instance SqlOnConflict SqlInsertSelect where
-  sqlOnConflictDoNothing1 cmd = 
+  sqlOnConflictDoNothing1 cmd =
     cmd { sqlInsertSelectOnConflict = Just ("", Nothing) }
-  sqlOnConflictOnColumns1 cmd columns sql = 
+  sqlOnConflictOnColumns1 cmd columns sql =
     cmd { sqlInsertSelectOnConflict = Just (parenthesize $ sqlConcatComma columns, Just $ toSQLCommand sql) }
-  sqlOnConflictOnColumnsDoNothing1 cmd columns = 
+  sqlOnConflictOnColumnsDoNothing1 cmd columns =
     cmd { sqlInsertSelectOnConflict = Just (parenthesize $ sqlConcatComma columns, Nothing) }
 
 sqlOnConflictDoNothing :: (MonadState v m, SqlOnConflict v) => m ()

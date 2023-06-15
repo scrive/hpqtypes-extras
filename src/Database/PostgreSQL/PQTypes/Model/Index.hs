@@ -26,6 +26,8 @@ import Data.Function
 import Data.String
 import Data.Monoid.Utils
 import Database.PostgreSQL.PQTypes
+import Database.PostgreSQL.PQTypes.SQL.Builder
+import Prelude
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
@@ -142,8 +144,8 @@ uniqueIndexOnColumnWithCondition column whereC = TableIndex {
 , idxWhere = Just whereC
 }
 
-indexName :: RawSQL () -> TableIndex -> RawSQL ()
-indexName tname TableIndex{..} = flip rawSQL () $ T.take 63 . unRawSQL $ mconcat [
+indexName :: RawSQL () -> TableIndex -> SqlIdentifier
+indexName tname TableIndex{..} = sqlIdentifier $ mconcat [
     if idxUnique then "unique_idx__" else "idx__"
   , tname
   , "__"
@@ -186,7 +188,7 @@ sqlCreateIndex_ concurrently tname idx@TableIndex{..} = mconcat [
   , if idxUnique then " UNIQUE" else ""
   , " INDEX "
   , if concurrently then "CONCURRENTLY " else ""
-  , indexName tname idx
+  , quoted $ indexName tname idx
   , " ON" <+> tname
   , " USING" <+> (rawSQL (T.pack . show $ idxMethod) ()) <+> "("
   , mintercalate ", "
@@ -208,7 +210,7 @@ sqlCreateIndex_ concurrently tname idx@TableIndex{..} = mconcat [
 -- https://www.postgresql.org/docs/current/sql-dropindex.html for more
 -- information.
 sqlDropIndexMaybeDowntime :: RawSQL () -> TableIndex -> RawSQL ()
-sqlDropIndexMaybeDowntime tname idx = "DROP INDEX" <+> indexName tname idx
+sqlDropIndexMaybeDowntime tname idx = "DROP INDEX" <+> quoted (indexName tname idx)
 
 sqlDropIndexConcurrently :: RawSQL () -> TableIndex -> RawSQL ()
-sqlDropIndexConcurrently tname idx = "DROP INDEX CONCURRENTLY" <+> indexName tname idx
+sqlDropIndexConcurrently tname idx = "DROP INDEX CONCURRENTLY" <+> quoted (indexName tname idx)
