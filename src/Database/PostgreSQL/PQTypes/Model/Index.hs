@@ -19,13 +19,14 @@ module Database.PostgreSQL.PQTypes.Model.Index (
   , sqlDropIndexConcurrently
   ) where
 
-import Crypto.Hash.RIPEMD160
-import Data.ByteString.Base16
 import Data.Char
 import Data.Function
 import Data.String
 import Data.Monoid.Utils
 import Database.PostgreSQL.PQTypes
+import qualified Crypto.Hash as H
+import qualified Data.ByteArray as BA
+import qualified Data.ByteString.Base16 as B16
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
@@ -166,7 +167,8 @@ indexName tname TableIndex{..} = flip rawSQL () $ T.take 63 . unRawSQL $ mconcat
             _       -> '$' : acc
     -- hash WHERE clause and add it to index name so that indexes
     -- with the same columns, but different constraints can coexist
-    hashWhere = asText $ T.decodeUtf8 . encode . BS.take 10 . hash . T.encodeUtf8
+    hashWhere = asText $ T.decodeUtf8 . B16.encode . BS.take 10
+      . BA.convert . H.hash @_ @H.RIPEMD160 . T.encodeUtf8
 
 -- | Create an index. Warning: if the affected table is large, this will prevent
 -- the table from being modified during the creation. If this is not acceptable,
