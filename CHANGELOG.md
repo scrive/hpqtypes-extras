@@ -1,3 +1,6 @@
+# hpqtypes-extras-1.16.4.4 (2023-??-??)
+* Switch from `cryptonite` to `crypton`.
+
 # hpqtypes-extras-1.16.4.3 (2023-06-12)
 * Synchronize timezone of a session with timezone of a database after changing
   the latter.
