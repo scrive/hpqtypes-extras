@@ -1,6 +1,1 @@
 packages: .
-
--- GHC 9.6
-allow-newer: *:base
-           , *:ghc-prim
-           , *:template-haskell

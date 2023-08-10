@@ -3,6 +3,4 @@ doctest:        False
 tests:          True
 postgresql:     True
 
-postgresql-versions: 11 15
-
 ghcup-jobs:     True
