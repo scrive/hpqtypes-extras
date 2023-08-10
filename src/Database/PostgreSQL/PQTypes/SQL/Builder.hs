@@ -602,14 +602,9 @@ sqlWhereILike name value = sqlWhere  $ name <+> "ILIKE" <?> value
 
 -- | Similar to 'sqlWhereIn', but uses @ANY@ instead of @SELECT UNNEST@.
 sqlWhereEqualsAny :: (MonadState v m, SqlWhere v, Show a, ToSQL a) => SQL -> [a] -> m ()
-sqlWhereEqualsAny name = \case
-  [] -> sqlWhere "FALSE"
-  [value] -> sqlWhereEq name value
-  values -> sqlWhere $ name <+> "= ANY(" <?> Array1 values <+> ")"
+sqlWhereEqualsAny name values = sqlWhere $ name <+> "= ANY(" <?> Array1 values <+> ")"
 
 sqlWhereIn :: (MonadState v m, SqlWhere v, Show a, ToSQL a) => SQL -> [a] -> m ()
-sqlWhereIn _name [] = sqlWhere "FALSE"
-sqlWhereIn name [value] = sqlWhereEq name value
 sqlWhereIn name values = do
   -- Unpack the array to give query optimizer more options.
   sqlWhere $ name <+> "IN (SELECT UNNEST(" <?> Array1 values <+> "))"
@@ -618,8 +613,6 @@ sqlWhereInSql :: (MonadState v m, Sqlable a, SqlWhere v) => SQL -> a -> m ()
 sqlWhereInSql name sql = sqlWhere $ name <+> "IN" <+> parenthesize (toSQLCommand sql)
 
 sqlWhereNotIn :: (MonadState v m, SqlWhere v, Show a, ToSQL a) => SQL -> [a] -> m ()
-sqlWhereNotIn _name [] = sqlWhere "TRUE"
-sqlWhereNotIn name [value] = sqlWhereNotEq name value
 sqlWhereNotIn name values = sqlWhere $ name <+> "NOT IN (SELECT UNNEST(" <?> Array1 values <+> "))"
 
 sqlWhereNotInSql :: (MonadState v m, Sqlable a, SqlWhere v) => SQL -> a -> m ()
