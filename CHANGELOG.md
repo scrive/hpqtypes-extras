@@ -1,4 +1,4 @@
-# hpqtypes-extras-1.16.4.4 (2023-??-??)
+# hpqtypes-extras-1.16.4.4 (2023-08-23)
 * Switch from `cryptonite` to `crypton`.
 * Make `sqlWhereEqualsAny`, `sqlWhereIn` and `sqlWhereNotIn` prepared-query
   friendly.
