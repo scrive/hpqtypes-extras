@@ -1608,7 +1608,7 @@ foreignKeyIndexesTests connSource =
       assertException "Foreign keys are missing" $ migrateDatabase options ["pgcrypto"] [] [] [table1, table2]
         [createTableMigration table1, createTableMigration table2]
 
-    step "Table is missing several foreign keys"
+    step "Table is missing several foreign key indexes"
     do
       let options = defaultExtrasOptions { eoCheckForeignKeysIndexes = True }
       assertException "Foreign keys are missing" $ migrateDatabase options ["pgcrypto"] [] [] [table1, table2, table3]
