@@ -1590,6 +1590,74 @@ migrationTest5 connSource =
       rows :: [Maybe Bool] <- fetchMany runIdentity
       liftIO . assertEqual "All name_is_true are true" True $ all (== Just True) rows
 
+foreignKeyIndexesTests :: ConnectionSourceM (LogT IO) -> TestTree
+foreignKeyIndexesTests connSource =
+  testCaseSteps' "Foreign key indexes tests" connSource $ \step -> do
+    freshTestDB step
+
+    step "Create database with two tables, no foreign key checking"
+    do
+      let options = defaultExtrasOptions
+      migrateDatabase options ["pgcrypto"] [] [] [table1, table2]
+        [createTableMigration table1, createTableMigration table2]
+      checkDatabase defaultExtrasOptions [] [] [table1, table2]
+
+    step "Create database with two tables, with foreign key checking"
+    do
+      let options = defaultExtrasOptions { eoCheckForeignKeysIndexes = True }
+      assertException "Foreign keys are missing" $ migrateDatabase options ["pgcrypto"] [] [] [table1, table2]
+        [createTableMigration table1, createTableMigration table2]
+
+    step "Table is missing several foreign key indexes"
+    do
+      let options = defaultExtrasOptions { eoCheckForeignKeysIndexes = True }
+      assertException "Foreign keys are missing" $ migrateDatabase options ["pgcrypto"] [] [] [table1, table2, table3]
+        [createTableMigration table1, createTableMigration table2, createTableMigration table3]
+
+  where
+    table1 :: Table
+    table1 = tblTable
+      { tblName = "fktest1"
+      , tblVersion = 1
+      , tblColumns =
+        [ tblColumn { colName = "id", colType = UuidT, colNullable = False }
+        , tblColumn { colName = "name", colType = TextT }
+        , tblColumn { colName = "location", colType = TextT }
+        ]
+      , tblPrimaryKey = pkOnColumn "id"
+      }
+    table2 :: Table
+    table2 = tblTable
+      { tblName = "fktest2"
+      , tblVersion = 1
+      , tblColumns =
+        [ tblColumn { colName = "id", colType = UuidT, colNullable = False }
+        , tblColumn { colName = "fkid", colType = UuidT }
+        , tblColumn { colName = "fkname", colType = TextT }
+        ]
+      , tblPrimaryKey = pkOnColumn "id"
+      , tblForeignKeys =
+        [ (fkOnColumn "fkid" "fktest1" "id")
+        ]
+      }
+    table3 :: Table
+    table3 = tblTable
+      { tblName = "fktest3"
+      , tblVersion = 1
+      , tblColumns =
+        [ tblColumn { colName = "id", colType = UuidT, colNullable = False }
+        , tblColumn { colName = "fk1id", colType = UuidT }
+        , tblColumn { colName = "fk2id", colType = UuidT }
+        , tblColumn { colName = "fkname", colType = TextT }
+        ]
+      , tblPrimaryKey = pkOnColumn "id"
+      , tblForeignKeys =
+        [ (fkOnColumn "fk1id" "fktest1" "id")
+        , (fkOnColumn "fk2id" "fktest2" "id")
+        ]
+      }
+
+
 assertNoException :: String -> TestM () -> TestM ()
 assertNoException t c = eitherExc
   (const $ liftIO $ assertFailure ("Exception thrown for: " ++ t))
@@ -1634,6 +1702,7 @@ main = do
                          , sqlWithTests connSource
                          , unionTests connSource
                          , unionAllTests connSource
+                         , foreignKeyIndexesTests connSource
                          ]
   where
     ings =

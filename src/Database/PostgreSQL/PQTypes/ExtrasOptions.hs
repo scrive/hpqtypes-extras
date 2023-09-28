@@ -14,6 +14,8 @@ data ExtrasOptions =
     , eoAllowHigherTableVersions :: !Bool
       -- ^ Whether to allow tables in the database to have higher versions than
       -- the one in the code definition.
+    , eoCheckForeignKeysIndexes  :: !Bool
+      -- ^ Check if all foreign keys have indexes.
     } deriving Eq
 
 defaultExtrasOptions :: ExtrasOptions
@@ -22,6 +24,7 @@ defaultExtrasOptions = ExtrasOptions
   , eoEnforcePKs               = False
   , eoObjectsValidationMode    = DontAllowUnknownObjects
   , eoAllowHigherTableVersions = False
+  , eoCheckForeignKeysIndexes  = False
   }
 
 data ObjectsValidationMode = AllowUnknownObjects | DontAllowUnknownObjects
