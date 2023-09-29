@@ -287,7 +287,7 @@ data SqlDelete = SqlDelete
 
 -- | This is not exported and is used as an implementation detail in
 -- 'sqlWhereAll'.
-data SqlAll = SqlAll
+newtype SqlAll = SqlAll
   { sqlAllWhere :: [SqlCondition]
   }
 
@@ -402,7 +402,7 @@ instance Sqlable SqlInsert where
     emitClausesSepComma "RETURNING" (sqlInsertResult cmd)
    where
      -- this is the longest list of values
-     longest = maximum (1 : (map (lengthOfEither . snd) (sqlInsertSet cmd)))
+     longest = maximum (1 : map (lengthOfEither . snd) (sqlInsertSet cmd))
      lengthOfEither (Single _) = 1
      lengthOfEither (Many x)   = length x
      makeLongEnough (Single x) = replicate longest x
@@ -420,7 +420,7 @@ instance Sqlable SqlInsertSelect where
                                               , sqlSelectUnion   = []
                                               , sqlSelectUnionAll = []
                                               , sqlSelectDistinct = sqlInsertSelectDistinct cmd
-                                              , sqlSelectResult  = fmap snd $ sqlInsertSelectSet cmd
+                                              , sqlSelectResult  = snd <$> sqlInsertSelectSet cmd
                                               , sqlSelectWhere   = sqlInsertSelectWhere cmd
                                               , sqlSelectOrderBy = sqlInsertSelectOrderBy cmd
                                               , sqlSelectGroupBy = sqlInsertSelectGroupBy cmd
@@ -439,7 +439,7 @@ instance Sqlable SqlInsertSelect where
 checkAndRememberMaterializationSupport :: (MonadDB m, MonadIO m, MonadMask m) => m ()
 checkAndRememberMaterializationSupport = do
   res :: Either DBException Int64 <- try . withNewConnection $ do
-    runSQL01_ $ "WITH t(n) AS MATERIALIZED (SELECT (1 :: bigint)) SELECT n FROM t LIMIT 1"
+    runSQL01_ "WITH t(n) AS MATERIALIZED (SELECT (1 :: bigint)) SELECT n FROM t LIMIT 1"
     fetchOne runIdentity
   liftIO $ writeIORef withMaterializedSupported (isRight res)
 

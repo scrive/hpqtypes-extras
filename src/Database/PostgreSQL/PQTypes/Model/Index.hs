@@ -190,7 +190,7 @@ sqlCreateIndex_ concurrently tname idx@TableIndex{..} = mconcat [
   , if concurrently then "CONCURRENTLY " else ""
   , indexName tname idx
   , " ON" <+> tname
-  , " USING" <+> (rawSQL (T.pack . show $ idxMethod) ()) <+> "("
+  , " USING" <+> rawSQL (T.pack . show $ idxMethod) () <+> "("
   , mintercalate ", "
       (map
         (\case

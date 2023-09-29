@@ -1639,7 +1639,7 @@ foreignKeyIndexesTests connSource =
         ]
       , tblPrimaryKey = pkOnColumn "id"
       , tblForeignKeys =
-        [ (fkOnColumn "fkid" "fktest1" "id")
+        [ fkOnColumn "fkid" "fktest1" "id"
         ]
       }
     table3 :: Table
@@ -1654,8 +1654,8 @@ foreignKeyIndexesTests connSource =
         ]
       , tblPrimaryKey = pkOnColumn "id"
       , tblForeignKeys =
-        [ (fkOnColumn "fk1id" "fktest1" "id")
-        , (fkOnColumn "fk2id" "fktest2" "id")
+        [ fkOnColumn "fk1id" "fktest1" "id"
+        , fkOnColumn "fk2id" "fktest2" "id"
         ]
       }
 
