@@ -558,7 +558,7 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version)
 
         checkForeignKeyIndexes :: [ForeignKey] -> [TableIndex] -> ValidationResult
         checkForeignKeyIndexes foreignKeys indexes =
-          if (eoCheckForeignKeysIndexes options)
+          if eoCheckForeignKeysIndexes options
           then foldMap' go foreignKeys
           else mempty
           -- The idea behind the following conversions to sets of columns is that the
@@ -573,7 +573,7 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version)
             go :: ForeignKey -> ValidationResult
             go fk = let columns = map unRawSQL (fkColumns fk)
                         fkColumnsSet = S.fromList columns
-                    in if (fkColumnsSet `elem` idxColumnsSets)
+                    in if fkColumnsSet `elem` idxColumnsSets
                        then mempty
                        else validationError $ mconcat ["\n  ● Foreign key '(", T.intercalate "," columns, ")' is missing an index"]
 

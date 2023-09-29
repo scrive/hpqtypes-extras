@@ -152,7 +152,7 @@ checkPKPresence tableName mdef mpk =
         validationError . mconcat $
         [ "Table ", unRawSQL tableName
         , " has no primary key defined "
-        , " (" <> (mintercalate ", " msgs) <> ")"]
+        , " (" <> mintercalate ", " msgs <> ")"]
 
 objectHasLess :: Show t => Text -> Text -> t -> Text
 objectHasLess otype ptype missing =

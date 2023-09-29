@@ -30,7 +30,7 @@ newtype NubList a =
 
 -- | Smart constructor for the NubList type.
 toNubList :: Ord a => [a] -> NubList a
-toNubList list = NubList $ (ordNubBy id) list
+toNubList = NubList . ordNubBy id
 
 -- | Lift a function over lists to a function over NubLists.
 overNubList :: Ord a => ([a] -> [a]) -> NubList a -> NubList a
@@ -41,7 +41,7 @@ instance Ord a => SG.Semigroup (NubList a) where
       where
         listUnion :: (Ord a) => [a] -> [a] -> [a]
         listUnion a b = a
-          ++ ordNubBy id (filter (`Set.notMember` (Set.fromList a)) b)
+          ++ ordNubBy id (filter (`Set.notMember` Set.fromList a) b)
 
 
 instance Ord a => Monoid (NubList a) where
