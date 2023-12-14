@@ -605,6 +605,9 @@ sqlWhereILike name value = sqlWhere  $ name <+> "ILIKE" <?> value
 sqlWhereEqualsAny :: (MonadState v m, SqlWhere v, Show a, ToSQL a) => SQL -> [a] -> m ()
 sqlWhereEqualsAny name values = sqlWhere $ name <+> "= ANY(" <?> Array1 values <+> ")"
 
+-- | Note: `sqlWhereIn` will unpack the array using `UNNEST`. Using a postgresql function in this way
+-- will interfere with the planner. Use `sqlWhereEqualsAny` instead, except if you know that
+-- `UNNEST` will optimize better.
 sqlWhereIn :: (MonadState v m, SqlWhere v, Show a, ToSQL a) => SQL -> [a] -> m ()
 sqlWhereIn name values = do
   -- Unpack the array to give query optimizer more options.
