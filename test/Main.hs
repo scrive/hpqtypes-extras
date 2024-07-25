@@ -334,6 +334,27 @@ tableFlash =
     ]
   }
 
+tableCartelName :: RawSQL ()
+tableCartelName = "cartel"
+
+tableCartel :: Table
+tableCartel =
+  tblTable
+  { tblName = tableCartelName
+  , tblVersion = 1
+  , tblColumns =
+    [ tblColumn { colName = "cartel_member_id", colType = UuidT
+                , colNullable = False }
+    , tblColumn { colName = "cartel_boss_id", colType = UuidT
+                , colNullable = True }
+    ]
+  , tblPrimaryKey  = pkOnColumns ["cartel_member_id"]
+  , tblForeignKeys = [fkOnColumn  "cartel_member_id" "bad_guy" "id"
+                     ,fkOnColumn  "cartel_boss_id" "bad_guy" "id"] }
+
+tableCartelSchema1 :: Table
+tableCartelSchema1 = tableCartel
+
 createTableMigration :: (MonadDB m) => Table -> Migration m
 createTableMigration tbl = Migration
   { mgrTableName = tblName tbl
@@ -1259,6 +1280,61 @@ testSqlWith step = do
       (results :: [T.Text]) <- fetchMany runIdentity
       liftIO $ assertEqual "Wrong number of banks left" 2 (length results)
 
+testSqlWithRecursive :: HasCallStack => (String -> TestM ()) -> TestM ()
+testSqlWithRecursive step = do
+  step "Checking recursive support"
+  checkAndRememberRecursiveSupport
+  step "Running WITH RECURSIVE tests"
+  testPass
+  where 
+    migrate tables migrations = do
+      migrateDatabase defaultExtrasOptions ["pgcrypto"] [] [] tables migrations
+      checkDatabase defaultExtrasOptions [] [] tables
+    testPass = do
+      step "create the initial database"
+      migrate [tableBadGuySchema1, tableCartelSchema1] [createTableMigration tableBadGuySchema1, createTableMigration tableCartelSchema1]
+      step "inserting initial data"
+      runQuery_ . sqlInsert "bad_guy" $ do
+        sqlSetList "firstname" ["Pablo" :: T.Text, "Gustavo", "Mario"]
+        sqlSetList "lastname" ["Escobar" :: T.Text, "Rivero", "Vallejo"]
+        sqlResult "id"
+      (badGuyIds :: [UUID]) <- fetchMany runIdentity
+      -- Populate the 'cartel' table
+      -- We will have a simple direct hierarchy just to test the recursion:
+      -- Pablo is the boss of Gustavo, who is the boss of Mario
+      runQuery_ . sqlInsert "cartel" $ do
+        sqlSetList "cartel_member_id" badGuyIds
+        sqlSetList "cartel_boss_id" $ Nothing:(Just <$> take 2 badGuyIds)
+      step "Checking a recursive query on the cartel table"
+      runQuery_ . sqlSelect "rcartel" $ do
+        sqlWithRecursive "rcartel" $ do
+          sqlSelect "cartel root" $ do
+            sqlResult "root.cartel_member_id"
+            sqlResult "root.cartel_boss_id"
+            sqlWhere "root.cartel_boss_id IS NULL"
+            sqlUnionAll 
+              [ sqlSelect "cartel child" $ do
+                  sqlResult "child.cartel_member_id"
+                  sqlResult "child.cartel_boss_id"
+                  sqlJoinOn "rcartel rcartel1" "child.cartel_boss_id = rcartel1.cartel_member_id"
+              ]
+        sqlResult "member.firstname"
+        sqlResult "member.lastname"
+        sqlResult "boss.firstname"
+        sqlResult "boss.lastname"
+        sqlJoinOn "bad_guy member" "rcartel.cartel_member_id = member.id"
+        sqlLeftJoinOn "bad_guy boss" "rcartel.cartel_boss_id = boss.id"
+      let toCartel :: (T.Text, T.Text, Maybe T.Text, Maybe T.Text) -> (T.Text, Maybe T.Text)
+          toCartel (memberFn, memberLn, bossFn, bossLn) =
+            (T.intercalate " " [memberFn, memberLn], T.intercalate " " <$> sequence [bossFn, bossLn])
+      results <- fetchMany toCartel
+      liftIO $ assertEqual "Wrong cartel hierarchy retrieved" results
+        [ ("Pablo Escobar", Nothing)
+        , ("Gustavo Rivero", Just "Pablo Escobar")
+        , ("Mario Vallejo", Just "Gustavo Rivero")
+        ]
+
+
 testUnion :: HasCallStack => (String -> TestM ()) -> TestM ()
 testUnion step = do
   step "Running SQL UNION tests"
@@ -1277,7 +1353,6 @@ testUnion step = do
       liftIO $ assertEqual "UNION of booleans"
         [False, True]
         result
-
 
 testUnionAll :: HasCallStack => (String -> TestM ()) -> TestM ()
 testUnionAll step = do
@@ -1444,6 +1519,12 @@ unionTests connSource =
   testCaseSteps' "SQL UNION Tests" connSource $ \step -> do
     freshTestDB step
     testUnion step
+
+sqlWithRecursiveTests :: ConnectionSourceM (LogT IO) -> TestTree
+sqlWithRecursiveTests connSource =
+  testCaseSteps' "SQL WITH RECURSIVE Tests" connSource $ \step -> do
+    freshTestDB step
+    testSqlWithRecursive step
 
 unionAllTests :: ConnectionSourceM (LogT IO) -> TestTree
 unionAllTests connSource =
@@ -1704,6 +1785,7 @@ main = do
                          , sqlWithTests connSource
                          , unionTests connSource
                          , unionAllTests connSource
+                         , sqlWithRecursiveTests connSource
                          , foreignKeyIndexesTests connSource
                          ]
   where
