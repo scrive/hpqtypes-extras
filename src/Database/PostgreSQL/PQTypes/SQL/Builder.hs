@@ -146,6 +146,7 @@ module Database.PostgreSQL.PQTypes.SQL.Builder
   , SqlDelete(..)
 
   , sqlWhereAny
+  , SqlWhereAny(..)
 
   , SqlResult
   , SqlSet
@@ -291,10 +292,11 @@ data SqlDelete = SqlDelete
   , sqlDeleteRecursiveWith :: Recursive
   }
 
--- | This is not exported and is used as an implementation detail in
--- 'sqlWhereAll'.
-newtype SqlAll = SqlAll
-  { sqlAllWhere :: [SqlCondition]
+-- | Type representing a set of conditions that are joined by 'OR'.
+--
+-- This is used to implement `sqlWhereAny`.
+newtype SqlWhereAny = SqlWhereAny
+  { sqlWhereAnyWhere :: [SqlCondition]
   }
 
 instance Show SqlSelect where
@@ -312,7 +314,7 @@ instance Show SqlUpdate where
 instance Show SqlDelete where
   show = show . toSQLCommand
 
-instance Show SqlAll where
+instance Show SqlWhereAny where
   show = show . toSQLCommand
 
 emitClause :: Sqlable sql => SQL -> sql -> SQL
@@ -486,10 +488,10 @@ instance Sqlable SqlDelete where
         emitClausesSep "WHERE" "AND" (map toSQLCommand $ sqlDeleteWhere cmd) <+>
     emitClausesSepComma "RETURNING" (sqlDeleteResult cmd)
 
-instance Sqlable SqlAll where
-  toSQLCommand cmd | null (sqlAllWhere cmd) = "TRUE"
+instance Sqlable SqlWhereAny where
+  toSQLCommand cmd | null (sqlWhereAnyWhere cmd) = "TRUE"
   toSQLCommand cmd =
-    "(" <+> smintercalate "AND" (map (parenthesize . toSQLCommand) (sqlAllWhere cmd)) <+> ")"
+    "(" <+> smintercalate "AND" (map (parenthesize . toSQLCommand) (sqlWhereAnyWhere cmd)) <+> ")"
 
 sqlSelect :: SQL -> State SqlSelect () -> SqlSelect
 sqlSelect table refine =
@@ -605,9 +607,9 @@ instance SqlWhere SqlDelete where
   sqlWhere1 cmd cond = cmd { sqlDeleteWhere = sqlDeleteWhere cmd ++ [cond] }
   sqlGetWhereConditions = sqlDeleteWhere
 
-instance SqlWhere SqlAll where
-  sqlWhere1 cmd cond = cmd { sqlAllWhere = sqlAllWhere cmd ++ [cond] }
-  sqlGetWhereConditions = sqlAllWhere
+instance SqlWhere SqlWhereAny where
+  sqlWhere1 cmd cond = cmd { sqlWhereAnyWhere = sqlWhereAnyWhere cmd ++ [cond] }
+  sqlGetWhereConditions = sqlWhereAnyWhere
 
 -- | The @WHERE@ part of an SQL query. See above for a usage
 -- example. See also 'SqlCondition'.
@@ -666,14 +668,16 @@ sqlWhereIsNotNULL col = sqlWhere $ col <+> "IS NOT NULL"
 
 -- | Add a condition in the WHERE statement that holds if any of the given
 -- condition holds.
-sqlWhereAny :: (MonadState v m, SqlWhere v) => [State SqlAll ()] -> m ()
+--
+-- These conditions are joined by 'OR' operator.
+sqlWhereAny :: (MonadState v m, SqlWhere v) => [State SqlWhereAny ()] -> m ()
 sqlWhereAny = sqlWhere . sqlWhereAnyImpl
 
-sqlWhereAnyImpl :: [State SqlAll ()] -> SQL
+sqlWhereAnyImpl :: [State SqlWhereAny ()] -> SQL
 sqlWhereAnyImpl [] = "FALSE"
 sqlWhereAnyImpl l =
   "(" <+> smintercalate "OR" (map (parenthesize . toSQLCommand
-                                   . flip execState (SqlAll [])) l) <+> ")"
+                                   . flip execState (SqlWhereAny [])) l) <+> ")"
 
 class SqlFrom a where
   sqlFrom1 :: a -> SQL -> a
