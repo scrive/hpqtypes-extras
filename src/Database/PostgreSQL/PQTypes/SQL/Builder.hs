@@ -132,7 +132,6 @@ module Database.PostgreSQL.PQTypes.SQL.Builder
   , sqlUnion
   , sqlUnionAll
   , checkAndRememberMaterializationSupport
-  , checkAndRememberRecursiveSupport
 
   , sqlSelect
   , sqlSelect2
@@ -452,16 +451,6 @@ checkAndRememberMaterializationSupport = do
     fetchOne runIdentity
   liftIO $ writeIORef withMaterializedSupported (isRight res)
 
--- This function has to be called as one of first things in your program
--- for the library to make sure that it is aware if the "WITH RECURSIVE"
--- clause is supported by your PostgreSQL version.
-checkAndRememberRecursiveSupport :: (MonadDB m, MonadIO m, MonadMask m) => m ()
-checkAndRememberRecursiveSupport = do
-  res :: Either DBException Int64 <- try . withNewConnection $ do
-    runSQL01_ "WITH RECURSIVE t(n) AS (SELECT (1 :: bigint)) SELECT n FROM t LIMIT 1"
-    fetchOne runIdentity
-  liftIO $ writeIORef withRecursiveSupported (isRight res)
-
 withMaterializedSupported :: IORef Bool
 {-# NOINLINE withMaterializedSupported #-}
 withMaterializedSupported = unsafePerformIO $ newIORef False
@@ -470,20 +459,12 @@ isWithMaterializedSupported :: Bool
 {-# NOINLINE isWithMaterializedSupported #-}
 isWithMaterializedSupported = unsafePerformIO $ readIORef withMaterializedSupported
 
-withRecursiveSupported :: IORef Bool
-{-# NOINLINE withRecursiveSupported #-}
-withRecursiveSupported = unsafePerformIO $ newIORef False
-
-isWithRecursiveSupported :: Bool
-{-# NOINLINE isWithRecursiveSupported #-}
-isWithRecursiveSupported = unsafePerformIO $ readIORef withRecursiveSupported
-
 materializedClause :: Materialized -> SQL
 materializedClause Materialized = if isWithMaterializedSupported then "MATERIALIZED" else ""
 materializedClause NonMaterialized = if isWithMaterializedSupported then "NOT MATERIALIZED" else ""
 
 recursiveClause :: Recursive -> SQL
-recursiveClause Recursive = if isWithRecursiveSupported then "WITH RECURSIVE" else "WITH"
+recursiveClause Recursive = "WITH RECURSIVE"
 recursiveClause NonRecursive = "WITH"
 
 instance Sqlable SqlUpdate where
@@ -559,21 +540,28 @@ sqlDelete table refine =
 data Materialized = Materialized | NonMaterialized
 data Recursive = Recursive | NonRecursive
 
+-- This instance guarantees that once a single CTE has
+-- been marked as recursive, the whole "WITH" block will
+-- get the RECURSIVE keyword associated to it.
+instance Semigroup Recursive where
+  _ <> Recursive = Recursive
+  Recursive <> _ = Recursive
+  _ <> _ = NonRecursive
+
 class SqlWith a where
   sqlWith1 :: a -> SQL -> SQL -> Materialized -> Recursive -> a
 
-
 instance SqlWith SqlSelect where
-  sqlWith1 cmd name sql mat recurse = cmd { sqlSelectWith = sqlSelectWith cmd ++ [(name,sql,mat)], sqlSelectRecursiveWith = recurse }
+  sqlWith1 cmd name sql mat recurse = cmd { sqlSelectWith = sqlSelectWith cmd ++ [(name,sql,mat)], sqlSelectRecursiveWith = recurse <> sqlSelectRecursiveWith cmd }
 
 instance SqlWith SqlInsertSelect where
-  sqlWith1 cmd name sql mat recurse = cmd { sqlInsertSelectWith = sqlInsertSelectWith cmd ++ [(name,sql,mat)], sqlInsertSelectRecursiveWith = recurse }
+  sqlWith1 cmd name sql mat recurse = cmd { sqlInsertSelectWith = sqlInsertSelectWith cmd ++ [(name,sql,mat)], sqlInsertSelectRecursiveWith = recurse <> sqlInsertSelectRecursiveWith cmd }
 
 instance SqlWith SqlUpdate where
-  sqlWith1 cmd name sql mat recurse = cmd { sqlUpdateWith = sqlUpdateWith cmd ++ [(name,sql,mat)], sqlUpdateRecursiveWith = recurse }
+  sqlWith1 cmd name sql mat recurse = cmd { sqlUpdateWith = sqlUpdateWith cmd ++ [(name,sql,mat)], sqlUpdateRecursiveWith = recurse <> sqlUpdateRecursiveWith cmd }
 
 instance SqlWith SqlDelete where
-  sqlWith1 cmd name sql mat recurse = cmd { sqlDeleteWith = sqlDeleteWith cmd ++ [(name,sql,mat)], sqlDeleteRecursiveWith = recurse }
+  sqlWith1 cmd name sql mat recurse = cmd { sqlDeleteWith = sqlDeleteWith cmd ++ [(name,sql,mat)], sqlDeleteRecursiveWith = recurse <> sqlDeleteRecursiveWith cmd }
 
 sqlWith :: (MonadState v m, SqlWith v, Sqlable s) => SQL -> s -> m ()
 sqlWith name sql = modify (\cmd -> sqlWith1 cmd name (toSQLCommand sql) NonMaterialized NonRecursive)

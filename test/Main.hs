@@ -1282,8 +1282,6 @@ testSqlWith step = do
 
 testSqlWithRecursive :: HasCallStack => (String -> TestM ()) -> TestM ()
 testSqlWithRecursive step = do
-  step "Checking recursive support"
-  checkAndRememberRecursiveSupport
   step "Running WITH RECURSIVE tests"
   testPass
   where 
@@ -1318,6 +1316,13 @@ testSqlWithRecursive step = do
                   sqlResult "child.cartel_boss_id"
                   sqlJoinOn "rcartel rcartel1" "child.cartel_boss_id = rcartel1.cartel_member_id"
               ]
+        -- This dummy with is not actually used
+        -- It's just here to test that further "sqlWith" do not remove the RECURSIVE
+        -- keyword when actually producing the SQL
+        sqlWith "lcartel" $ do
+          sqlSelect "rcartel c" $ do
+            sqlResult "c.cartel_member_id"
+            sqlResult "c.cartel_boss_id"
         sqlResult "member.firstname"
         sqlResult "member.lastname"
         sqlResult "boss.firstname"
