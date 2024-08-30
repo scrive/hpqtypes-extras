@@ -16,6 +16,8 @@ data ExtrasOptions =
       -- the one in the code definition.
     , eoCheckForeignKeysIndexes  :: !Bool
       -- ^ Check if all foreign keys have indexes.
+    , eoCheckOverlappingIndexes :: !Bool
+      -- ^ Check if some indexes are redundant
     } deriving Eq
 
 defaultExtrasOptions :: ExtrasOptions
@@ -25,6 +27,7 @@ defaultExtrasOptions = ExtrasOptions
   , eoObjectsValidationMode    = DontAllowUnknownObjects
   , eoAllowHigherTableVersions = False
   , eoCheckForeignKeysIndexes  = False
+  , eoCheckOverlappingIndexes  = False
   }
 
 data ObjectsValidationMode = AllowUnknownObjects | DontAllowUnknownObjects

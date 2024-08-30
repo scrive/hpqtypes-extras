@@ -426,6 +426,7 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version)
       runQuery_ $ sqlGetForeignKeys table
       fkeys <- fetchMany fetchForeignKey
       triggers <- getDBTriggers tblName
+      checkedOverlaps <- checkOverlappingIndexes 
       return $ mconcat [
           checkColumns 1 tblColumns desc
         , checkPrimaryKey tblPrimaryKey pk
@@ -434,6 +435,7 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version)
         , checkForeignKeys tblForeignKeys fkeys
         , checkForeignKeyIndexes tblForeignKeys tblIndexes
         , checkTriggers tblTriggers triggers
+        , checkedOverlaps
         ]
       where
         fetchTableColumn
@@ -588,6 +590,26 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version)
                 \case of variables or type casts used in conditions, just copy and paste \
                 \expected output into source code.)"
               ]
+
+        checkOverlappingIndexes :: (MonadDB m) => m ValidationResult
+        checkOverlappingIndexes =
+          if eoCheckOverlappingIndexes options
+          then go
+          else pure mempty
+          where 
+            go = do
+              let handleOverlap (contained, contains) =
+                    mconcat
+                      [ "\n  ●  Index "
+                      , contains
+                      , " contains index "
+                      , contained
+                      ]
+              runSQL_ checkOverlappingIndexesQuery
+              overlaps <- fetchMany handleOverlap
+              pure $ if null overlaps
+                then mempty
+                else validationError . T.unlines $ "Some indexes are overlapping" : overlaps
 
 -- | Checks whether database is consistent, performing migrations if
 -- necessary. Requires all table names to be in lower case.
