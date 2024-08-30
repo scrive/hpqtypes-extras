@@ -1,5 +1,5 @@
-module Database.PostgreSQL.PQTypes.Model.Domain (
-    Domain(..)
+module Database.PostgreSQL.PQTypes.Model.Domain
+  ( Domain (..)
   , mkChecks
   , sqlCreateDomain
   , sqlAlterDomain
@@ -49,31 +49,33 @@ import Database.PostgreSQL.PQTypes.Model.ColumnType
 -- and edit old migrations), whereas the current solution makes the
 -- transition trivial.
 
-data Domain = Domain {
-  -- | Name of the domain.
-  domName     :: RawSQL ()
-  -- | Type of the domain.
-, domType     :: ColumnType
-  -- | Defines whether the domain value can be NULL.
+data Domain = Domain
+  { domName :: RawSQL ()
+  -- ^ Name of the domain.
+  , domType :: ColumnType
+  -- ^ Type of the domain.
+  , domNullable :: Bool
+  -- ^ Defines whether the domain value can be NULL.
   -- *Cannot* be superseded by a table column definition.
-, domNullable :: Bool
-  -- Default value for the domain. *Can* be
-  -- superseded by a table column definition.
-, domDefault  :: Maybe (RawSQL ())
-  -- Set of constraint checks on the domain.
-, domChecks   :: Set Check
-} deriving (Eq, Ord, Show)
+  , -- Default value for the domain. *Can* be
+    -- superseded by a table column definition.
+    domDefault :: Maybe (RawSQL ())
+  , -- Set of constraint checks on the domain.
+    domChecks :: Set Check
+  }
+  deriving (Eq, Ord, Show)
 
 mkChecks :: [Check] -> Set Check
 mkChecks = fromList
 
 sqlCreateDomain :: Domain -> RawSQL ()
-sqlCreateDomain Domain{..} = smconcat [
-    "CREATE DOMAIN" <+> domName <+> "AS"
-  , columnTypeToSQL domType
-  , if domNullable then "NULL" else "NOT NULL"
-  , maybe "" ("DEFAULT" <+>) domDefault
-  ]
+sqlCreateDomain Domain {..} =
+  smconcat
+    [ "CREATE DOMAIN" <+> domName <+> "AS"
+    , columnTypeToSQL domType
+    , if domNullable then "NULL" else "NOT NULL"
+    , maybe "" ("DEFAULT" <+>) domDefault
+    ]
 
 sqlAlterDomain :: RawSQL () -> RawSQL () -> RawSQL ()
 sqlAlterDomain dname alter = "ALTER DOMAIN" <+> dname <+> alter

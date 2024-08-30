@@ -1,15 +1,15 @@
 module Database.PostgreSQL.PQTypes.Utils.NubList
-    ( NubList    -- opaque
-    , toNubList  -- smart construtor
-    , fromNubList
-    , overNubList
-    ) where
+  ( NubList -- opaque
+  , toNubList -- smart construtor
+  , fromNubList
+  , overNubList
+  ) where
 
 import Data.Typeable
 
-import qualified Text.Read as R
-import qualified Data.Set as Set
-import qualified Data.Semigroup as SG
+import Data.Semigroup qualified as SG
+import Data.Set qualified as Set
+import Text.Read qualified as R
 
 {-
   This module is a copy-paste fork of Distribution.Utils.NubList in Cabal
@@ -19,9 +19,9 @@ import qualified Data.Semigroup as SG
 -}
 
 -- | NubList : A de-duplicated list that maintains the original order.
-newtype NubList a =
-    NubList { fromNubList :: [a] }
-    deriving (Eq, Typeable)
+newtype NubList a
+  = NubList {fromNubList :: [a]}
+  deriving (Eq, Typeable)
 
 -- NubList assumes that nub retains the list order while removing duplicate
 -- elements (keeping the first occurence). Documentation for "Data.List.nub"
@@ -37,34 +37,35 @@ overNubList :: Ord a => ([a] -> [a]) -> NubList a -> NubList a
 overNubList f (NubList list) = toNubList . f $ list
 
 instance Ord a => SG.Semigroup (NubList a) where
-    (NubList xs) <> (NubList ys) = NubList $ xs `listUnion` ys
-      where
-        listUnion :: (Ord a) => [a] -> [a] -> [a]
-        listUnion a b = a
+  (NubList xs) <> (NubList ys) = NubList $ xs `listUnion` ys
+    where
+      listUnion :: Ord a => [a] -> [a] -> [a]
+      listUnion a b =
+        a
           ++ ordNubBy id (filter (`Set.notMember` Set.fromList a) b)
 
-
 instance Ord a => Monoid (NubList a) where
-    mempty  = NubList []
-    mappend = (SG.<>)
+  mempty = NubList []
+  mappend = (SG.<>)
 
 instance Show a => Show (NubList a) where
-    show (NubList list) = show list
+  show (NubList list) = show list
 
 instance (Ord a, Read a) => Read (NubList a) where
-    readPrec = readNubList toNubList
+  readPrec = readNubList toNubList
 
 -- | Helper used by NubList/NubListR's Read instances.
-readNubList :: (Read a) => ([a] -> l a) -> R.ReadPrec (l a)
+readNubList :: Read a => ([a] -> l a) -> R.ReadPrec (l a)
 readNubList toList = R.parens . R.prec 10 $ fmap toList R.readPrec
 
 ordNubBy :: Ord b => (a -> b) -> [a] -> [a]
 ordNubBy f = go Set.empty
   where
     go !_ [] = []
-    go !s (x:xs)
+    go !s (x : xs)
       | y `Set.member` s = go s xs
-      | otherwise        = let !s' = Set.insert y s
-                            in x : go s' xs
+      | otherwise =
+          let !s' = Set.insert y s
+          in x : go s' xs
       where
         y = f x

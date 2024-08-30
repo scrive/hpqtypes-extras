@@ -1,4 +1,4 @@
-cabal-version:       2.2
+cabal-version:       3.0
 name:                hpqtypes-extras
 version:             1.16.4.4
 synopsis:            Extra utilities for hpqtypes library
@@ -20,7 +20,7 @@ maintainer:          Andrzej Rybczak <andrzej@rybczak.net>,
 copyright:           Scrive AB
 category:            Database
 build-type:          Simple
-tested-with:         GHC ==8.8.4 || ==8.10.7 || ==9.0.2 || ==9.2.8 || ==9.4.6 || ==9.6.2
+tested-with:         GHC == { 8.10.7, 9.0.2, 9.2.8, 9.4.6, 9.6.2, 9.8.2, 9.10.1 }
 
 Source-repository head
   Type:     git
@@ -33,6 +33,7 @@ common common-stanza
                     , ExistentialQuantification
                     , FlexibleContexts
                     , GeneralizedNewtypeDeriving
+                    , ImportQualifiedPost
                     , LambdaCase
                     , MultiWayIf
                     , OverloadedStrings
@@ -45,6 +46,7 @@ common common-stanza
                     , TypeFamilies
                     , UndecidableInstances
                     , ViewPatterns
+  ghc-options: -Werror=prepositive-qualified-module
 
 library
   import: common-stanza
