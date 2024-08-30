@@ -42,6 +42,7 @@ import Database.PostgreSQL.PQTypes.Migrate
 import Database.PostgreSQL.PQTypes.Model
 import Database.PostgreSQL.PQTypes.SQL.Builder
 import Database.PostgreSQL.PQTypes.Versions
+import Database.PostgreSQL.PQTypes.Utils.NubList
 
 headExc :: String -> [a] -> a
 headExc s []    = error s
@@ -433,7 +434,7 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version)
         , checkChecks tblChecks checks
         , checkIndexes tblIndexes indexes
         , checkForeignKeys tblForeignKeys fkeys
-        , checkForeignKeyIndexes tblForeignKeys tblIndexes
+        , checkForeignKeyIndexes tblPrimaryKey tblForeignKeys tblIndexes
         , checkTriggers tblTriggers triggers
         , checkedOverlaps
         ]
@@ -558,24 +559,29 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version)
           , checkNames (fkName tblName) fkeys
           ]
 
-        checkForeignKeyIndexes :: [ForeignKey] -> [TableIndex] -> ValidationResult
-        checkForeignKeyIndexes foreignKeys indexes =
+        checkForeignKeyIndexes :: Maybe PrimaryKey -> [ForeignKey] -> [TableIndex] -> ValidationResult
+        checkForeignKeyIndexes pkey foreignKeys indexes =
           if eoCheckForeignKeysIndexes options
           then foldMap' go foreignKeys
           else mempty
-          -- The idea behind the following conversions to sets of columns is that the
-          -- order of index columns doesn't matter.
           where
-            cname :: [IndexColumn] -> S.Set Text
-            cname = S.fromList . map (\(IndexColumn col _) -> unRawSQL col)
 
-            idxColumnsSets :: [S.Set Text]
-            idxColumnsSets = cname . idxColumns <$> indexes
+            -- Map index on the given table name to a list of list of names
+            -- so that index on a and index on (b, c) becomes [[a], [b, c,]].
+            allIndexes :: [[RawSQL ()]]
+            allIndexes = fmap (fmap indexColumnName . idxColumns) . filter (isNothing . idxWhere) $ indexes
+
+            allCoverage :: [[RawSQL ()]]
+            allCoverage = maybe [] pkColumns pkey:allIndexes
+              
+            -- A foreign key is covered if it is a prefix of a list of indices.
+            -- So a FK on a is covered by an index on (a, b) but not an index on (b, a).
+            coveredFK :: ForeignKey -> [[RawSQL ()]] -> Bool
+            coveredFK fk = any (\idx -> fkColumns fk `L.isPrefixOf` idx)
 
             go :: ForeignKey -> ValidationResult
             go fk = let columns = map unRawSQL (fkColumns fk)
-                        fkColumnsSet = S.fromList columns
-                    in if fkColumnsSet `elem` idxColumnsSets
+                    in if coveredFK fk allCoverage
                        then mempty
                        else validationError $ mconcat ["\n  ● Foreign key '(", T.intercalate "," columns, ")' is missing an index"]
 

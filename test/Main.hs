@@ -1701,7 +1701,24 @@ foreignKeyIndexesTests connSource =
       let options = defaultExtrasOptions { eoCheckForeignKeysIndexes = True }
       assertException "Foreign keys are missing" $ migrateDatabase options ["pgcrypto"] [] [] [table1, table2, table3]
         [createTableMigration table1, createTableMigration table2, createTableMigration table3]
-
+    
+    step "Multi column indexes covering a FK pass the checks"
+    do
+      let options = defaultExtrasOptions { eoCheckForeignKeysIndexes = True }
+      migrateDatabase options ["pgcrypto"] [] [] [table4]
+        [ dropTableMigration table1
+        , dropTableMigration table2
+        , dropTableMigration table3
+        , createTableMigration table4
+        ]
+      checkDatabase options [] [] [table4]
+    step "Multi column indexes not covering a FK fail the checks"
+    do
+      let options = defaultExtrasOptions { eoCheckForeignKeysIndexes = True }
+      assertException "Foreign keys are missing" $ migrateDatabase options ["pgcrypto"] [] [] [table5]
+        [ dropTableMigration table4
+        , createTableMigration table5
+        ]
   where
     table1 :: Table
     table1 = tblTable
@@ -1744,6 +1761,40 @@ foreignKeyIndexesTests connSource =
         , fkOnColumn "fk2id" "fktest2" "id"
         ]
       }
+    table4 :: Table
+    table4 = tblTable
+      { tblName = "fktest4"
+      , tblVersion = 1
+      , tblColumns =
+        [ tblColumn { colName = "id", colType = UuidT, colNullable = False }
+        , tblColumn { colName = "fk4id", colType = UuidT }
+        , tblColumn { colName = "fk4name", colType = TextT }
+        ]
+      , tblPrimaryKey = pkOnColumn "id"
+      , tblForeignKeys =
+        [ fkOnColumn "fk4id" "fktest4" "id"
+        ]
+      , tblIndexes =
+        [ indexOnColumns [ indexColumn "fk4id", indexColumn "fk4name" ]
+        ]
+      }
+    table5 :: Table
+    table5 = tblTable
+      { tblName = "fktest5"
+      , tblVersion = 1
+      , tblColumns =
+        [ tblColumn { colName = "id", colType = UuidT, colNullable = False }
+        , tblColumn { colName = "fk5id", colType = UuidT }
+        , tblColumn { colName = "fk5name", colType = TextT }
+        ]
+      , tblPrimaryKey = pkOnColumn "id"
+      , tblForeignKeys =
+        [ fkOnColumn "fk5id" "fktest5" "id"
+        ]
+      , tblIndexes =
+        [ indexOnColumns [ indexColumn "fk5thing", indexColumn "fk5id" ]
+        ]
+      }
 
 overlapingIndexesTests :: ConnectionSourceM (LogT IO) -> TestTree
 overlapingIndexesTests connSource = do
@@ -1772,9 +1823,6 @@ overlapingIndexesTests connSource = do
           , indexOnColumns [ indexColumn "idx1" ]
           ]
         }
-
-
-
 
 assertNoException :: String -> TestM () -> TestM ()
 assertNoException t = eitherExc
