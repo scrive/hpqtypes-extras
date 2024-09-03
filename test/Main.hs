@@ -1745,6 +1745,36 @@ foreignKeyIndexesTests connSource =
         ]
       }
 
+overlapingIndexesTests :: ConnectionSourceM (LogT IO) -> TestTree
+overlapingIndexesTests connSource = do
+  testCaseSteps' "Overlapping indexes tests" connSource $ \step -> do
+    freshTestDB step
+
+    step "Check that overlapping indexes get flagged"
+    do
+      let options = defaultExtrasOptions { eoCheckOverlappingIndexes = True }
+      assertException "Some indexes are overlapping" $ migrateDatabase options ["pgcrypto"] [] [] [table1]
+        [createTableMigration table1]
+    where
+      table1 :: Table
+      table1 = tblTable
+        { tblName = "idxTest"
+        , tblVersion = 1
+        , tblColumns =
+          [ tblColumn { colName = "id", colType = UuidT, colNullable = False }
+          , tblColumn { colName = "idx1", colType = UuidT }
+          , tblColumn { colName = "idx2", colType = UuidT }
+          , tblColumn { colName = "idx3", colType = UuidT }
+          ]
+        , tblPrimaryKey = pkOnColumn "id"
+        , tblIndexes = 
+          [ indexOnColumns [ indexColumn "idx1", indexColumn "idx2" ] 
+          , indexOnColumns [ indexColumn "idx1" ]
+          ]
+        }
+
+
+
 
 assertNoException :: String -> TestM () -> TestM ()
 assertNoException t = eitherExc
@@ -1792,6 +1822,7 @@ main = do
                          , unionAllTests connSource
                          , sqlWithRecursiveTests connSource
                          , foreignKeyIndexesTests connSource
+                         , overlapingIndexesTests connSource
                          ]
   where
     ings =
