@@ -9,6 +9,7 @@ module Database.PostgreSQL.PQTypes.Model.Index (
   , indexOnColumns
   , indexOnColumnWithMethod
   , indexOnColumnsWithMethod
+  , indexColumnName
   , uniqueIndexOnColumn
   , uniqueIndexOnColumnWithCondition
   , uniqueIndexOnColumns

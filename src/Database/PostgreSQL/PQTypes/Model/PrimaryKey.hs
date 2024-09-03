@@ -3,6 +3,7 @@ module Database.PostgreSQL.PQTypes.Model.PrimaryKey (
   , pkOnColumn
   , pkOnColumns
   , pkName
+  , pkColumns
   , sqlAddPK
   , sqlAddPKUsing
   , sqlDropPK
@@ -25,6 +26,9 @@ pkOnColumns columns = Just . PrimaryKey . toNubList $ columns
 
 pkName :: RawSQL () -> RawSQL ()
 pkName tname = mconcat ["pk__", tname]
+
+pkColumns :: PrimaryKey -> [RawSQL ()]
+pkColumns (PrimaryKey columns) = fromNubList columns
 
 sqlAddPK :: RawSQL () -> PrimaryKey -> RawSQL ()
 sqlAddPK tname (PrimaryKey columns) = smconcat [
