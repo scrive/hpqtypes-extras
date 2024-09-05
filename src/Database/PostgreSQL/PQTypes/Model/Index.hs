@@ -33,14 +33,20 @@ import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 
 data TableIndex = TableIndex {
-  idxColumns :: [IndexColumn]
-, idxInclude :: [RawSQL ()]
-, idxMethod  :: IndexMethod
-, idxUnique  :: Bool
-, idxValid   :: Bool -- ^ If creation of index with CONCURRENTLY fails, index
-                     -- will be marked as invalid. Set it to 'False' if such
-                     -- situation is expected.
-, idxWhere   :: Maybe (RawSQL ())
+  idxColumns          :: [IndexColumn]
+, idxInclude          :: [RawSQL ()]
+, idxMethod           :: IndexMethod
+, idxUnique           :: Bool
+, idxValid            :: Bool 
+-- ^ If creation of index with CONCURRENTLY fails, index
+-- will be marked as invalid. Set it to 'False' if such
+-- situation is expected.
+, idxWhere            :: Maybe (RawSQL ())
+, idxNotDistinctNulls :: Bool
+-- ^ Adds NULL NOT DISTINCT on the index, meaning that
+-- ^ only one NULL value will be accepted; other NULLs
+-- ^ will be perceived as a violation of the constraint.
+-- ^ NB: will only be used if idxUnique is set to True
 } deriving (Eq, Ord, Show)
 
 data IndexColumn
@@ -91,6 +97,7 @@ tblIndex = TableIndex {
 , idxUnique = False
 , idxValid = True
 , idxWhere = Nothing
+, idxNotDistinctNulls = False
 }
 
 indexOnColumn :: IndexColumn -> TableIndex
@@ -122,6 +129,7 @@ uniqueIndexOnColumn column = TableIndex {
 , idxUnique = True
 , idxValid = True
 , idxWhere = Nothing
+, idxNotDistinctNulls = False
 }
 
 uniqueIndexOnColumns :: [IndexColumn] -> TableIndex
@@ -132,6 +140,7 @@ uniqueIndexOnColumns columns = TableIndex {
 , idxUnique = True
 , idxValid = True
 , idxWhere = Nothing
+, idxNotDistinctNulls = False
 }
 
 uniqueIndexOnColumnWithCondition :: IndexColumn -> RawSQL () -> TableIndex
@@ -142,6 +151,7 @@ uniqueIndexOnColumnWithCondition column whereC = TableIndex {
 , idxUnique = True
 , idxValid = True
 , idxWhere = Just whereC
+, idxNotDistinctNulls = False
 }
 
 indexName :: RawSQL () -> TableIndex -> RawSQL ()
@@ -203,6 +213,9 @@ sqlCreateIndex_ concurrently tname idx@TableIndex{..} = mconcat [
   , if null idxInclude
     then ""
     else " INCLUDE (" <> mintercalate ", " idxInclude <> ")"
+  , if idxUnique && idxNotDistinctNulls
+    then " NULLS NOT DISTINCT"
+    else ""
   , maybe "" (" WHERE" <+>) idxWhere
   ]
 
