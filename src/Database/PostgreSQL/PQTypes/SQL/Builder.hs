@@ -298,15 +298,14 @@ data SqlDelete = SqlDelete
 
 -- | Type representing a set of conditions that are joined by 'AND'.
 --
--- This is usually not needed as the default behavior is to join conditions
--- by 'AND', but it is used to implement `sqlWhereAny`.
+-- When no conditions are given, the result is 'TRUE'.
 newtype SqlWhereAll = SqlWhereAll
   { sqlWhereAllWhere :: [SqlCondition]
   }
 
 -- | Type representing a set of conditions that are joined by 'OR'.
 --
--- This is used to implement `sqlWhereAny`.
+-- When no conditions are given, the result is 'FALSE'.
 newtype SqlWhereAny = SqlWhereAny
   { sqlWhereAnyWhere :: [SqlCondition]
   }
@@ -692,13 +691,17 @@ sqlWhereIsNULL col = sqlWhere $ col <+> "IS NULL"
 sqlWhereIsNotNULL :: (MonadState v m, SqlWhere v) => SQL -> m ()
 sqlWhereIsNotNULL col = sqlWhere $ col <+> "IS NOT NULL"
 
--- | Run monad that joins all conditions with 'AND' operator.
+-- | Run monad that joins all conditions using 'AND' operator.
 --
 -- When no conditions are given, the result is 'TRUE'.
+--
+-- Note: This is usally not needed as `SqlSelect`, `SqlUpdate` and `SqlDelete`
+-- already join conditions using 'AND' by default, but it can be useful when
+-- nested in `sqlAny`.
 sqlAll :: State SqlWhereAll () -> SQL
 sqlAll = toSQLCommand . (`execState` SqlWhereAll [])
 
--- | Run monad that joins all conditions with 'OR' operator.
+-- | Run monad that joins all conditions using 'OR' operator.
 --
 -- When no conditions are given, the result is 'FALSE'.
 sqlAny :: State SqlWhereAny () -> SQL
