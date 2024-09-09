@@ -1824,6 +1824,58 @@ overlapingIndexesTests connSource = do
           ]
         }
 
+nullsNotDistinctTests :: ConnectionSourceM (LogT IO) -> TestTree
+nullsNotDistinctTests connSource = do
+  testCaseSteps' "NULLS NOT DISTINCT tests" connSource $ \step -> do
+    freshTestDB step
+
+    step "Create a database with indexes"
+    do
+      migrateDatabase defaultExtrasOptions ["pgcrypto"] [] [] [nullTableTest1, nullTableTest2]
+        [createTableMigration nullTableTest1, createTableMigration nullTableTest2]
+      checkDatabase defaultExtrasOptions [] [] [nullTableTest1, nullTableTest2]
+      
+    step "Insert two NULLs on a column with a default UNIQUE index"
+    do
+      runQuery_ . sqlInsert "nulltests1" $ do
+        sqlSet "content" (Nothing @T.Text)
+      runQuery_ . sqlInsert "nulltests1" $ do
+        sqlSet "content" (Nothing @T.Text)
+
+    step "Insert NULLs on a column with a NULLS NOT DISTINCT index"
+    do
+      runQuery_ . sqlInsert "nulltests2" $ do
+        sqlSet "content" (Nothing @T.Text)
+      assertDBException "Cannot insert twice a null value with NULLS NOT DISTINCT" $ runQuery_ . sqlInsert "nulltests2" $ do
+        sqlSet "content" (Nothing @T.Text)
+      
+    where
+      nullTableTest1 = tblTable
+        { tblName = "nulltests1"
+        , tblVersion = 1
+        , tblColumns =
+          [ tblColumn { colName = "id", colType = UuidT, colNullable = False, colDefault = Just "gen_random_uuid()" }
+          , tblColumn { colName = "content", colType = TextT, colNullable = True }
+          ]
+        , tblPrimaryKey = pkOnColumn "id"
+        , tblIndexes =
+          [ uniqueIndexOnColumn "content"
+          ]
+        }
+
+      nullTableTest2 = tblTable
+        { tblName = "nulltests2"
+        , tblVersion = 1
+        , tblColumns =
+          [ tblColumn { colName = "id", colType = UuidT, colNullable = False, colDefault = Just "gen_random_uuid()" }
+          , tblColumn { colName = "content", colType = TextT, colNullable = True }
+          ]
+        , tblPrimaryKey = pkOnColumn "id"
+        , tblIndexes =
+          [ (uniqueIndexOnColumn "content") { idxNotDistinctNulls = True }
+          ]
+        }
+
 assertNoException :: String -> TestM () -> TestM ()
 assertNoException t = eitherExc
   (const $ liftIO $ assertFailure ("Exception thrown for: " ++ t))
@@ -1871,6 +1923,7 @@ main = do
                          , sqlWithRecursiveTests connSource
                          , foreignKeyIndexesTests connSource
                          , overlapingIndexesTests connSource
+                         , nullsNotDistinctTests connSource
                          ]
   where
     ings =

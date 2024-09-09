@@ -418,11 +418,13 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version)
         sqlWhereEqSql "a.attrelid" $ sqlGetTableID table
         sqlOrderBy "a.attnum"
       desc <- fetchMany fetchTableColumn
+
+      isAbove15 <- checkVersionIsAtLeast15
       -- get info about constraints from pg_catalog
       pk <- sqlGetPrimaryKey table
       runQuery_ $ sqlGetChecks table
       checks <- fetchMany fetchTableCheck
-      runQuery_ $ sqlGetIndexes table
+      runQuery_ $ sqlGetIndexes isAbove15 table
       indexes <- fetchMany fetchTableIndex
       runQuery_ $ sqlGetForeignKeys table
       fkeys <- fetchMany fetchForeignKey
@@ -1072,6 +1074,12 @@ checkDBConsistency options domains tablesWithVersions migrations = do
 -- | Type synonym for a list of tables along with their database versions.
 type TablesWithVersions = [(Table, Int32)]
 
+-- The server_version_num has been there since 8.2
+checkVersionIsAtLeast15 :: (MonadDB m, MonadThrow m) => m Bool
+checkVersionIsAtLeast15 = do
+  runSQL01_ "select current_setting('server_version_num',true)::int >= 150000;"
+  fetchOne runIdentity
+
 -- | Associate each table in the list with its version as it exists in
 -- the DB, or 0 if it's missing from the DB.
 getTableVersions :: (MonadDB m, MonadThrow m) => [Table] -> m TablesWithVersions
@@ -1196,15 +1204,18 @@ fetchTableCheck (name, condition, validated) = Check {
 }
 
 -- *** INDEXES ***
-
-sqlGetIndexes :: Table -> SQL
-sqlGetIndexes table = toSQLCommand . sqlSelect "pg_catalog.pg_class c" $ do
+sqlGetIndexes :: Bool -> Table -> SQL
+sqlGetIndexes nullsNotDistinctSupported table = toSQLCommand . sqlSelect "pg_catalog.pg_class c" $ do
   sqlResult "c.relname::text" -- index name
   sqlResult $ "ARRAY(" <> selectCoordinates "0" "i.indnkeyatts" <> ")" -- array of key columns in the index
   sqlResult $ "ARRAY(" <> selectCoordinates "i.indnkeyatts" "i.indnatts" <> ")" -- array of included columns in the index
   sqlResult "am.amname::text" -- the method used (btree, gin etc)
   sqlResult "i.indisunique" -- is it unique?
   sqlResult "i.indisvalid"  -- is it valid?
+  -- does it have NULLS NOT DISTINCT ?
+  if nullsNotDistinctSupported
+    then sqlResult "i.indnullsnotdistinct"  
+    else sqlResult "false"
   -- if partial, get constraint def
   sqlResult "pg_catalog.pg_get_expr(i.indpred, i.indrelid, true)"
   sqlJoinOn "pg_catalog.pg_index i" "c.oid = i.indexrelid"
@@ -1227,9 +1238,9 @@ sqlGetIndexes table = toSQLCommand . sqlSelect "pg_catalog.pg_class c" $ do
       ]
 
 fetchTableIndex
-  :: (String, Array1 String, Array1 String, String, Bool, Bool, Maybe String)
+  :: (String, Array1 String, Array1 String, String, Bool, Bool, Bool, Maybe String)
   -> (TableIndex, RawSQL ())
-fetchTableIndex (name, Array1 keyColumns, Array1 includeColumns, method, unique, valid, mconstraint) =
+fetchTableIndex (name, Array1 keyColumns, Array1 includeColumns, method, unique, valid, nullsNotDistinct, mconstraint) =
   (TableIndex
    { idxColumns = map (indexColumn . unsafeSQL) keyColumns
    , idxInclude = map unsafeSQL includeColumns
@@ -1237,6 +1248,7 @@ fetchTableIndex (name, Array1 keyColumns, Array1 includeColumns, method, unique,
    , idxUnique = unique
    , idxValid = valid
    , idxWhere = unsafeSQL <$> mconstraint
+   , idxNotDistinctNulls = nullsNotDistinct
    }
   , unsafeSQL name)
 
