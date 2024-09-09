@@ -696,13 +696,13 @@ sqlWhereIsNotNULL col = sqlWhere $ col <+> "IS NOT NULL"
 --
 -- When no conditions are given, the result is 'TRUE'.
 sqlAll :: State SqlWhereAll () -> SQL
-sqlAll = toSQLCommand . (`execState` (SqlWhereAll []))
+sqlAll = toSQLCommand . (`execState` SqlWhereAll [])
 
 -- | Run monad that joins all conditions with 'OR' operator.
 --
 -- When no conditions are given, the result is 'FALSE'.
 sqlAny :: State SqlWhereAny () -> SQL
-sqlAny = toSQLCommand . (`execState` (SqlWhereAny []))
+sqlAny = toSQLCommand . (`execState` SqlWhereAny [])
 
 -- | Add a condition in the WHERE statement that holds if any of the given
 -- condition holds.
