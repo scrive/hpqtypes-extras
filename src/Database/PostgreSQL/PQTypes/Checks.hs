@@ -42,7 +42,6 @@ import Database.PostgreSQL.PQTypes.Migrate
 import Database.PostgreSQL.PQTypes.Model
 import Database.PostgreSQL.PQTypes.SQL.Builder
 import Database.PostgreSQL.PQTypes.Versions
-import Database.PostgreSQL.PQTypes.Utils.NubList
 
 headExc :: String -> [a] -> a
 headExc s []    = error s
@@ -429,7 +428,7 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version)
       runQuery_ $ sqlGetForeignKeys table
       fkeys <- fetchMany fetchForeignKey
       triggers <- getDBTriggers tblName
-      checkedOverlaps <- checkOverlappingIndexes 
+      checkedOverlaps <- checkOverlappingIndexes
       return $ mconcat [
           checkColumns 1 tblColumns desc
         , checkPrimaryKey tblPrimaryKey pk
@@ -575,7 +574,7 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version)
 
             allCoverage :: [[RawSQL ()]]
             allCoverage = maybe [] pkColumns pkey:allIndexes
-              
+
             -- A foreign key is covered if it is a prefix of a list of indices.
             -- So a FK on a is covered by an index on (a, b) but not an index on (b, a).
             coveredFK :: ForeignKey -> [[RawSQL ()]] -> Bool
@@ -604,7 +603,7 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version)
           if eoCheckOverlappingIndexes options
           then go
           else pure mempty
-          where 
+          where
             go = do
               let handleOverlap (contained, contains) =
                     mconcat

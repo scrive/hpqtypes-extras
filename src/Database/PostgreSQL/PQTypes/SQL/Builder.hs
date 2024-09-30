@@ -145,6 +145,10 @@ module Database.PostgreSQL.PQTypes.SQL.Builder
   , sqlDelete
   , SqlDelete(..)
 
+  , SqlWhereAll(..)
+  , sqlAll
+  , SqlWhereAny(..)
+  , sqlAny
   , sqlWhereAny
 
   , SqlResult
@@ -291,10 +295,19 @@ data SqlDelete = SqlDelete
   , sqlDeleteRecursiveWith :: Recursive
   }
 
--- | This is not exported and is used as an implementation detail in
--- 'sqlWhereAll'.
-newtype SqlAll = SqlAll
-  { sqlAllWhere :: [SqlCondition]
+
+-- | Type representing a set of conditions that are joined by 'AND'.
+--
+-- When no conditions are given, the result is 'TRUE'.
+newtype SqlWhereAll = SqlWhereAll
+  { sqlWhereAllWhere :: [SqlCondition]
+  }
+
+-- | Type representing a set of conditions that are joined by 'OR'.
+--
+-- When no conditions are given, the result is 'FALSE'.
+newtype SqlWhereAny = SqlWhereAny
+  { sqlWhereAnyWhere :: [SqlCondition]
   }
 
 instance Show SqlSelect where
@@ -312,7 +325,10 @@ instance Show SqlUpdate where
 instance Show SqlDelete where
   show = show . toSQLCommand
 
-instance Show SqlAll where
+instance Show SqlWhereAll where
+  show = show . toSQLCommand
+
+instance Show SqlWhereAny where
   show = show . toSQLCommand
 
 emitClause :: Sqlable sql => SQL -> sql -> SQL
@@ -464,7 +480,7 @@ materializedClause Materialized = if isWithMaterializedSupported then "MATERIALI
 materializedClause NonMaterialized = if isWithMaterializedSupported then "NOT MATERIALIZED" else ""
 
 recursiveClause :: Recursive -> SQL
-recursiveClause Recursive = "WITH RECURSIVE"
+recursiveClause Recursive    = "WITH RECURSIVE"
 recursiveClause NonRecursive = "WITH"
 
 instance Sqlable SqlUpdate where
@@ -486,10 +502,17 @@ instance Sqlable SqlDelete where
         emitClausesSep "WHERE" "AND" (map toSQLCommand $ sqlDeleteWhere cmd) <+>
     emitClausesSepComma "RETURNING" (sqlDeleteResult cmd)
 
-instance Sqlable SqlAll where
-  toSQLCommand cmd | null (sqlAllWhere cmd) = "TRUE"
-  toSQLCommand cmd =
-    "(" <+> smintercalate "AND" (map (parenthesize . toSQLCommand) (sqlAllWhere cmd)) <+> ")"
+instance Sqlable SqlWhereAll where
+  toSQLCommand cmd = case sqlWhereAllWhere cmd of
+    [] -> "TRUE"
+    [cond] -> toSQLCommand cond
+    conds -> parenthesize $ smintercalate "AND" (map (parenthesize . toSQLCommand) conds)
+
+instance Sqlable SqlWhereAny where
+  toSQLCommand cmd = case sqlWhereAnyWhere cmd of
+    [] -> "FALSE"
+    [cond] -> toSQLCommand cond
+    conds -> parenthesize $ smintercalate "OR" (map (parenthesize . toSQLCommand) conds)
 
 sqlSelect :: SQL -> State SqlSelect () -> SqlSelect
 sqlSelect table refine =
@@ -546,7 +569,7 @@ data Recursive = Recursive | NonRecursive
 instance Semigroup Recursive where
   _ <> Recursive = Recursive
   Recursive <> _ = Recursive
-  _ <> _ = NonRecursive
+  _ <> _         = NonRecursive
 
 class SqlWith a where
   sqlWith1 :: a -> SQL -> SQL -> Materialized -> Recursive -> a
@@ -605,9 +628,13 @@ instance SqlWhere SqlDelete where
   sqlWhere1 cmd cond = cmd { sqlDeleteWhere = sqlDeleteWhere cmd ++ [cond] }
   sqlGetWhereConditions = sqlDeleteWhere
 
-instance SqlWhere SqlAll where
-  sqlWhere1 cmd cond = cmd { sqlAllWhere = sqlAllWhere cmd ++ [cond] }
-  sqlGetWhereConditions = sqlAllWhere
+instance SqlWhere SqlWhereAll where
+  sqlWhere1 cmd cond = cmd { sqlWhereAllWhere = sqlWhereAllWhere cmd ++ [cond] }
+  sqlGetWhereConditions = sqlWhereAllWhere
+
+instance SqlWhere SqlWhereAny where
+  sqlWhere1 cmd cond = cmd { sqlWhereAnyWhere = sqlWhereAnyWhere cmd ++ [cond] }
+  sqlGetWhereConditions = sqlWhereAnyWhere
 
 -- | The @WHERE@ part of an SQL query. See above for a usage
 -- example. See also 'SqlCondition'.
@@ -664,16 +691,29 @@ sqlWhereIsNULL col = sqlWhere $ col <+> "IS NULL"
 sqlWhereIsNotNULL :: (MonadState v m, SqlWhere v) => SQL -> m ()
 sqlWhereIsNotNULL col = sqlWhere $ col <+> "IS NOT NULL"
 
+-- | Run monad that joins all conditions using 'AND' operator.
+--
+-- When no conditions are given, the result is 'TRUE'.
+--
+-- Note: This is usally not needed as `SqlSelect`, `SqlUpdate` and `SqlDelete`
+-- already join conditions using 'AND' by default, but it can be useful when
+-- nested in `sqlAny`.
+sqlAll :: State SqlWhereAll () -> SQL
+sqlAll = toSQLCommand . (`execState` SqlWhereAll [])
+
+-- | Run monad that joins all conditions using 'OR' operator.
+--
+-- When no conditions are given, the result is 'FALSE'.
+sqlAny :: State SqlWhereAny () -> SQL
+sqlAny = toSQLCommand . (`execState` SqlWhereAny [])
+
 -- | Add a condition in the WHERE statement that holds if any of the given
 -- condition holds.
-sqlWhereAny :: (MonadState v m, SqlWhere v) => [State SqlAll ()] -> m ()
-sqlWhereAny = sqlWhere . sqlWhereAnyImpl
-
-sqlWhereAnyImpl :: [State SqlAll ()] -> SQL
-sqlWhereAnyImpl [] = "FALSE"
-sqlWhereAnyImpl l =
-  "(" <+> smintercalate "OR" (map (parenthesize . toSQLCommand
-                                   . flip execState (SqlAll [])) l) <+> ")"
+--
+-- These conditions are joined with 'OR' operator.
+-- When no conditions are given, the result is 'FALSE'.
+sqlWhereAny :: (MonadState v m, SqlWhere v) => [State SqlWhereAll ()] -> m ()
+sqlWhereAny = sqlWhere . sqlAny . mapM_ (sqlWhere . sqlAll)
 
 class SqlFrom a where
   sqlFrom1 :: a -> SQL -> a

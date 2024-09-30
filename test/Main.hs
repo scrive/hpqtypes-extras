@@ -2,17 +2,15 @@
 {-# HLINT ignore "Use head" #-}
 module Main where
 
-import Control.Monad.Catch
 import Control.Monad (forM_)
+import Control.Monad.Catch
 import Control.Monad.IO.Class
 import Data.Either
 import Data.List (zip4)
-import Data.Monoid
-import Prelude
-import Data.Typeable
-import Data.UUID.Types
 import qualified Data.Set as Set
 import qualified Data.Text as T
+import Data.Typeable
+import Data.UUID.Types
 
 import Data.Monoid.Utils
 import Database.PostgreSQL.PQTypes
@@ -1284,7 +1282,7 @@ testSqlWithRecursive :: HasCallStack => (String -> TestM ()) -> TestM ()
 testSqlWithRecursive step = do
   step "Running WITH RECURSIVE tests"
   testPass
-  where 
+  where
     migrate tables migrations = do
       migrateDatabase defaultExtrasOptions ["pgcrypto"] [] [] tables migrations
       checkDatabase defaultExtrasOptions [] [] tables
@@ -1310,7 +1308,7 @@ testSqlWithRecursive step = do
             sqlResult "root.cartel_member_id"
             sqlResult "root.cartel_boss_id"
             sqlWhere "root.cartel_boss_id IS NULL"
-            sqlUnionAll 
+            sqlUnionAll
               [ sqlSelect "cartel child" $ do
                   sqlResult "child.cartel_member_id"
                   sqlResult "child.cartel_boss_id"
@@ -1701,7 +1699,7 @@ foreignKeyIndexesTests connSource =
       let options = defaultExtrasOptions { eoCheckForeignKeysIndexes = True }
       assertException "Foreign keys are missing" $ migrateDatabase options ["pgcrypto"] [] [] [table1, table2, table3]
         [createTableMigration table1, createTableMigration table2, createTableMigration table3]
-    
+
     step "Multi column indexes covering a FK pass the checks"
     do
       let options = defaultExtrasOptions { eoCheckForeignKeysIndexes = True }
@@ -1818,8 +1816,8 @@ overlapingIndexesTests connSource = do
           , tblColumn { colName = "idx3", colType = UuidT }
           ]
         , tblPrimaryKey = pkOnColumn "id"
-        , tblIndexes = 
-          [ indexOnColumns [ indexColumn "idx1", indexColumn "idx2" ] 
+        , tblIndexes =
+          [ indexOnColumns [ indexColumn "idx1", indexColumn "idx2" ]
           , indexOnColumns [ indexColumn "idx1" ]
           ]
         }
@@ -1834,7 +1832,7 @@ nullsNotDistinctTests connSource = do
       migrateDatabase defaultExtrasOptions ["pgcrypto"] [] [] [nullTableTest1, nullTableTest2]
         [createTableMigration nullTableTest1, createTableMigration nullTableTest2]
       checkDatabase defaultExtrasOptions [] [] [nullTableTest1, nullTableTest2]
-      
+
     step "Insert two NULLs on a column with a default UNIQUE index"
     do
       runQuery_ . sqlInsert "nulltests1" $ do
@@ -1848,7 +1846,7 @@ nullsNotDistinctTests connSource = do
         sqlSet "content" (Nothing @T.Text)
       assertDBException "Cannot insert twice a null value with NULLS NOT DISTINCT" $ runQuery_ . sqlInsert "nulltests2" $ do
         sqlSet "content" (Nothing @T.Text)
-      
+
     where
       nullTableTest1 = tblTable
         { tblName = "nulltests1"
@@ -1875,6 +1873,69 @@ nullsNotDistinctTests connSource = do
           [ (uniqueIndexOnColumn "content") { idxNotDistinctNulls = True }
           ]
         }
+
+sqlAnyAllTests :: TestTree
+sqlAnyAllTests = testGroup "SQL ANY/ALL tests"
+  [ testCase "sqlAll produces correct queries" $ do
+      assertSqlEqual "empty sqlAll is TRUE" "TRUE" . sqlAll $ pure ()
+      assertSqlEqual "sigle condition is emmited as is" "cond" $ sqlAll $ sqlWhere "cond"
+      assertSqlEqual "each condition as well as entire condition is parenthesized"
+        "((cond1) AND (cond2))" $ sqlAll $ do
+          sqlWhere "cond1"
+          sqlWhere "cond2"
+
+      assertSqlEqual "sqlAll can be nested"
+        "((cond1) AND (cond2) AND (((cond3) AND (cond4))))" $
+          sqlAll $ do
+            sqlWhere "cond1"
+            sqlWhere "cond2"
+            sqlWhere . sqlAll $ do
+              sqlWhere "cond3"
+              sqlWhere "cond4"
+  , testCase "sqlAny produces correct queries" $ do
+      assertSqlEqual "empty sqlAny is FALSE" "FALSE" . sqlAny $ pure ()
+      assertSqlEqual "sigle condition is emmited as is" "cond" $ sqlAny $ sqlWhere "cond"
+      assertSqlEqual "each condition as well as entire condition is parenthesized"
+        "((cond1) OR (cond2))" $ sqlAny $ do
+          sqlWhere "cond1"
+          sqlWhere "cond2"
+
+      assertSqlEqual "sqlAny can be nested"
+        "((cond1) OR (cond2) OR (((cond3) OR (cond4))))" $
+          sqlAny $ do
+            sqlWhere "cond1"
+            sqlWhere "cond2"
+            sqlWhere . sqlAny $ do
+              sqlWhere "cond3"
+              sqlWhere "cond4"
+  , testCase "mixing sqlAny and all produces correct queries" $ do
+      assertSqlEqual "sqlAny and sqlAll can be mixed"
+        "((((cond1) OR (cond2))) AND (((cond3) OR (cond4))))" $
+          sqlAll $ do
+            sqlWhere . sqlAny $ do
+              sqlWhere "cond1"
+              sqlWhere "cond2"
+            sqlWhere . sqlAny $ do
+              sqlWhere "cond3"
+              sqlWhere "cond4"
+  , testCase "sqlWhereAny produces correct queries" $ do
+      -- `sqlWhereAny` has to be wrapped in `sqlAll` to disambiguate the `SqlWhere` monad.
+      assertSqlEqual "empty sqlWhereAny is FALSE" "FALSE" . sqlAll $ sqlWhereAny []
+      assertSqlEqual "each condition as well as entire condition is parenthesized and joined with OR"
+        "((cond1) OR (cond2))" . sqlAll $ sqlWhereAny [sqlWhere "cond1", sqlWhere "cond2"]
+      assertSqlEqual "nested multi-conditions are parenthesized and joined with AND"
+        "((cond1) OR (((cond2) AND (cond3))) OR (cond4))" . sqlAll $ sqlWhereAny
+          [ sqlWhere "cond1"
+          , do
+              sqlWhere "cond2"
+              sqlWhere "cond3"
+          , sqlWhere "cond4"
+          ]
+  ]
+  where
+    assertSqlEqual :: (Sqlable a) => String -> a -> a -> Assertion
+    assertSqlEqual msg a b = assertEqual msg
+      (show $ toSQLCommand a) (show $ toSQLCommand b)
 
 assertNoException :: String -> TestM () -> TestM ()
 assertNoException t = eitherExc
@@ -1924,6 +1985,7 @@ main = do
                          , foreignKeyIndexesTests connSource
                          , overlapingIndexesTests connSource
                          , nullsNotDistinctTests connSource
+                         , sqlAnyAllTests
                          ]
   where
     ings =
