@@ -480,7 +480,7 @@ materializedClause Materialized = if isWithMaterializedSupported then "MATERIALI
 materializedClause NonMaterialized = if isWithMaterializedSupported then "NOT MATERIALIZED" else ""
 
 recursiveClause :: Recursive -> SQL
-recursiveClause Recursive = "WITH RECURSIVE"
+recursiveClause Recursive    = "WITH RECURSIVE"
 recursiveClause NonRecursive = "WITH"
 
 instance Sqlable SqlUpdate where
@@ -569,7 +569,7 @@ data Recursive = Recursive | NonRecursive
 instance Semigroup Recursive where
   _ <> Recursive = Recursive
   Recursive <> _ = Recursive
-  _ <> _ = NonRecursive
+  _ <> _         = NonRecursive
 
 class SqlWith a where
   sqlWith1 :: a -> SQL -> SQL -> Materialized -> Recursive -> a

@@ -1932,7 +1932,6 @@ sqlAnyAllTests = testGroup "SQL ANY/ALL tests"
           , sqlWhere "cond4"
           ]
   ]
-
   where
     assertSqlEqual :: (Sqlable a) => String -> a -> a -> Assertion
     assertSqlEqual msg a b = assertEqual msg
