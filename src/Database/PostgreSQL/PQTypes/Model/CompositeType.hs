@@ -1,30 +1,32 @@
-module Database.PostgreSQL.PQTypes.Model.CompositeType (
-    CompositeType(..)
-  , CompositeColumn(..)
+module Database.PostgreSQL.PQTypes.Model.CompositeType
+  ( CompositeType (..)
+  , CompositeColumn (..)
   , compositeTypePqFormat
   , sqlCreateComposite
   , sqlDropComposite
   , getDBCompositeTypes
   ) where
 
+import Data.ByteString qualified as BS
 import Data.Int
 import Data.Monoid.Utils
+import Data.Text.Encoding qualified as T
 import Database.PostgreSQL.PQTypes
-import qualified Data.ByteString as BS
-import qualified Data.Text.Encoding as T
 
 import Database.PostgreSQL.PQTypes.Model.ColumnType
 import Database.PostgreSQL.PQTypes.SQL.Builder
 
-data CompositeType = CompositeType {
-  ctName    :: !(RawSQL ())
-, ctColumns :: ![CompositeColumn]
-} deriving (Eq, Ord, Show)
+data CompositeType = CompositeType
+  { ctName :: !(RawSQL ())
+  , ctColumns :: ![CompositeColumn]
+  }
+  deriving (Eq, Ord, Show)
 
-data CompositeColumn = CompositeColumn {
-  ccName :: !(RawSQL ())
-, ccType :: ColumnType
-} deriving (Eq, Ord, Show)
+data CompositeColumn = CompositeColumn
+  { ccName :: !(RawSQL ())
+  , ccType :: ColumnType
+  }
+  deriving (Eq, Ord, Show)
 
 -- | Convenience function for converting CompositeType definition to
 -- corresponding 'pqFormat' definition.
@@ -33,15 +35,16 @@ compositeTypePqFormat ct = "%" `BS.append` T.encodeUtf8 (unRawSQL $ ctName ct)
 
 -- | Make SQL query that creates a composite type.
 sqlCreateComposite :: CompositeType -> RawSQL ()
-sqlCreateComposite CompositeType{..} = smconcat [
-    "CREATE TYPE"
-  , ctName
-  , "AS ("
-  , mintercalate ", " $ map columnToSQL ctColumns
-  , ")"
-  ]
+sqlCreateComposite CompositeType {..} =
+  smconcat
+    [ "CREATE TYPE"
+    , ctName
+    , "AS ("
+    , mintercalate ", " $ map columnToSQL ctColumns
+    , ")"
+    ]
   where
-    columnToSQL CompositeColumn{..} = ccName <+> columnTypeToSQL ccType
+    columnToSQL CompositeColumn {..} = ccName <+> columnTypeToSQL ccType
 
 -- | Make SQL query that drops a composite type.
 sqlDropComposite :: RawSQL () -> RawSQL ()
@@ -68,8 +71,8 @@ getDBCompositeTypes = do
         sqlWhereEq "a.attrelid" oid
         sqlOrderBy "a.attnum"
       columns <- fetchMany fetch
-      return CompositeType { ctName = unsafeSQL name, ctColumns = columns }
+      return CompositeType {ctName = unsafeSQL name, ctColumns = columns}
       where
         fetch :: (String, ColumnType) -> CompositeColumn
         fetch (cname, ctype) =
-          CompositeColumn { ccName = unsafeSQL cname, ccType = ctype }
+          CompositeColumn {ccName = unsafeSQL cname, ccType = ctype}

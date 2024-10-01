@@ -1,22 +1,24 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
-module Database.PostgreSQL.PQTypes.Deriving (
-  -- * Helpers, to be used with @deriving via@ (@-XDerivingVia@).
-    SQLEnum(..)
-  , EnumEncoding(..)
-  , SQLEnumAsText(..)
-  , EnumAsTextEncoding(..)
+
+module Database.PostgreSQL.PQTypes.Deriving
+  ( -- * Helpers, to be used with @deriving via@ (@-XDerivingVia@).
+    SQLEnum (..)
+  , EnumEncoding (..)
+  , SQLEnumAsText (..)
+  , EnumAsTextEncoding (..)
+
     -- * For use in doctests.
   , isInjective
   ) where
 
-import Control.Exception (SomeException(..), throwIO)
+import Control.Exception (SomeException (..), throwIO)
 import Data.List.Extra (enumerate, nubSort)
 import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Data.Typeable
 import Database.PostgreSQL.PQTypes
 import Foreign.Storable
-import qualified Data.Map.Strict as Map
 
 -- | Helper newtype to be used with @deriving via@ to derive @(PQFormat, ToSQL,
 -- FromSQL)@ instances for enums, given an instance of 'EnumEncoding'.
@@ -59,11 +61,14 @@ class
   ( -- The semantic type needs to be finitely enumerable.
     Enum a
   , Bounded a
-    -- The base type needs to be enumerable and ordered.
-  , Enum (EnumBase a)
+  , -- The base type needs to be enumerable and ordered.
+    Enum (EnumBase a)
   , Ord (EnumBase a)
-  ) => EnumEncoding a where
+  ) =>
+  EnumEncoding a
+  where
   type EnumBase a
+
   -- | Encode @a@ as a base type.
   encodeEnum :: a -> EnumBase a
 
@@ -73,13 +78,14 @@ class
   -- /Note:/ The default implementation looks up values in 'decodeEnumMap' and
   -- can be overwritten for performance if necessary.
   decodeEnum :: EnumBase a -> Either [(EnumBase a, EnumBase a)] a
-  decodeEnum b = maybe (Left . intervals $ Map.keys (decodeEnumMap @a)) Right
-               $ Map.lookup b (decodeEnumMap @a)
+  decodeEnum b =
+    maybe (Left . intervals $ Map.keys (decodeEnumMap @a)) Right $
+      Map.lookup b (decodeEnumMap @a)
 
   -- | Include the inverse map as a top-level part of the 'EnumEncoding'
   -- instance to ensure it is only computed once by GHC.
   decodeEnumMap :: Map (EnumBase a) a
-  decodeEnumMap = Map.fromList [ (encodeEnum a, a) | a <- enumerate ]
+  decodeEnumMap = Map.fromList [(encodeEnum a, a) | a <- enumerate]
 
 instance PQFormat (EnumBase a) => PQFormat (SQLEnum a) where
   pqFormat = pqFormat @(EnumBase a)
@@ -88,7 +94,9 @@ instance
   ( EnumEncoding a
   , PQFormat (EnumBase a)
   , ToSQL (EnumBase a)
-  ) => ToSQL (SQLEnum a) where
+  )
+  => ToSQL (SQLEnum a)
+  where
   type PQDest (SQLEnum a) = PQDest (EnumBase a)
   toSQL (SQLEnum a) = toSQL $ encodeEnum a
 
@@ -99,15 +107,20 @@ instance
   , FromSQL (EnumBase a)
   , Show (EnumBase a)
   , Typeable (EnumBase a)
-  ) => FromSQL (SQLEnum a) where
+  )
+  => FromSQL (SQLEnum a)
+  where
   type PQBase (SQLEnum a) = PQBase (EnumBase a)
   fromSQL base = do
     b <- fromSQL base
     case decodeEnum b of
-      Left validRange -> throwIO $ SomeException RangeError
-        { reRange = validRange
-        , reValue = b
-        }
+      Left validRange ->
+        throwIO $
+          SomeException
+            RangeError
+              { reRange = validRange
+              , reValue = b
+              }
       Right a -> return $ SQLEnum a
 
 -- | A special case of 'SQLEnum', where the enum is to be encoded as text
@@ -152,13 +165,14 @@ class (Enum a, Bounded a) => EnumAsTextEncoding a where
   -- /Note:/ The default implementation looks up values in 'decodeEnumAsTextMap'
   -- and can be overwritten for performance if necessary.
   decodeEnumAsText :: Text -> Either [Text] a
-  decodeEnumAsText text = maybe (Left $ Map.keys (decodeEnumAsTextMap @a)) Right
-                        $ Map.lookup text (decodeEnumAsTextMap @a)
+  decodeEnumAsText text =
+    maybe (Left $ Map.keys (decodeEnumAsTextMap @a)) Right $
+      Map.lookup text (decodeEnumAsTextMap @a)
 
   -- | Include the inverse map as a top-level part of the 'SQLEnumTextEncoding'
   -- instance to ensure it is only computed once by GHC.
   decodeEnumAsTextMap :: Map Text a
-  decodeEnumAsTextMap = Map.fromList [ (encodeEnumAsText a, a) | a <- enumerate ]
+  decodeEnumAsTextMap = Map.fromList [(encodeEnumAsText a, a) | a <- enumerate]
 
 instance EnumAsTextEncoding a => PQFormat (SQLEnumAsText a) where
   pqFormat = pqFormat @Text
@@ -172,10 +186,13 @@ instance EnumAsTextEncoding a => FromSQL (SQLEnumAsText a) where
   fromSQL base = do
     text <- fromSQL base
     case decodeEnumAsText text of
-      Left validValues -> throwIO $ SomeException InvalidValue
-        { ivValue       = text
-        , ivValidValues = Just validValues
-        }
+      Left validValues ->
+        throwIO $
+          SomeException
+            InvalidValue
+              { ivValue = text
+              , ivValidValues = Just validValues
+              }
       Right a -> return $ SQLEnumAsText a
 
 -- | To be used in doctests to prove injectivity of encoding functions.
@@ -186,7 +203,7 @@ instance EnumAsTextEncoding a => FromSQL (SQLEnumAsText a) where
 -- >>> isInjective (\(_ :: Bool) -> False)
 -- False
 isInjective :: (Enum a, Bounded a, Eq a, Eq b) => (a -> b) -> Bool
-isInjective f = null [ (a, b) | a <- enumerate, b <- enumerate, a /= b, f a == f b ]
+isInjective f = null [(a, b) | a <- enumerate, b <- enumerate, a /= b, f a == f b]
 
 -- | Internal helper: given a list of values, decompose it into a list of
 -- intervals.
@@ -195,16 +212,17 @@ isInjective f = null [ (a, b) | a <- enumerate, b <- enumerate, a /= b, f a == f
 -- [(-1,3),(42,43),(88,88)]
 --
 -- prop> nubSort xs == concatMap (\(l,r) -> [l .. r]) (intervals xs)
-intervals :: forall  a . (Enum a, Ord a) => [a] -> [(a, a)]
+intervals :: forall a. (Enum a, Ord a) => [a] -> [(a, a)]
 intervals as = case nubSort as of
   [] -> []
   (first : ascendingRest) -> accumIntervals (first, first) ascendingRest
   where
     accumIntervals :: (a, a) -> [a] -> [(a, a)]
     accumIntervals (lower, upper) [] = [(lower, upper)]
-    accumIntervals (lower, upper) (first' : ascendingRest') = if succ upper == first'
-      then accumIntervals (lower, first') ascendingRest'
-      else (lower, upper) : accumIntervals (first', first') ascendingRest'
+    accumIntervals (lower, upper) (first' : ascendingRest') =
+      if succ upper == first'
+        then accumIntervals (lower, first') ascendingRest'
+        else (lower, upper) : accumIntervals (first', first') ascendingRest'
 
 -- $setup
 -- >>> import Data.Int

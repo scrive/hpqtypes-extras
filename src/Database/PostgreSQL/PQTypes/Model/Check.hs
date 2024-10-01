@@ -1,5 +1,5 @@
-module Database.PostgreSQL.PQTypes.Model.Check (
-    Check(..)
+module Database.PostgreSQL.PQTypes.Model.Check
+  ( Check (..)
   , tblCheck
   , sqlAddValidCheckMaybeDowntime
   , sqlAddNotValidCheck
@@ -10,19 +10,22 @@ module Database.PostgreSQL.PQTypes.Model.Check (
 import Data.Monoid.Utils
 import Database.PostgreSQL.PQTypes
 
-data Check = Check {
-  chkName      :: RawSQL ()
-, chkCondition :: RawSQL ()
-, chkValidated :: Bool -- ^ Set to 'False' if check is created as NOT VALID and
-                       -- left in such state (for whatever reason).
-} deriving (Eq, Ord, Show)
+data Check = Check
+  { chkName :: RawSQL ()
+  , chkCondition :: RawSQL ()
+  , chkValidated :: Bool
+  -- ^ Set to 'False' if check is created as NOT VALID and
+  -- left in such state (for whatever reason).
+  }
+  deriving (Eq, Ord, Show)
 
 tblCheck :: Check
-tblCheck = Check
-  { chkName      = ""
-  , chkCondition = ""
-  , chkValidated = True
-  }
+tblCheck =
+  Check
+    { chkName = ""
+    , chkCondition = ""
+    , chkValidated = True
+    }
 
 -- | Add valid check constraint. Warning: PostgreSQL acquires SHARE ROW
 -- EXCLUSIVE lock (that prevents updates) on modified table for the duration of
@@ -42,14 +45,15 @@ sqlValidateCheck :: RawSQL () -> RawSQL ()
 sqlValidateCheck checkName = "VALIDATE CONSTRAINT" <+> checkName
 
 sqlAddCheck_ :: Bool -> Check -> RawSQL ()
-sqlAddCheck_ valid Check{..} = smconcat [
-    "ADD CONSTRAINT"
-  , chkName
-  , "CHECK ("
-  , chkCondition
-  , ")"
-  , if valid then "" else " NOT VALID"
-  ]
+sqlAddCheck_ valid Check {..} =
+  smconcat
+    [ "ADD CONSTRAINT"
+    , chkName
+    , "CHECK ("
+    , chkCondition
+    , ")"
+    , if valid then "" else " NOT VALID"
+    ]
 
 sqlDropCheck :: RawSQL () -> RawSQL ()
 sqlDropCheck name = "DROP CONSTRAINT" <+> name

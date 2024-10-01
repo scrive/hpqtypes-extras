@@ -1,9 +1,9 @@
-module Database.PostgreSQL.PQTypes.Model.Index (
-    TableIndex(..)
-  , IndexColumn(..)
+module Database.PostgreSQL.PQTypes.Model.Index
+  ( TableIndex (..)
+  , IndexColumn (..)
   , indexColumn
   , indexColumnWithOperatorClass
-  , IndexMethod(..)
+  , IndexMethod (..)
   , tblIndex
   , indexOnColumn
   , indexOnColumns
@@ -20,38 +20,39 @@ module Database.PostgreSQL.PQTypes.Model.Index (
   , sqlDropIndexConcurrently
   ) where
 
+import Crypto.Hash qualified as H
+import Data.ByteArray qualified as BA
+import Data.ByteString.Base16 qualified as B16
+import Data.ByteString.Char8 qualified as BS
 import Data.Char
 import Data.Function
-import Data.String
 import Data.Monoid.Utils
+import Data.String
+import Data.Text qualified as T
+import Data.Text.Encoding qualified as T
 import Database.PostgreSQL.PQTypes
-import qualified Crypto.Hash as H
-import qualified Data.ByteArray as BA
-import qualified Data.ByteString.Base16 as B16
-import qualified Data.ByteString.Char8 as BS
-import qualified Data.Text as T
-import qualified Data.Text.Encoding as T
 
-data TableIndex = TableIndex {
-  idxColumns          :: [IndexColumn]
-, idxInclude          :: [RawSQL ()]
-, idxMethod           :: IndexMethod
-, idxUnique           :: Bool
-, idxValid            :: Bool 
--- ^ If creation of index with CONCURRENTLY fails, index
--- will be marked as invalid. Set it to 'False' if such
--- situation is expected.
-, idxWhere            :: Maybe (RawSQL ())
-, idxNotDistinctNulls :: Bool
--- ^ Adds NULL NOT DISTINCT on the index, meaning that
--- ^ only one NULL value will be accepted; other NULLs
--- ^ will be perceived as a violation of the constraint.
--- ^ NB: will only be used if idxUnique is set to True
-} deriving (Eq, Ord, Show)
+data TableIndex = TableIndex
+  { idxColumns :: [IndexColumn]
+  , idxInclude :: [RawSQL ()]
+  , idxMethod :: IndexMethod
+  , idxUnique :: Bool
+  , idxValid :: Bool
+  , -- \^ If creation of index with CONCURRENTLY fails, index
+    -- will be marked as invalid. Set it to 'False' if such
+    -- situation is expected.
+    idxWhere :: Maybe (RawSQL ())
+  , idxNotDistinctNulls :: Bool
+  }
+  -- \^ Adds NULL NOT DISTINCT on the index, meaning that
+  -- \^ only one NULL value will be accepted; other NULLs
+  -- \^ will be perceived as a violation of the constraint.
+  -- \^ NB: will only be used if idxUnique is set to True
+  deriving (Eq, Ord, Show)
 
 data IndexColumn
   = IndexColumn (RawSQL ()) (Maybe (RawSQL ()))
-  deriving Show
+  deriving (Show)
 
 -- If one of the two columns doesn't specify the operator class, we just ignore
 -- it and still treat them as equivalent.
@@ -75,111 +76,129 @@ indexColumnWithOperatorClass col opclass = IndexColumn col (Just opclass)
 indexColumnName :: IndexColumn -> RawSQL ()
 indexColumnName (IndexColumn col _) = col
 
-data IndexMethod =
-    BTree
+data IndexMethod
+  = BTree
   | GIN
   deriving (Eq, Ord)
 
 instance Show IndexMethod where
-    show BTree = "btree"
-    show GIN   = "gin"
+  show BTree = "btree"
+  show GIN = "gin"
 
 instance Read IndexMethod where
-    readsPrec _ (map toLower -> "btree") = [(BTree,"")]
-    readsPrec _ (map toLower -> "gin")   = [(GIN,"")]
-    readsPrec _ _       = []
+  readsPrec _ (map toLower -> "btree") = [(BTree, "")]
+  readsPrec _ (map toLower -> "gin") = [(GIN, "")]
+  readsPrec _ _ = []
 
 tblIndex :: TableIndex
-tblIndex = TableIndex {
-  idxColumns = []
-, idxInclude = []
-, idxMethod = BTree
-, idxUnique = False
-, idxValid = True
-, idxWhere = Nothing
-, idxNotDistinctNulls = False
-}
+tblIndex =
+  TableIndex
+    { idxColumns = []
+    , idxInclude = []
+    , idxMethod = BTree
+    , idxUnique = False
+    , idxValid = True
+    , idxWhere = Nothing
+    , idxNotDistinctNulls = False
+    }
 
 indexOnColumn :: IndexColumn -> TableIndex
-indexOnColumn column = tblIndex { idxColumns = [column] }
+indexOnColumn column = tblIndex {idxColumns = [column]}
 
 -- | Create an index on the given column with the specified method.  No checks
 -- are made that the method is appropriate for the type of the column.
 indexOnColumnWithMethod :: IndexColumn -> IndexMethod -> TableIndex
 indexOnColumnWithMethod column method =
-    tblIndex { idxColumns = [column]
-             , idxMethod = method }
+  tblIndex
+    { idxColumns = [column]
+    , idxMethod = method
+    }
 
 indexOnColumns :: [IndexColumn] -> TableIndex
-indexOnColumns columns = tblIndex { idxColumns = columns }
+indexOnColumns columns = tblIndex {idxColumns = columns}
 
 -- | Create an index on the given columns with the specified method.  No checks
 -- are made that the method is appropriate for the type of the column;
 -- cf. [the PostgreSQL manual](https://www.postgresql.org/docs/current/static/indexes-multicolumn.html).
 indexOnColumnsWithMethod :: [IndexColumn] -> IndexMethod -> TableIndex
 indexOnColumnsWithMethod columns method =
-    tblIndex { idxColumns = columns
-             , idxMethod = method }
+  tblIndex
+    { idxColumns = columns
+    , idxMethod = method
+    }
 
 uniqueIndexOnColumn :: IndexColumn -> TableIndex
-uniqueIndexOnColumn column = TableIndex {
-  idxColumns = [column]
-, idxInclude = []
-, idxMethod = BTree
-, idxUnique = True
-, idxValid = True
-, idxWhere = Nothing
-, idxNotDistinctNulls = False
-}
+uniqueIndexOnColumn column =
+  TableIndex
+    { idxColumns = [column]
+    , idxInclude = []
+    , idxMethod = BTree
+    , idxUnique = True
+    , idxValid = True
+    , idxWhere = Nothing
+    , idxNotDistinctNulls = False
+    }
 
 uniqueIndexOnColumns :: [IndexColumn] -> TableIndex
-uniqueIndexOnColumns columns = TableIndex {
-  idxColumns = columns
-, idxInclude = []
-, idxMethod = BTree
-, idxUnique = True
-, idxValid = True
-, idxWhere = Nothing
-, idxNotDistinctNulls = False
-}
+uniqueIndexOnColumns columns =
+  TableIndex
+    { idxColumns = columns
+    , idxInclude = []
+    , idxMethod = BTree
+    , idxUnique = True
+    , idxValid = True
+    , idxWhere = Nothing
+    , idxNotDistinctNulls = False
+    }
 
 uniqueIndexOnColumnWithCondition :: IndexColumn -> RawSQL () -> TableIndex
-uniqueIndexOnColumnWithCondition column whereC = TableIndex {
-  idxColumns = [column]
-, idxInclude = []
-, idxMethod = BTree
-, idxUnique = True
-, idxValid = True
-, idxWhere = Just whereC
-, idxNotDistinctNulls = False
-}
+uniqueIndexOnColumnWithCondition column whereC =
+  TableIndex
+    { idxColumns = [column]
+    , idxInclude = []
+    , idxMethod = BTree
+    , idxUnique = True
+    , idxValid = True
+    , idxWhere = Just whereC
+    , idxNotDistinctNulls = False
+    }
 
 indexName :: RawSQL () -> TableIndex -> RawSQL ()
-indexName tname TableIndex{..} = flip rawSQL () $ T.take 63 . unRawSQL $ mconcat [
-    if idxUnique then "unique_idx__" else "idx__"
-  , tname
-  , "__"
-  , mintercalate "__" $ map (asText sanitize . indexColumnName) idxColumns
-  , if null idxInclude
-    then ""
-    else "$$" <> mintercalate "__" (map (asText sanitize) idxInclude)
-  , maybe "" (("__" <>) . hashWhere) idxWhere
-  ]
+indexName tname TableIndex {..} =
+  flip rawSQL () $
+    T.take 63 . unRawSQL $
+      mconcat
+        [ if idxUnique then "unique_idx__" else "idx__"
+        , tname
+        , "__"
+        , mintercalate "__" $ map (asText sanitize . indexColumnName) idxColumns
+        , if null idxInclude
+            then ""
+            else "$$" <> mintercalate "__" (map (asText sanitize) idxInclude)
+        , maybe "" (("__" <>) . hashWhere) idxWhere
+        ]
   where
     asText f = flip rawSQL () . f . unRawSQL
     -- See http://www.postgresql.org/docs/9.4/static/sql-syntax-lexical.html#SQL-SYNTAX-IDENTIFIERS.
     -- Remove all unallowed characters and replace them by at most one adjacent dollar sign.
     sanitize = T.pack . foldr go [] . T.unpack
       where
-        go c acc = if isAlphaNum c || c == '_'
-          then c : acc
-          else case acc of
-            ('$':_) ->       acc
-            _       -> '$' : acc
+        go c acc =
+          if isAlphaNum c || c == '_'
+            then c : acc
+            else case acc of
+              ('$' : _) -> acc
+              _ -> '$' : acc
     -- hash WHERE clause and add it to index name so that indexes
     -- with the same columns, but different constraints can coexist
-    hashWhere = asText $ T.decodeUtf8 . B16.encode . BS.take 10
-      . BA.convert . H.hash @_ @H.RIPEMD160 . T.encodeUtf8
+    hashWhere =
+      asText $
+        T.decodeUtf8
+          . B16.encode
+          . BS.take 10
+          . BA.convert
+          . H.hash @_ @H.RIPEMD160
+          . T.encodeUtf8
 
 -- | Create an index. Warning: if the affected table is large, this will prevent
 -- the table from being modified during the creation. If this is not acceptable,
@@ -194,30 +213,33 @@ sqlCreateIndexConcurrently :: RawSQL () -> TableIndex -> RawSQL ()
 sqlCreateIndexConcurrently = sqlCreateIndex_ True
 
 sqlCreateIndex_ :: Bool -> RawSQL () -> TableIndex -> RawSQL ()
-sqlCreateIndex_ concurrently tname idx@TableIndex{..} = mconcat [
-    "CREATE"
-  , if idxUnique then " UNIQUE" else ""
-  , " INDEX "
-  , if concurrently then "CONCURRENTLY " else ""
-  , indexName tname idx
-  , " ON" <+> tname
-  , " USING" <+> rawSQL (T.pack . show $ idxMethod) () <+> "("
-  , mintercalate ", "
-      (map
-        (\case
-          IndexColumn col Nothing -> col
-          IndexColumn col (Just opclass) -> col <+> opclass
+sqlCreateIndex_ concurrently tname idx@TableIndex {..} =
+  mconcat
+    [ "CREATE"
+    , if idxUnique then " UNIQUE" else ""
+    , " INDEX "
+    , if concurrently then "CONCURRENTLY " else ""
+    , indexName tname idx
+    , " ON" <+> tname
+    , " USING" <+> rawSQL (T.pack . show $ idxMethod) () <+> "("
+    , mintercalate
+        ", "
+        ( map
+            ( \case
+                IndexColumn col Nothing -> col
+                IndexColumn col (Just opclass) -> col <+> opclass
+            )
+            idxColumns
         )
-        idxColumns)
-  , ")"
-  , if null idxInclude
-    then ""
-    else " INCLUDE (" <> mintercalate ", " idxInclude <> ")"
-  , if idxUnique && idxNotDistinctNulls
-    then " NULLS NOT DISTINCT"
-    else ""
-  , maybe "" (" WHERE" <+>) idxWhere
-  ]
+    , ")"
+    , if null idxInclude
+        then ""
+        else " INCLUDE (" <> mintercalate ", " idxInclude <> ")"
+    , if idxUnique && idxNotDistinctNulls
+        then " NULLS NOT DISTINCT"
+        else ""
+    , maybe "" (" WHERE" <+>) idxWhere
+    ]
 
 -- | Drop an index. Warning: if you don't want to lock out concurrent operations
 -- on the index's table, use 'DropIndexConcurrentlyMigration'. See

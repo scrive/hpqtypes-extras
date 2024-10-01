@@ -1,5 +1,5 @@
-module Database.PostgreSQL.PQTypes.Model (
-    module Database.PostgreSQL.PQTypes.Model.Check
+module Database.PostgreSQL.PQTypes.Model
+  ( module Database.PostgreSQL.PQTypes.Model.Check
   , module Database.PostgreSQL.PQTypes.Model.ColumnType
   , module Database.PostgreSQL.PQTypes.Model.CompositeType
   , module Database.PostgreSQL.PQTypes.Model.Domain

@@ -1,10 +1,10 @@
-module Database.PostgreSQL.PQTypes.Model.ColumnType (
-    ColumnType(..)
+module Database.PostgreSQL.PQTypes.Model.ColumnType
+  ( ColumnType (..)
   , columnTypeToSQL
   ) where
 
+import Data.Text qualified as T
 import Database.PostgreSQL.PQTypes
-import qualified Data.Text as T
 
 data ColumnType
   = BigIntT
@@ -25,7 +25,7 @@ data ColumnType
   | XmlT
   | ArrayT !ColumnType
   | CustomT !(RawSQL ())
-    deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show)
 
 instance PQFormat ColumnType where
   pqFormat = pqFormat @T.Text
@@ -55,21 +55,21 @@ instance FromSQL ColumnType where
           | otherwise -> CustomT $ rawSQL tname ()
 
 columnTypeToSQL :: ColumnType -> RawSQL ()
-columnTypeToSQL BigIntT            = "BIGINT"
-columnTypeToSQL BigSerialT         = "BIGSERIAL"
-columnTypeToSQL BinaryT            = "BYTEA"
-columnTypeToSQL BoolT              = "BOOLEAN"
-columnTypeToSQL DateT              = "DATE"
-columnTypeToSQL DoubleT            = "DOUBLE PRECISION"
-columnTypeToSQL IntegerT           = "INTEGER"
-columnTypeToSQL UuidT              = "UUID"
-columnTypeToSQL IntervalT          = "INTERVAL"
-columnTypeToSQL JsonT              = "JSON"
-columnTypeToSQL JsonbT             = "JSONB"
-columnTypeToSQL SmallIntT          = "SMALLINT"
-columnTypeToSQL TextT              = "TEXT"
-columnTypeToSQL TSVectorT          = "TSVECTOR"
+columnTypeToSQL BigIntT = "BIGINT"
+columnTypeToSQL BigSerialT = "BIGSERIAL"
+columnTypeToSQL BinaryT = "BYTEA"
+columnTypeToSQL BoolT = "BOOLEAN"
+columnTypeToSQL DateT = "DATE"
+columnTypeToSQL DoubleT = "DOUBLE PRECISION"
+columnTypeToSQL IntegerT = "INTEGER"
+columnTypeToSQL UuidT = "UUID"
+columnTypeToSQL IntervalT = "INTERVAL"
+columnTypeToSQL JsonT = "JSON"
+columnTypeToSQL JsonbT = "JSONB"
+columnTypeToSQL SmallIntT = "SMALLINT"
+columnTypeToSQL TextT = "TEXT"
+columnTypeToSQL TSVectorT = "TSVECTOR"
 columnTypeToSQL TimestampWithZoneT = "TIMESTAMPTZ"
-columnTypeToSQL XmlT               = "XML"
-columnTypeToSQL (ArrayT t)         = columnTypeToSQL t <> "[]"
-columnTypeToSQL (CustomT tname)    = tname
+columnTypeToSQL XmlT = "XML"
+columnTypeToSQL (ArrayT t) = columnTypeToSQL t <> "[]"
+columnTypeToSQL (CustomT tname) = tname
