@@ -190,8 +190,8 @@ objectHasMore otype ptype extra =
 arrListTable :: RawSQL () -> Text
 arrListTable tableName = " ->" <+> unRawSQL tableName <> ": "
 
-checkOverlappingIndexesQuery :: SQL
-checkOverlappingIndexesQuery =
+checkOverlappingIndexesQuery :: SQL -> SQL
+checkOverlappingIndexesQuery tableName =
   smconcat
     [ "WITH"
     , -- get predicates (WHERE clause) definition in text format (ugly but the parsed version
@@ -201,7 +201,8 @@ checkOverlappingIndexesQuery =
     , "                         , ((regexp_match(pg_get_indexdef(indexrelid)"
     , "                                        , 'WHERE (.*)$')))[1] AS preddef"
     , "                    FROM pg_index"
-    , "                    WHERE indexprs IS NULL)"
+    , "                    WHERE indexprs IS NULL"
+    , "                    AND indrelid = '" <> tableName <> "'::regclass)"
     , -- add the rest of metadata and do the join
       "   , indexdata2 AS (SELECT t1.*"
     , "                         , pg_get_indexdef(t1.indexrelid) AS contained"
@@ -218,13 +219,19 @@ checkOverlappingIndexesQuery =
     , "  SELECT contained"
     , "       , contains"
     , "  FROM indexdata2"
+    , " JOIN pg_class c ON (c.oid = indexdata2.indexrelid)"
     , -- The indexes are the same or the "other" is larger than us
       "  WHERE (colotherindex = colindex"
     , "      OR colotherindex LIKE colindex || '+%')"
+    , -- and this is not a local index
+      "    AND NOT c.relname ILIKE 'local_%'"
     , -- and we have the same predicate
       "    AND other_preddef IS NOT DISTINCT FROM preddef"
     , -- and either the other is unique (so better than us) or none of us is unique
-      "    AND (other_indisunique"
-    , "      OR (NOT other_indisunique"
-    , "      AND NOT indisunique));"
+      "    AND (NOT indisunique)"
+    , "    OR ("
+    , "             indisunique"
+    , "         AND other_indisunique"
+    , "         AND colindex = colotherindex"
+    , ");"
     ]
