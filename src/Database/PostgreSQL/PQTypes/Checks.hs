@@ -508,7 +508,7 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version)
       runQuery_ $ sqlGetForeignKeys table
       fkeys <- fetchMany fetchForeignKey
       triggers <- getDBTriggers tblName
-      checkedOverlaps <- checkOverlappingIndexes (mkSQL . T.pack $ tblNameString table)
+      checkedOverlaps <- checkOverlappingIndexes tblName
       return $
         mconcat
           [ checkColumns 1 tblColumns desc
@@ -714,7 +714,7 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version)
                      \expected output into source code.)"
                    ]
 
-        checkOverlappingIndexes :: MonadDB m => SQL -> m ValidationResult
+        checkOverlappingIndexes :: MonadDB m => RawSQL () -> m ValidationResult
         checkOverlappingIndexes tableName =
           if eoCheckOverlappingIndexes options
             then go

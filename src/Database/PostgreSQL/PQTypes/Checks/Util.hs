@@ -190,7 +190,7 @@ objectHasMore otype ptype extra =
 arrListTable :: RawSQL () -> Text
 arrListTable tableName = " ->" <+> unRawSQL tableName <> ": "
 
-checkOverlappingIndexesQuery :: SQL -> SQL
+checkOverlappingIndexesQuery :: RawSQL () -> SQL
 checkOverlappingIndexesQuery tableName =
   smconcat
     [ "WITH"
@@ -202,7 +202,7 @@ checkOverlappingIndexesQuery tableName =
     , "                                        , 'WHERE (.*)$')))[1] AS preddef"
     , "                    FROM pg_index"
     , "                    WHERE indexprs IS NULL"
-    , "                    AND indrelid = '" <> tableName <> "'::regclass)"
+    , "                    AND indrelid = '" <> raw tableName <> "'::regclass)"
     , -- add the rest of metadata and do the join
       "   , indexdata2 AS (SELECT t1.*"
     , "                         , pg_get_indexdef(t1.indexrelid) AS contained"
