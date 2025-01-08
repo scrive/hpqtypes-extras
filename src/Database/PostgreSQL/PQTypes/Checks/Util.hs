@@ -7,6 +7,7 @@ module Database.PostgreSQL.PQTypes.Checks.Util
   , mapValidationResult
   , validationErrorsToInfos
   , resultCheck
+  , resultHasErrors
   , topMessage
   , tblNameText
   , tblNameString
@@ -39,6 +40,7 @@ data ValidationResult = ValidationResult
   { vrInfos :: [Text]
   , vrErrors :: [Text]
   }
+  deriving (Show, Eq)
 
 validationError :: Text -> ValidationResult
 validationError err = mempty {vrErrors = [err]}
@@ -78,6 +80,9 @@ topMessage objtype objname vr@ValidationResult {..} =
             <> "'"
             : es
         )
+
+resultHasErrors :: ValidationResult -> Bool
+resultHasErrors ValidationResult {..} = not $ null vrErrors
 
 -- | Log all messages in a 'ValidationResult', and fail if any of them
 -- were errors.
