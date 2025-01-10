@@ -2334,8 +2334,12 @@ enumTest connSource =
       report <- checkDatabaseWithReport defaultExtrasOptions (emptyDbDefinitions {dbEnums = [enum1misorder]})
       liftIO $
         assertEqual
-          "Missing enum2 should be reported"
-          (validationError "Enum 'enum1' does not match (database: [\"enum-100\",\"enum-101\"], definition: [\"enum-101\",\"enum-100\"])")
+          "Order mismatch should be reported"
+          ( validationInfo
+              "Enum 'enum1' has same values, but differs in order \
+              \(database: [\"enum-100\",\"enum-101\"], definition: [\"enum-101\",\"enum-100\"]). \
+              \This isn't usually a problem, unless the enum is used for ordering."
+          )
           report
 
     step "Check the database with mismatching enum"
@@ -2343,14 +2347,24 @@ enumTest connSource =
       report <- checkDatabaseWithReport defaultExtrasOptions (emptyDbDefinitions {dbEnums = [enum1mismatch]})
       liftIO $
         assertEqual
-          "Missing enum2 should be reported"
+          "DB mismatch should be reported"
           (validationError "Enum 'enum1' does not match (database: [\"enum-100\",\"enum-101\"], definition: [\"enum-100\",\"enum-102\"])")
+          report
+
+    step "Check the database with extra enum values"
+    do
+      report <- checkDatabaseWithReport defaultExtrasOptions (emptyDbDefinitions {dbEnums = [enum1missing]})
+      liftIO $
+        assertEqual
+          "Extra values in the DB enum should be reported"
+          (validationInfo "Enum 'enum1' has all necessary values, but the database has additional ones (database: [\"enum-100\",\"enum-101\"], definition: [\"enum-100\"])")
           report
   where
     enum1 = EnumType {etName = "enum1", etValues = ["enum-100", "enum-101"]}
     enum2 = EnumType {etName = "enum2", etValues = ["enum-200", "enum-201", "enum-202"]}
     enum1misorder = EnumType {etName = "enum1", etValues = ["enum-101", "enum-100"]}
     enum1mismatch = EnumType {etName = "enum1", etValues = ["enum-100", "enum-102"]}
+    enum1missing = EnumType {etName = "enum1", etValues = ["enum-100"]}
 
 assertNoException :: String -> TestM () -> TestM ()
 assertNoException t =

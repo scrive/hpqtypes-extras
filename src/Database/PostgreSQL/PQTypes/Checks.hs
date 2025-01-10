@@ -27,7 +27,6 @@ import Control.Arrow ((&&&))
 import Control.Concurrent (threadDelay)
 import Control.Monad
 import Control.Monad.Catch
-import Control.Monad.Except
 import Control.Monad.Writer as W
 import Data.Foldable (foldMap')
 import Data.Function
@@ -386,34 +385,60 @@ checkEnumTypes
   :: (MonadDB m, MonadThrow m)
   => [EnumType]
   -> m ValidationResult
-checkEnumTypes defs = fmap mconcat . forM defs $ \def -> do
+checkEnumTypes defs = fmap mconcat . forM defs $ \defEnum -> do
   runQuery_ . sqlSelect "pg_catalog.pg_type t" $ do
     sqlResult "t.typname::text" -- name
     sqlResult
       "ARRAY(SELECT e.enumlabel::text FROM pg_catalog.pg_enum e WHERE e.enumtypid = t.oid ORDER BY e.enumsortorder)" -- values
-    sqlWhereEq "t.typname" $ unRawSQL $ etName def
+    sqlWhereEq "t.typname" $ unRawSQL $ etName defEnum
   enum <- fetchMaybe $
     \(enumName, enumValues) ->
       EnumType
         { etName = unsafeSQL enumName
         , etValues = map unsafeSQL $ unArray1 enumValues
         }
-  return $ case enum of
-    Just e
-      | e /= def ->
-          validationError $
-            "Enum '"
-              <> unRawSQL (etName e)
-              <> "' does not match (database:"
-              <+> T.pack (show . map unRawSQL $ etValues e)
-              <> ", definition:"
-              <+> T.pack (show . map unRawSQL $ etValues def)
-              <> ")"
-      | otherwise -> mempty
+  pure $ case enum of
+    Just dbEnum -> do
+      let enumName = unRawSQL $ etName defEnum
+          dbValues = map unRawSQL $ etValues dbEnum
+          defValues = map unRawSQL $ etValues defEnum
+          dbSet = S.fromList dbValues
+          defSet = S.fromList defValues
+      if
+        | dbValues == defValues -> mempty
+        | L.sort dbValues == L.sort defValues ->
+            validationInfo $
+              "Enum '"
+                <> enumName
+                <> "' has same values, but differs in order (database:"
+                <+> T.pack (show dbValues)
+                <> ", definition:"
+                <+> T.pack (show defValues)
+                <> ")."
+                <+> "This isn't usually a problem, unless the enum is used for ordering."
+        | S.isSubsetOf defSet dbSet ->
+            validationInfo $
+              "Enum '"
+                <> enumName
+                <> "' has all necessary values, but the database has additional ones"
+                <+> "(database:"
+                <+> T.pack (show dbValues)
+                <> ", definition:"
+                <+> T.pack (show defValues)
+                <> ")"
+        | otherwise ->
+            validationError $
+              "Enum '"
+                <> enumName
+                <> "' does not match (database:"
+                <+> T.pack (show dbValues)
+                <> ", definition:"
+                <+> T.pack (show defValues)
+                <> ")"
     Nothing ->
       validationError $
         "Enum '"
-          <> unRawSQL (etName def)
+          <> unRawSQL (etName defEnum)
           <> "' doesn't exist in the database"
 
 -- | Check that the tables that must have been dropped are actually
