@@ -124,7 +124,7 @@ checkDatabaseWithReport
 checkDatabaseWithReport
   options
   DatabaseDefinitions
-    { dbExtensions = _ -- We currently don't check extensions
+    { dbExtensions = _
     , dbComposites = composites
     , dbEnums = enums
     , dbDomains = domains
