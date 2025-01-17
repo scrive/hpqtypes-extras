@@ -7,13 +7,12 @@
 -- 'Database.PostgreSQL.PQTypes.Checks.migrateDatabase':
 --
 -- @
--- tables :: [Table]
--- tables = ...
+-- definitions = emptyDbDefinitions { ... }
 --
 -- migrations :: [Migration]
 -- migrations = ...
 --
--- migrateDatabase options extensions domains tables migrations
+-- migrateDatabase options definitions migrations
 -- @
 --
 -- Migrations are run strictly in the order specified in the migrations

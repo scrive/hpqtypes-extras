@@ -64,6 +64,7 @@ library
                  , Database.PostgreSQL.PQTypes.Model.ColumnType
                  , Database.PostgreSQL.PQTypes.Model.CompositeType
                  , Database.PostgreSQL.PQTypes.Model.Domain
+                 , Database.PostgreSQL.PQTypes.Model.EnumType
                  , Database.PostgreSQL.PQTypes.Model.Extension
                  , Database.PostgreSQL.PQTypes.Model.ForeignKey
                  , Database.PostgreSQL.PQTypes.Model.Index

@@ -1,9 +1,12 @@
 # hpqtypes-extras-1.17.0.0 (2023-??-??)
+* Grouped some parameters of `migrateDatabase` and `checkDatabase` into a
+  `DatabaseDefinitions` record type.
 * Add an optional check that all foreign keys have an index.
 * Add support for NULLS NOT DISTINCT in unique indexes.
 * Add `sqlAll` and `sqlAny` to allow creating `SQL` expressions with
   nested `AND` and `OR` conditions.
 * Add `SqlWhereAll` and `SqlWhereAny` so they can be used in signatures.
+* Add rudimentary support for enum types.
 
 # hpqtypes-extras-1.16.4.4 (2023-08-23)
 * Switch from `cryptonite` to `crypton`.
