@@ -27,6 +27,7 @@ import Control.Arrow ((&&&))
 import Control.Concurrent (threadDelay)
 import Control.Monad
 import Control.Monad.Catch
+import Control.Monad.Extra (mconcatMapM)
 import Control.Monad.Writer as W
 import Data.Foldable (foldMap')
 import Data.Function
@@ -152,18 +153,17 @@ checkDatabaseWithReport
       tell =<< lift (checkInitialSetups tables)
     where
       checkInitialSetups :: [Table] -> m ValidationResult
-      checkInitialSetups = fmap mconcat . mapM checkInitialSetup'
+      checkInitialSetups = mconcatMapM checkInitialSetupForTable
 
-      checkInitialSetup' :: Table -> m ValidationResult
-      checkInitialSetup' t@Table {..} = case tblInitialSetup of
+      checkInitialSetupForTable table = case tblInitialSetup table of
         Nothing -> return mempty
-        Just is ->
-          checkInitialSetup is >>= \case
+        Just setup ->
+          checkInitialSetup setup >>= \case
             True -> return mempty
             False ->
               return . validationError $
                 "Initial setup for table '"
-                  <> tblNameText t
+                  <> tblNameText table
                   <> "' is not valid"
 
 -- | An equivalent to `checkDatabaseWithReport opts dbDefs >>= resultCheck`.
