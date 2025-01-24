@@ -410,30 +410,30 @@ checkEnumTypes defs = fmap mconcat . forM defs $ \defEnum -> do
             validationInfo $
               "Enum '"
                 <> enumName
-                <> "' has same values, but differs in order (database:"
-                <+> T.pack (show dbValues)
-                <> ", definition:"
-                <+> T.pack (show defValues)
-                <> ")."
-                <+> "This isn't usually a problem, unless the enum is used for ordering."
+                <> "' has same values, but differs in order (database: "
+                <> T.pack (show dbValues)
+                <> ", definition: "
+                <> T.pack (show defValues)
+                <> "). "
+                <> "This isn't usually a problem, unless the enum is used for ordering."
         | S.isSubsetOf defSet dbSet ->
             validationInfo $
               "Enum '"
                 <> enumName
-                <> "' has all necessary values, but the database has additional ones"
-                <+> "(database:"
-                <+> T.pack (show dbValues)
-                <> ", definition:"
-                <+> T.pack (show defValues)
+                <> "' has all necessary values, but the database has additional ones "
+                <> "(database: "
+                <> T.pack (show dbValues)
+                <> ", definition: "
+                <> T.pack (show defValues)
                 <> ")"
         | otherwise ->
             validationError $
               "Enum '"
                 <> enumName
-                <> "' does not match (database:"
-                <+> T.pack (show dbValues)
-                <> ", definition:"
-                <+> T.pack (show defValues)
+                <> "' does not match (database: "
+                <> T.pack (show dbValues)
+                <> ", definition: "
+                <> T.pack (show defValues)
                 <> ")"
     Nothing ->
       validationError $
