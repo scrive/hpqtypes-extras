@@ -1,6 +1,11 @@
 module Database.PostgreSQL.PQTypes.Checks
-  ( -- * Checks
-    checkDatabase
+  ( -- * Definitions
+    DatabaseDefinitions (..)
+  , emptyDbDefinitions
+
+    -- * Checks
+  , checkDatabase
+  , checkDatabaseWithReport
   , createTable
   , createDomain
 
@@ -11,13 +16,19 @@ module Database.PostgreSQL.PQTypes.Checks
 
     -- * Migrations
   , migrateDatabase
+
+    -- * Internals for tests
+  , ValidationResult
+  , validationError
+  , validationInfo
   ) where
 
 import Control.Arrow ((&&&))
 import Control.Concurrent (threadDelay)
 import Control.Monad
 import Control.Monad.Catch
-import Control.Monad.Reader
+import Control.Monad.Extra (mconcatMapM)
+import Control.Monad.Writer as W
 import Data.Foldable (foldMap')
 import Data.Function
 import Data.Int
@@ -47,36 +58,48 @@ headExc :: String -> [a] -> a
 headExc s [] = error s
 headExc _ (x : _) = x
 
+data DatabaseDefinitions = DatabaseDefinitions
+  { dbExtensions :: [Extension]
+  , dbComposites :: [CompositeType]
+  , dbEnums :: [EnumType]
+  , dbDomains :: [Domain]
+  , dbTables :: [Table]
+  }
+
+emptyDbDefinitions :: DatabaseDefinitions
+emptyDbDefinitions = DatabaseDefinitions [] [] [] [] []
+
 ----------------------------------------
 
 -- | Run migrations and check the database structure.
 migrateDatabase
   :: (MonadIO m, MonadDB m, MonadLog m, MonadMask m)
   => ExtrasOptions
-  -> [Extension]
-  -> [CompositeType]
-  -> [Domain]
-  -> [Table]
+  -> DatabaseDefinitions
   -> [Migration m]
   -> m ()
 migrateDatabase
   options
-  extensions
-  composites
-  domains
-  tables
+  DatabaseDefinitions
+    { dbExtensions = extensions
+    , dbComposites = composites
+    , dbEnums = enums
+    , dbDomains = domains
+    , dbTables = tables
+    }
   migrations = do
     setDBTimeZoneToUTC
     mapM_ checkExtension extensions
     tablesWithVersions <- getTableVersions (tableVersions : tables)
     -- 'checkDBConsistency' also performs migrations.
-    checkDBConsistency options domains tablesWithVersions migrations
+    checkDBConsistency options domains enums tablesWithVersions migrations
     resultCheck
       =<< checkCompositesStructure
         tablesWithVersions
         CreateCompositesIfDatabaseEmpty
         (eoObjectsValidationMode options)
         composites
+    resultCheck =<< checkEnumTypes enums
     resultCheck =<< checkDomainsStructure domains
     resultCheck =<< checkDBStructure options tablesWithVersions
     resultCheck =<< checkTablesWereDropped migrations
@@ -93,47 +116,65 @@ migrateDatabase
 
 -- | Run checks on the database structure and whether the database needs to be
 -- migrated. Will do a full check of DB structure.
+checkDatabaseWithReport
+  :: forall m
+   . (MonadDB m, MonadLog m, MonadThrow m)
+  => ExtrasOptions
+  -> DatabaseDefinitions
+  -> m ValidationResult
+checkDatabaseWithReport
+  options
+  DatabaseDefinitions
+    { dbExtensions = _
+    , dbComposites = composites
+    , dbEnums = enums
+    , dbDomains = domains
+    , dbTables = tables
+    } = execWriterT $ do
+    (_, report) <- W.listen $ do
+      tablesWithVersions <- getTableVersions (tableVersions : tables)
+      tell $ checkVersions options tablesWithVersions
+      tell
+        =<< checkCompositesStructure
+          tablesWithVersions
+          DontCreateComposites
+          (eoObjectsValidationMode options)
+          composites
+      tell =<< checkEnumTypes enums
+      tell =<< checkDomainsStructure domains
+      tell =<< checkDBStructure options tablesWithVersions
+      when (eoObjectsValidationMode options == DontAllowUnknownObjects) $ do
+        tell =<< checkUnknownTables tables
+        tell =<< checkExistenceOfVersionsForTables (tableVersions : tables)
+
+    -- Check initial setups only after database structure is considered
+    -- consistent as before that some of the checks may fail internally.
+    unless (resultHasErrors report) $
+      tell =<< lift (checkInitialSetups tables)
+    where
+      checkInitialSetups :: [Table] -> m ValidationResult
+      checkInitialSetups = mconcatMapM checkInitialSetupForTable
+
+      checkInitialSetupForTable table = case tblInitialSetup table of
+        Nothing -> return mempty
+        Just setup ->
+          checkInitialSetup setup >>= \case
+            True -> return mempty
+            False ->
+              return . validationError $
+                "Initial setup for table '"
+                  <> tblNameText table
+                  <> "' is not valid"
+
+-- | An equivalent to `checkDatabaseWithReport opts dbDefs >>= resultCheck`.
 checkDatabase
   :: forall m
    . (MonadDB m, MonadLog m, MonadThrow m)
   => ExtrasOptions
-  -> [CompositeType]
-  -> [Domain]
-  -> [Table]
+  -> DatabaseDefinitions
   -> m ()
-checkDatabase options composites domains tables = do
-  tablesWithVersions <- getTableVersions (tableVersions : tables)
-  resultCheck $ checkVersions options tablesWithVersions
-  resultCheck
-    =<< checkCompositesStructure
-      tablesWithVersions
-      DontCreateComposites
-      (eoObjectsValidationMode options)
-      composites
-  resultCheck =<< checkDomainsStructure domains
-  resultCheck =<< checkDBStructure options tablesWithVersions
-  when (eoObjectsValidationMode options == DontAllowUnknownObjects) $ do
-    resultCheck =<< checkUnknownTables tables
-    resultCheck =<< checkExistenceOfVersionsForTables (tableVersions : tables)
-
-  -- Check initial setups only after database structure is considered
-  -- consistent as before that some of the checks may fail internally.
-  resultCheck =<< checkInitialSetups tables
-  where
-    checkInitialSetups :: [Table] -> m ValidationResult
-    checkInitialSetups = fmap mconcat . mapM checkInitialSetup'
-
-    checkInitialSetup' :: Table -> m ValidationResult
-    checkInitialSetup' t@Table {..} = case tblInitialSetup of
-      Nothing -> return mempty
-      Just is ->
-        checkInitialSetup is >>= \case
-          True -> return mempty
-          False ->
-            return . validationError $
-              "Initial setup for table '"
-                <> tblNameText t
-                <> "' is not valid"
+checkDatabase options dbDefinitions =
+  checkDatabaseWithReport options dbDefinitions >>= resultCheck
 
 -- | Return SQL fragment of current catalog within quotes
 currentCatalog :: (MonadDB m, MonadThrow m) => m (RawSQL ())
@@ -339,6 +380,66 @@ checkDomainsStructure defs = fmap mconcat . forM defs $ \def -> do
               <> ", definition:"
               <+> T.pack (show $ attr def)
               <> ")"
+
+checkEnumTypes
+  :: (MonadDB m, MonadThrow m)
+  => [EnumType]
+  -> m ValidationResult
+checkEnumTypes defs = fmap mconcat . forM defs $ \defEnum -> do
+  runQuery_ . sqlSelect "pg_catalog.pg_type t" $ do
+    sqlResult "t.typname::text" -- name
+    sqlResult
+      "ARRAY(SELECT e.enumlabel::text FROM pg_catalog.pg_enum e WHERE e.enumtypid = t.oid ORDER BY e.enumsortorder)" -- values
+    sqlWhereEq "t.typname" $ unRawSQL $ etName defEnum
+  enum <- fetchMaybe $
+    \(enumName, enumValues) ->
+      EnumType
+        { etName = unsafeSQL enumName
+        , etValues = map unsafeSQL $ unArray1 enumValues
+        }
+  pure $ case enum of
+    Just dbEnum -> do
+      let enumName = unRawSQL $ etName defEnum
+          dbValues = map unRawSQL $ etValues dbEnum
+          defValues = map unRawSQL $ etValues defEnum
+          dbSet = S.fromList dbValues
+          defSet = S.fromList defValues
+      if
+        | dbValues == defValues -> mempty
+        | L.sort dbValues == L.sort defValues ->
+            validationInfo $
+              "Enum '"
+                <> enumName
+                <> "' has same values, but differs in order (database: "
+                <> T.pack (show dbValues)
+                <> ", definition: "
+                <> T.pack (show defValues)
+                <> "). "
+                <> "This isn't usually a problem, unless the enum is used for ordering."
+        | S.isSubsetOf defSet dbSet ->
+            validationInfo $
+              "Enum '"
+                <> enumName
+                <> "' has all necessary values, but the database has additional ones "
+                <> "(database: "
+                <> T.pack (show dbValues)
+                <> ", definition: "
+                <> T.pack (show defValues)
+                <> ")"
+        | otherwise ->
+            validationError $
+              "Enum '"
+                <> enumName
+                <> "' does not match (database: "
+                <> T.pack (show dbValues)
+                <> ", definition: "
+                <> T.pack (show defValues)
+                <> ")"
+    Nothing ->
+      validationError $
+        "Enum '"
+          <> unRawSQL (etName defEnum)
+          <> "' doesn't exist in the database"
 
 -- | Check that the tables that must have been dropped are actually
 -- missing from the DB.
@@ -748,10 +849,11 @@ checkDBConsistency
    . (MonadIO m, MonadDB m, MonadLog m, MonadMask m)
   => ExtrasOptions
   -> [Domain]
+  -> [EnumType]
   -> TablesWithVersions
   -> [Migration m]
   -> m ()
-checkDBConsistency options domains tablesWithVersions migrations = do
+checkDBConsistency options domains enums tablesWithVersions migrations = do
   autoTransaction <- tsAutoTransaction <$> getTransactionSettings
   unless autoTransaction $ do
     error "checkDBConsistency: tsAutoTransaction setting needs to be True"
@@ -876,6 +978,8 @@ checkDBConsistency options domains tablesWithVersions migrations = do
     createDBSchema = do
       logInfo_ "Creating domains..."
       mapM_ createDomain domains
+      logInfo_ "Creating enums..."
+      mapM_ (runQuery_ . sqlCreateEnum) enums
       -- Create all tables with no constraints first to allow cyclic references.
       logInfo_ "Creating tables..."
       mapM_ (createTable False) tables
