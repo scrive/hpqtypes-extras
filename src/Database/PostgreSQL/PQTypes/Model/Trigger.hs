@@ -13,6 +13,7 @@ module Database.PostgreSQL.PQTypes.Model.Trigger
   , triggerMakeName
   , triggerBaseName
   , sqlCreateTrigger
+  , sqlCreateBeforeTrigger
   , sqlDropTrigger
   , createTrigger
   , dropTrigger
@@ -125,6 +126,37 @@ sqlCreateTrigger Trigger {..} =
   "CREATE CONSTRAINT TRIGGER"
     <+> trgName
     <+> "AFTER"
+    <+> trgEvents
+    <+> "ON"
+    <+> triggerTable
+    <+> trgTiming
+    <+> "FOR EACH ROW"
+    <+> trgWhen
+    <+> "EXECUTE FUNCTION"
+    <+> trgFunction
+    <+> "()"
+  where
+    trgName
+      | triggerName == "" = error "Trigger must have a name."
+      | otherwise = triggerMakeName triggerName triggerTable
+    trgEvents
+      | triggerEvents == Set.empty = error "Trigger must have at least one event."
+      | otherwise = mintercalate " OR " . map triggerEventName $ Set.toList triggerEvents
+    trgTiming =
+      let deferrable = (if triggerDeferrable then "" else "NOT") <+> "DEFERRABLE"
+          deferred =
+            if triggerInitiallyDeferred
+              then "INITIALLY DEFERRED"
+              else "INITIALLY IMMEDIATE"
+      in deferrable <+> deferred
+    trgWhen = maybe "" (\w -> "WHEN (" <+> w <+> ")") triggerWhen
+    trgFunction = triggerFunctionMakeName triggerName
+
+sqlCreateBeforeTrigger :: Trigger -> RawSQL ()
+sqlCreateBeforeTrigger Trigger {..} =
+  "CREATE TRIGGER"
+    <+> trgName
+    <+> "BEFORE"
     <+> trgEvents
     <+> "ON"
     <+> triggerTable
