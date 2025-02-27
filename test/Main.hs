@@ -1124,6 +1124,8 @@ bankTrigger1 =
   Trigger
     { triggerTable = "bank"
     , triggerName = "trigger_1"
+    , triggerConstraint = True
+    , triggerTiming = TriggerAfter
     , triggerEvents = Set.fromList [TriggerInsert]
     , triggerDeferrable = False
     , triggerInitiallyDeferred = False
@@ -1149,6 +1151,8 @@ bankTrigger3 =
   Trigger
     { triggerTable = "bank"
     , triggerName = "trigger_3"
+    , triggerConstraint = True
+    , triggerTiming = TriggerAfter
     , triggerEvents = Set.fromList [TriggerInsert, TriggerUpdateOf [unsafeSQL "location"]]
     , triggerDeferrable = True
     , triggerInitiallyDeferred = True

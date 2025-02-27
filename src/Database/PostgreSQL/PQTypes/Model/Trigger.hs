@@ -1,19 +1,19 @@
 -- |
 -- Module: Database.PostgreSQL.PQTypes.Model.Trigger
 --
--- Trigger name must be unique among triggers of same table. Only @CONSTRAINT@ triggers are
--- supported. They can only be run @AFTER@ an event. The associated functions are always
--- created with no arguments and always @RETURN TRIGGER@.
+-- Trigger name must be unique among triggers of same table.
+-- The associated functions are always created with no arguments
+-- and always @RETURN TRIGGER@.
 --
 -- For details, see <https://www.postgresql.org/docs/11/sql-createtrigger.html>.
 module Database.PostgreSQL.PQTypes.Model.Trigger
   ( -- * Triggers
-    TriggerEvent (..)
+    TriggerTiming (..)
+  , TriggerEvent (..)
   , Trigger (..)
   , triggerMakeName
   , triggerBaseName
   , sqlCreateTrigger
-  , sqlCreateBeforeTrigger
   , sqlDropTrigger
   , createTrigger
   , dropTrigger
@@ -36,6 +36,15 @@ import Data.Text qualified as Text
 import Database.PostgreSQL.PQTypes
 import Database.PostgreSQL.PQTypes.SQL.Builder
 
+-- | Blah blah blah
+--
+-- @since ...
+data TriggerTiming
+  = TriggerAfter
+  | TriggerBefore
+  | TriggerInsteadOf
+  deriving (Eq, Show)
+
 -- | Trigger event name.
 --
 -- @since 1.15.0.0
@@ -52,13 +61,17 @@ data TriggerEvent
 
 -- | Trigger.
 --
--- @since 1.15.0.0
+-- @since blah blah blah
 data Trigger = Trigger
   { triggerTable :: RawSQL ()
   -- ^ The table that the trigger is associated with.
   , triggerName :: RawSQL ()
   -- ^ The internal name without any prefixes. Trigger name must be unique among
   -- triggers of same table. See 'triggerMakeName'.
+  , triggerConstraint :: Bool
+  -- ^ Blah blah blah
+  , triggerTiming :: TriggerTiming
+  -- ^ Blah blah blah
   , triggerEvents :: Set TriggerEvent
   -- ^ The set of events. Corresponds to the @{ __event__ [ OR ... ] }@ in the trigger
   -- definition. The order in which they are defined doesn't matter and there can
@@ -116,60 +129,42 @@ triggerEventName = \case
       else "UPDATE OF" <+> mintercalate ", " columns
   TriggerDelete -> "DELETE"
 
+triggerTimingSql :: TriggerTiming -> RawSQL ()
+triggerTimingSql = \case
+  TriggerAfter -> "AFTER"
+  TriggerBefore -> "BEFORE"
+  TriggerInsteadOf -> "INSTEAD OF"
+
 -- | Build an SQL statement that creates a trigger.
 --
--- Only supports @CONSTRAINT@ triggers which can only run @AFTER@.
---
--- @since 1.15.0
+-- @since ...
 sqlCreateTrigger :: Trigger -> RawSQL ()
 sqlCreateTrigger Trigger {..} =
-  "CREATE CONSTRAINT TRIGGER"
-    <+> trgName
-    <+> "AFTER"
-    <+> trgEvents
-    <+> "ON"
-    <+> triggerTable
-    <+> trgTiming
-    <+> "FOR EACH ROW"
-    <+> trgWhen
-    <+> "EXECUTE FUNCTION"
-    <+> trgFunction
-    <+> "()"
+  smconcat
+    [ "CREATE"
+    , trgConstraint
+    , "TRIGGER"
+    , trgName
+    , trgKind
+    , trgEvents
+    , "ON"
+    , triggerTable
+    , trgTiming
+    , "FOR EACH ROW"
+    , trgWhen
+    , "EXECUTE FUNCTION"
+    , trgFunction
+    , "()"
+    ]
   where
     trgName
       | triggerName == "" = error "Trigger must have a name."
       | otherwise = triggerMakeName triggerName triggerTable
-    trgEvents
-      | triggerEvents == Set.empty = error "Trigger must have at least one event."
-      | otherwise = mintercalate " OR " . map triggerEventName $ Set.toList triggerEvents
-    trgTiming =
-      let deferrable = (if triggerDeferrable then "" else "NOT") <+> "DEFERRABLE"
-          deferred =
-            if triggerInitiallyDeferred
-              then "INITIALLY DEFERRED"
-              else "INITIALLY IMMEDIATE"
-      in deferrable <+> deferred
-    trgWhen = maybe "" (\w -> "WHEN (" <+> w <+> ")") triggerWhen
-    trgFunction = triggerFunctionMakeName triggerName
-
-sqlCreateBeforeTrigger :: Trigger -> RawSQL ()
-sqlCreateBeforeTrigger Trigger {..} =
-  "CREATE TRIGGER"
-    <+> trgName
-    <+> "BEFORE"
-    <+> trgEvents
-    <+> "ON"
-    <+> triggerTable
-    <+> trgTiming
-    <+> "FOR EACH ROW"
-    <+> trgWhen
-    <+> "EXECUTE FUNCTION"
-    <+> trgFunction
-    <+> "()"
-  where
-    trgName
-      | triggerName == "" = error "Trigger must have a name."
-      | otherwise = triggerMakeName triggerName triggerTable
+    trgConstraint
+      | not triggerConstraint = ""
+      | triggerConstraint && triggerTiming == TriggerAfter = "CONSTRAINT"
+      | otherwise = error "You can use CONSTRAINT only with AFTER timing."
+    trgKind = triggerTimingSql triggerTiming
     trgEvents
       | triggerEvents == Set.empty = error "Trigger must have at least one event."
       | otherwise = mintercalate " OR " . map triggerEventName $ Set.toList triggerEvents
@@ -237,6 +232,7 @@ getDBTriggers tableName = do
   runQuery_ . sqlSelect "pg_trigger t" $ do
     sqlResult "t.tgname::text" -- name
     sqlResult "t.tgtype" -- smallint == int2 => (2 bytes)
+    sqlResult "t.tgconstraint > 0" -- we only check if CONSTRAINT has been specified
     sqlResult "t.tgdeferrable" -- boolean
     sqlResult "t.tginitdeferred" -- boolean
     -- This gets the entire query that created this trigger. Note that it's decompiled and
@@ -253,11 +249,13 @@ getDBTriggers tableName = do
     sqlWhereEq "c.relname" $ unRawSQL tableName
   fetchMany getTrigger
   where
-    getTrigger :: (String, Int16, Bool, Bool, String, String, String, String) -> (Trigger, RawSQL ())
-    getTrigger (tgname, tgtype, tgdeferrable, tginitdeferrable, triggerdef, proname, prosrc, tblName) =
+    getTrigger :: (String, Int16, Bool, Bool, Bool, String, String, String, String) -> (Trigger, RawSQL ())
+    getTrigger (tgname, tgtype, tgconstraint, tgdeferrable, tginitdeferrable, triggerdef, proname, prosrc, tblName) =
       ( Trigger
           { triggerTable = tableName'
           , triggerName = triggerBaseName (unsafeSQL tgname) tableName'
+          , triggerConstraint = tgconstraint
+          , triggerTiming = tgrTiming
           , triggerEvents = trgEvents
           , triggerDeferrable = tgdeferrable
           , triggerInitiallyDeferred = tginitdeferrable
@@ -282,6 +280,12 @@ getDBTriggers tableName = do
         -- each other and in that order.
         tgrWhen :: Maybe (RawSQL ())
         tgrWhen = parseBetween "WHEN (" ") EXECUTE"
+
+        tgrTiming :: TriggerTiming
+        tgrTiming
+          | testBit tgtype 1 = TriggerBefore
+          | testBit tgtype 6 = TriggerInsteadOf
+          | otherwise = TriggerAfter
 
         -- Similarly, in case of UPDATE OF, the columns can be simply parsed from the
         -- original query. Note that UPDATE and UPDATE OF are mutually exclusive and have
