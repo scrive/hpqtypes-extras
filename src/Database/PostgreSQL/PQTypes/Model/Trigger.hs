@@ -140,22 +140,20 @@ triggerTimingSql = \case
 -- @since ...
 sqlCreateTrigger :: Trigger -> RawSQL ()
 sqlCreateTrigger Trigger {..} =
-  smconcat
-    [ "CREATE"
-    , trgConstraint
-    , "TRIGGER"
-    , trgName
-    , trgKind
-    , trgEvents
-    , "ON"
-    , triggerTable
-    , trgTiming
-    , "FOR EACH ROW"
-    , trgWhen
-    , "EXECUTE FUNCTION"
-    , trgFunction
-    , "()"
-    ]
+  "CREATE"
+    <+> trgConstraint
+    <+> "TRIGGER"
+    <+> trgName
+    <+> tgrTiming
+    <+> trgEvents
+    <+> "ON"
+    <+> triggerTable
+    <+> trgConstraintTiming
+    <+> "FOR EACH ROW"
+    <+> trgWhen
+    <+> "EXECUTE FUNCTION"
+    <+> trgFunction
+    <+> "()"
   where
     trgName
       | triggerName == "" = error "Trigger must have a name."
@@ -164,17 +162,19 @@ sqlCreateTrigger Trigger {..} =
       | not triggerConstraint = ""
       | triggerConstraint && triggerTiming == TriggerAfter = "CONSTRAINT"
       | otherwise = error "You can use CONSTRAINT only with AFTER timing."
-    trgKind = triggerTimingSql triggerTiming
+    tgrTiming = triggerTimingSql triggerTiming
     trgEvents
       | triggerEvents == Set.empty = error "Trigger must have at least one event."
       | otherwise = mintercalate " OR " . map triggerEventName $ Set.toList triggerEvents
-    trgTiming =
-      let deferrable = (if triggerDeferrable then "" else "NOT") <+> "DEFERRABLE"
-          deferred =
-            if triggerInitiallyDeferred
-              then "INITIALLY DEFERRED"
-              else "INITIALLY IMMEDIATE"
-      in deferrable <+> deferred
+    trgConstraintTiming
+      | not triggerConstraint = ""
+      | otherwise =
+          let deferrable = (if triggerDeferrable then "" else "NOT") <+> "DEFERRABLE"
+              deferred =
+                if triggerInitiallyDeferred
+                  then "INITIALLY DEFERRED"
+                  else "INITIALLY IMMEDIATE"
+          in deferrable <+> deferred
     trgWhen = maybe "" (\w -> "WHEN (" <+> w <+> ")") triggerWhen
     trgFunction = triggerFunctionMakeName triggerName
 
