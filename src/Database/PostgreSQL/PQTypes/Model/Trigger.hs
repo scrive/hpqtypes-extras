@@ -28,6 +28,7 @@ module Database.PostgreSQL.PQTypes.Model.Trigger
 import Data.Bits (testBit)
 import Data.Foldable (foldl')
 import Data.Int
+import Data.Monoid.Extra
 import Data.Monoid.Utils
 import Data.Set (Set)
 import Data.Set qualified as Set
@@ -169,11 +170,8 @@ sqlCreateTrigger Trigger {..} =
     trgConstraintTiming
       | not triggerConstraint = ""
       | otherwise =
-          let deferrable = (if triggerDeferrable then "" else "NOT") <+> "DEFERRABLE"
-              deferred =
-                if triggerInitiallyDeferred
-                  then "INITIALLY DEFERRED"
-                  else "INITIALLY IMMEDIATE"
+          let deferrable = mwhen (not triggerDeferrable) "NOT" <+> "DEFERRABLE"
+              deferred = "INITIALLY" <+> if triggerInitiallyDeferred then "DEFERRED" else "IMMEDIATE"
           in deferrable <+> deferred
     trgWhen = maybe "" (\w -> "WHEN (" <+> w <+> ")") triggerWhen
     trgFunction = triggerFunctionMakeName triggerName
