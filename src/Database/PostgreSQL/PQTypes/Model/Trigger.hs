@@ -95,6 +95,7 @@ data Trigger = Trigger
   -- triggers of same table. See 'triggerMakeName'.
   , triggerKind :: TriggerKind
   -- ^ The kind of trigger we want to create.
+  -- @since 1.17.0.0
   , triggerEvents :: Set TriggerEvent
   -- ^ The set of events. Corresponds to the @{ __event__ [ OR ... ] }@ in the trigger
   -- definition. The order in which they are defined doesn't matter and there can
