@@ -1372,20 +1372,6 @@ testTriggers step = do
       verify [trg] True
 
   do
-    let msg = "successfully migrate a regular INSTEAD OF trigger"
-        trg = bankTrigger1 {triggerKind = TriggerRegular InsteadOf}
-        ts =
-          [ tableBankSchema1
-              { tblVersion = 2
-              , tblTriggers = [trg]
-              }
-          ]
-        ms = [createTriggerMigration 1 trg]
-    triggerStep msg $ do
-      assertNoException msg $ migrate ts ms
-      verify [trg] True
-
-  do
     let msg = "database exception is raised if dropping trigger that does not exist"
         trg = bankTrigger1
         ts =

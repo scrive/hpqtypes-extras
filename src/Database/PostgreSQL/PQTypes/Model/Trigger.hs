@@ -46,8 +46,6 @@ data TriggerRegularTiming
     After
   | -- | A @BEFORE@ trigger.
     Before
-  | -- | An @INSTEAD OF@ trigger.
-    InsteadOf
   deriving (Eq, Show)
 
 -- | Timing for a constraint trigger.
@@ -177,7 +175,6 @@ sqlCreateTrigger Trigger {..} =
     tgrTiming = case triggerKind of
       TriggerRegular After -> "AFTER"
       TriggerRegular Before -> "BEFORE"
-      TriggerRegular InsteadOf -> "INSTEAD OF"
       TriggerConstraint _ -> "AFTER"
     trgEvents
       | triggerEvents == Set.empty = error "Trigger must have at least one event."
@@ -307,7 +304,7 @@ getDBTriggers tableName = do
         tgrTiming = case (tgtypeInsteadBit, tgtypeBeforeBit) of
           (False, False) -> After
           (False, True) -> Before
-          (True, False) -> InsteadOf
+          (True, False) -> error "INSTEAD OF triggers are not available on tables."
           (True, True) -> error "The tgtype can't match more than one timing."
           where
             -- Taken from PostgreSQL sources: src/include/catalog/pg_trigger.h:
