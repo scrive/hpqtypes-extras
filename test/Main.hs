@@ -40,7 +40,7 @@ instance IsOption ConnectionString where
   defaultValue =
     ConnectionString
       -- For GitHub Actions CI
-      "host=postgres user=postgres password=postgres"
+      "host=localhost port=15432 user=postgres password=postgres"
   parseValue = Just . ConnectionString
   optionName = return "connection-string"
   optionHelp = return "Postgres connection string"
@@ -1124,11 +1124,8 @@ bankTrigger1 =
   Trigger
     { triggerTable = "bank"
     , triggerName = "trigger_1"
-    , triggerConstraint = True
-    , triggerTiming = TriggerAfter
+    , triggerKind = TriggerConstraint NotDeferrable
     , triggerEvents = Set.fromList [TriggerInsert]
-    , triggerDeferrable = False
-    , triggerInitiallyDeferred = False
     , triggerWhen = Nothing
     , triggerFunction =
         "begin"
@@ -1151,11 +1148,8 @@ bankTrigger3 =
   Trigger
     { triggerTable = "bank"
     , triggerName = "trigger_3"
-    , triggerConstraint = True
-    , triggerTiming = TriggerAfter
+    , triggerKind = TriggerConstraint DeferrableInitiallyDeferred
     , triggerEvents = Set.fromList [TriggerInsert, TriggerUpdateOf [unsafeSQL "location"]]
-    , triggerDeferrable = True
-    , triggerInitiallyDeferred = True
     , triggerWhen = Nothing
     , triggerFunction =
         "begin"
@@ -1322,8 +1316,8 @@ testTriggers step = do
       verify [trg] True
 
   do
-    let msg = "successfully migrate trigger that is deferrable"
-        trg = bankTrigger1 {triggerDeferrable = True}
+    let msg = "successfully migrate a constraint trigger that is deferrable"
+        trg = bankTrigger1 {triggerKind = TriggerConstraint DeferrableInitiallyImmediate}
         ts =
           [ tableBankSchema1
               { tblVersion = 2
@@ -1336,12 +1330,8 @@ testTriggers step = do
       verify [trg] True
 
   do
-    let msg = "successfully migrate trigger that is deferrable and initially deferred"
-        trg =
-          bankTrigger1
-            { triggerDeferrable = True
-            , triggerInitiallyDeferred = True
-            }
+    let msg = "successfully migrate a constraint trigger that is deferrable and initially deferred"
+        trg = bankTrigger1 {triggerKind = TriggerConstraint DeferrableInitiallyDeferred}
         ts =
           [ tableBankSchema1
               { tblVersion = 2
@@ -1354,12 +1344,8 @@ testTriggers step = do
       verify [trg] True
 
   do
-    let msg = "database exception is raised if trigger is initially deferred but not deferrable"
-        trg =
-          bankTrigger1
-            { triggerDeferrable = False
-            , triggerInitiallyDeferred = True
-            }
+    let msg = "successfully migrate a regular AFTER trigger"
+        trg = bankTrigger1 {triggerKind = TriggerRegular After}
         ts =
           [ tableBankSchema1
               { tblVersion = 2
@@ -1368,7 +1354,36 @@ testTriggers step = do
           ]
         ms = [createTriggerMigration 1 trg]
     triggerStep msg $ do
-      assertDBException msg $ migrate ts ms
+      assertNoException msg $ migrate ts ms
+      verify [trg] True
+
+  do
+    let msg = "successfully migrate a regular BEFORE trigger"
+        trg = bankTrigger1 {triggerKind = TriggerRegular Before}
+        ts =
+          [ tableBankSchema1
+              { tblVersion = 2
+              , tblTriggers = [trg]
+              }
+          ]
+        ms = [createTriggerMigration 1 trg]
+    triggerStep msg $ do
+      assertNoException msg $ migrate ts ms
+      verify [trg] True
+
+  do
+    let msg = "successfully migrate a regular INSTEAD OF trigger"
+        trg = bankTrigger1 {triggerKind = TriggerRegular InsteadOf}
+        ts =
+          [ tableBankSchema1
+              { tblVersion = 2
+              , tblTriggers = [trg]
+              }
+          ]
+        ms = [createTriggerMigration 1 trg]
+    triggerStep msg $ do
+      assertNoException msg $ migrate ts ms
+      verify [trg] True
 
   do
     let msg = "database exception is raised if dropping trigger that does not exist"
