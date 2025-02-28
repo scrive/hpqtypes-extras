@@ -40,7 +40,7 @@ instance IsOption ConnectionString where
   defaultValue =
     ConnectionString
       -- For GitHub Actions CI
-      "postgres user=postgres password=postgres"
+      "host=postgres user=postgres password=postgres"
   parseValue = Just . ConnectionString
   optionName = return "connection-string"
   optionHelp = return "Postgres connection string"
