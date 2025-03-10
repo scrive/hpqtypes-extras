@@ -9,8 +9,8 @@
 module Database.PostgreSQL.PQTypes.Model.Trigger
   ( -- * Triggers
     TriggerKind (..)
-  , TriggerRegularTiming (..)
-  , TriggerConstraintTiming (..)
+  , TriggerActionTime (..)
+  , ConstraintKind (..)
   , TriggerEvent (..)
   , Trigger (..)
   , triggerMakeName
@@ -41,22 +41,22 @@ import Database.PostgreSQL.PQTypes.SQL.Builder
 -- | Timing for a regault trigger.
 --
 -- @since 1.17.0.0
-data TriggerRegularTiming
+data TriggerActionTime
   = -- | An @AFTER@ trigger.
     After
   | -- | A @BEFORE@ trigger.
     Before
   deriving (Eq, Show)
 
--- | Timing for a constraint trigger.
+-- | Constraint kind.
 --
 -- @since 1.17.0.0
-data TriggerConstraintTiming
-  = -- | The @NOT DEFERRABLE [INITIALLY IMMEDIATE]@ timing for constraint triggers.
+data ConstraintKind
+  = -- | The @NOT DEFERRABLE [INITIALLY IMMEDIATE]@ constraint.
     NotDeferrable
-  | -- | The @DEFERRABLE INITIALLY IMMEDIATE@ timing for constraint triggers.
+  | -- | The @DEFERRABLE INITIALLY IMMEDIATE@ constraint.
     DeferrableInitiallyImmediate
-  | -- | The @DEFERRABLE INITIALLY DEFERRED@ timing for constraint triggers.
+  | -- | The @DEFERRABLE INITIALLY DEFERRED@ constraint.
     DeferrableInitiallyDeferred
   deriving (Eq, Show)
 
@@ -65,9 +65,9 @@ data TriggerConstraintTiming
 -- @since 1.17.0.0
 data TriggerKind
   = -- | Create a regular trigger: @CREATE TRIGGER@
-    TriggerRegular TriggerRegularTiming
+    TriggerRegular TriggerActionTime
   | -- | Create a constraint trigger: @CREATE CONSTRAINT TRIGGER@
-    TriggerConstraint TriggerConstraintTiming
+    TriggerConstraint ConstraintKind
   deriving (Eq, Show)
 
 -- | Trigger event name.
@@ -291,18 +291,18 @@ getDBTriggers tableName = do
         tgrKind :: TriggerKind
         tgrKind =
           if tgconstraint
-            then TriggerConstraint trgConstraintTiming
-            else TriggerRegular tgrTiming
+            then TriggerConstraint trgConstraintAttrs
+            else TriggerRegular tgrActionTime
 
-        trgConstraintTiming :: TriggerConstraintTiming
-        trgConstraintTiming = case (tgdeferrable, tginitdeferrable) of
+        trgConstraintAttrs :: ConstraintKind
+        trgConstraintAttrs = case (tgdeferrable, tginitdeferrable) of
           (False, False) -> NotDeferrable
           (True, False) -> DeferrableInitiallyImmediate
           (True, True) -> DeferrableInitiallyDeferred
           (False, True) -> error "A constraint declared INITIALLY DEFERRED must be DEFERRABLE."
 
-        tgrTiming :: TriggerRegularTiming
-        tgrTiming = case (tgtypeInsteadBit, tgtypeBeforeBit) of
+        tgrActionTime :: TriggerActionTime
+        tgrActionTime = case (tgtypeInsteadBit, tgtypeBeforeBit) of
           (False, False) -> After
           (False, True) -> Before
           (True, False) -> error "INSTEAD OF triggers are not available on tables."
