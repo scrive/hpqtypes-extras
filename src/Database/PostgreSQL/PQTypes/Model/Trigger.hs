@@ -1,16 +1,13 @@
 -- |
 -- Module: Database.PostgreSQL.PQTypes.Model.Trigger
 --
--- Trigger name must be unique among triggers of same table.
--- The associated functions are always created with no arguments
--- and always @RETURN TRIGGER@.
+-- Trigger name must be unique among triggers of the same table.
 --
--- For details, see <https://www.postgresql.org/docs/11/sql-createtrigger.html>.
+-- For details, see <https://www.postgresql.org/docs/current/sql-createtrigger.html>.
 module Database.PostgreSQL.PQTypes.Model.Trigger
   ( -- * Triggers
     TriggerKind (..)
   , TriggerActionTime (..)
-  , ConstraintKind (..)
   , TriggerEvent (..)
   , Trigger (..)
   , triggerMakeName
@@ -25,6 +22,9 @@ module Database.PostgreSQL.PQTypes.Model.Trigger
   , sqlCreateTriggerFunction
   , sqlDropTriggerFunction
   , triggerFunctionMakeName
+
+    -- * Constraints
+  , ConstraintAttributes (..)
   ) where
 
 import Data.Bits (testBit)
@@ -48,14 +48,16 @@ data TriggerActionTime
     Before
   deriving (Eq, Show)
 
--- | Constraint kind.
+-- | Possible combinations of constraint attributes.
 --
 -- @since 1.17.0.0
-data ConstraintKind
+data ConstraintAttributes
   = -- | The @NOT DEFERRABLE [INITIALLY IMMEDIATE]@ constraint.
+    -- A @NOT DEFERRABLE@ constraint is @INITIALLY IMMEDIATE@ by default.
     NotDeferrable
-  | -- | The @DEFERRABLE INITIALLY IMMEDIATE@ constraint.
-    DeferrableInitiallyImmediate
+  | -- | The @DEFERRABLE [INITIALLY IMMEDIATE]@ constraint.
+    -- A @DEFERRABLE@ constraint is @INITIALLY IMMEDIATE@ by default.
+    Deferrable
   | -- | The @DEFERRABLE INITIALLY DEFERRED@ constraint.
     DeferrableInitiallyDeferred
   deriving (Eq, Show)
@@ -67,7 +69,7 @@ data TriggerKind
   = -- | Create a regular trigger: @CREATE TRIGGER@
     TriggerRegular TriggerActionTime
   | -- | Create a constraint trigger: @CREATE CONSTRAINT TRIGGER@
-    TriggerConstraint ConstraintKind
+    TriggerConstraint ConstraintAttributes
   deriving (Eq, Show)
 
 -- | Trigger event name.
@@ -105,6 +107,7 @@ data Trigger = Trigger
   -- @WHEN ( __condition__ )@ in the trigger definition.
   , triggerFunction :: RawSQL ()
   -- ^ The function to execute when the trigger fires.
+  -- The function is declared as taking no arguments and returning type @trigger@.
   }
   deriving (Show)
 
@@ -156,11 +159,11 @@ sqlCreateTrigger Trigger {..} =
   "CREATE"
     <+> trgKind
     <+> trgName
-    <+> tgrTiming
+    <+> tgrActionTime
     <+> trgEvents
     <+> "ON"
     <+> triggerTable
-    <+> trgConstraintTiming
+    <+> trgConstraintAttributes
     <+> "FOR EACH ROW"
     <+> trgWhen
     <+> "EXECUTE FUNCTION"
@@ -173,17 +176,17 @@ sqlCreateTrigger Trigger {..} =
     trgName
       | triggerName == "" = error "Trigger must have a name."
       | otherwise = triggerMakeName triggerName triggerTable
-    tgrTiming = case triggerKind of
+    tgrActionTime = case triggerKind of
       TriggerRegular After -> "AFTER"
       TriggerRegular Before -> "BEFORE"
       TriggerConstraint _ -> "AFTER"
     trgEvents
       | triggerEvents == Set.empty = error "Trigger must have at least one event."
       | otherwise = mintercalate " OR " . map triggerEventName $ Set.toList triggerEvents
-    trgConstraintTiming = case triggerKind of
+    trgConstraintAttributes = case triggerKind of
       TriggerRegular _ -> ""
       TriggerConstraint NotDeferrable -> "NOT DEFERRABLE"
-      TriggerConstraint DeferrableInitiallyImmediate -> "DEFERRABLE INITIALLY IMMEDIATE"
+      TriggerConstraint Deferrable -> "DEFERRABLE"
       TriggerConstraint DeferrableInitiallyDeferred -> "DEFERRABLE INITIALLY DEFERRED"
     trgWhen = maybe "" (\w -> "WHEN (" <+> w <+> ")") triggerWhen
     trgFunction = triggerFunctionMakeName triggerName
@@ -294,10 +297,10 @@ getDBTriggers tableName = do
             then TriggerConstraint trgConstraintAttrs
             else TriggerRegular tgrActionTime
 
-        trgConstraintAttrs :: ConstraintKind
+        trgConstraintAttrs :: ConstraintAttributes
         trgConstraintAttrs = case (tgdeferrable, tginitdeferrable) of
           (False, False) -> NotDeferrable
-          (True, False) -> DeferrableInitiallyImmediate
+          (True, False) -> Deferrable
           (True, True) -> DeferrableInitiallyDeferred
           (False, True) -> error "A constraint declared INITIALLY DEFERRED must be DEFERRABLE."
 

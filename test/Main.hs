@@ -1317,7 +1317,7 @@ testTriggers step = do
 
   do
     let msg = "successfully migrate a constraint trigger that is deferrable"
-        trg = bankTrigger1 {triggerKind = TriggerConstraint DeferrableInitiallyImmediate}
+        trg = bankTrigger1 {triggerKind = TriggerConstraint Deferrable}
         ts =
           [ tableBankSchema1
               { tblVersion = 2
