@@ -1,4 +1,4 @@
-# hpqtypes-extras-1.17.0.0 (2023-??-??)
+# hpqtypes-extras-1.17.0.0 (2025-03-12)
 * Grouped some parameters of `migrateDatabase` and `checkDatabase` into a
   `DatabaseDefinitions` record type.
 * Add an optional check that all foreign keys have an index.
