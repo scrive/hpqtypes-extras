@@ -38,7 +38,7 @@ import Data.Text qualified as Text
 import Database.PostgreSQL.PQTypes
 import Database.PostgreSQL.PQTypes.SQL.Builder
 
--- | Timing for a regault trigger.
+-- | Timing for a regular trigger.
 --
 -- @since 1.17.0.0
 data TriggerActionTime
