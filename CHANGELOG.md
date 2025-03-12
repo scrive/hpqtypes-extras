@@ -7,6 +7,8 @@
   nested `AND` and `OR` conditions.
 * Add `SqlWhereAll` and `SqlWhereAny` so they can be used in signatures.
 * Add rudimentary support for enum types.
+* Add support for some regular triggers, ie: `AFTER` triggers without constraints
+  and `BEFORE` triggers.
 
 # hpqtypes-extras-1.16.4.4 (2023-08-23)
 * Switch from `cryptonite` to `crypton`.
