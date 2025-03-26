@@ -1,6 +1,6 @@
 cabal-version:       3.0
 name:                hpqtypes-extras
-version:             1.17.0.0
+version:             1.17.0.1
 synopsis:            Extra utilities for hpqtypes library
 description:         The following extras for hpqtypes library:
                      .
@@ -47,6 +47,9 @@ common common-stanza
                     , UndecidableInstances
                     , ViewPatterns
   ghc-options: -Werror=prepositive-qualified-module
+
+  if impl(ghc >= 9.8)
+    ghc-options: -Wno-x-partial
 
 library
   import: common-stanza

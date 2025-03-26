@@ -16,15 +16,7 @@ import Data.UUID.Types
 import Data.Monoid.Utils
 import Database.PostgreSQL.PQTypes
 import Database.PostgreSQL.PQTypes.Checks
-import Database.PostgreSQL.PQTypes.Model.ColumnType
-import Database.PostgreSQL.PQTypes.Model.CompositeType
-import Database.PostgreSQL.PQTypes.Model.EnumType
-import Database.PostgreSQL.PQTypes.Model.ForeignKey
-import Database.PostgreSQL.PQTypes.Model.Index
-import Database.PostgreSQL.PQTypes.Model.Migration
-import Database.PostgreSQL.PQTypes.Model.PrimaryKey
-import Database.PostgreSQL.PQTypes.Model.Table
-import Database.PostgreSQL.PQTypes.Model.Trigger
+import Database.PostgreSQL.PQTypes.Model
 import Database.PostgreSQL.PQTypes.SQL.Builder
 import Log
 import Log.Backend.StandardOutput
@@ -2406,7 +2398,26 @@ testCaseSteps' testName connSource f =
 
 tableDefsWithPgCrypto :: [Table] -> DatabaseDefinitions
 tableDefsWithPgCrypto tables =
-  emptyDbDefinitions {dbTables = tables, dbExtensions = ["pgcrypto"]}
+  emptyDbDefinitions
+    { dbTables = tables
+    , dbExtensions = ["pgcrypto"]
+    , dbDomains = [testDomainColor]
+    }
+  where
+    testDomainColor =
+      Domain
+        { domName = "test_domain_color"
+        , domType = TextT
+        , domNullable = False
+        , domDefault = Nothing
+        , domChecks =
+            mkChecks
+              [ tblCheck
+                  { chkName = "test_domain_color"
+                  , chkCondition = "VALUE ~ '^#[0-9a-f]{6}$'::text"
+                  }
+              ]
+        }
 
 main :: IO ()
 main = do

@@ -1,3 +1,6 @@
+# hpqtypes-extras-1.17.0.1 (2025-??-??)
+* Fix validation of NOT NULL domains with PostgreSQL >= 17.
+
 # hpqtypes-extras-1.17.0.0 (2025-03-12)
 * Grouped some parameters of `migrateDatabase` and `checkDatabase` into a
   `DatabaseDefinitions` record type.
