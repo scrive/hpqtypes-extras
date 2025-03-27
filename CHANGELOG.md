@@ -1,4 +1,4 @@
-# hpqtypes-extras-1.17.0.1 (2025-??-??)
+# hpqtypes-extras-1.17.0.1 (2025-03-27)
 * Fix validation of NOT NULL domains with PostgreSQL >= 17.
 
 # hpqtypes-extras-1.17.0.0 (2025-03-12)
