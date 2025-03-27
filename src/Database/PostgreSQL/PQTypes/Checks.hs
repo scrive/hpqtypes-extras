@@ -310,20 +310,18 @@ checkDomainsStructure defs = fmap mconcat . forM defs $ \def -> do
       \WHERE t2.oid = t1.typbasetype)" -- type
     sqlResult "NOT t1.typnotnull" -- nullable
     sqlResult "t1.typdefault" -- default value
-    -- PG17 started storing the NOT NULL property of domains as a record in the
-    -- pg_constraint table with contype 'n', so it needs to be filtered out.
     sqlResult
       "ARRAY(SELECT c.conname::text FROM pg_catalog.pg_constraint c \
-      \WHERE c.contype <> 'n' AND c.contypid = t1.oid \
+      \WHERE c.contype = 'c' AND c.contypid = t1.oid \
       \ORDER by c.oid)" -- constraint names
     sqlResult
       "ARRAY(SELECT regexp_replace(pg_get_constraintdef(c.oid, true), '\
       \CHECK \\((.*)\\)', '\\1') FROM pg_catalog.pg_constraint c \
-      \WHERE c.contype <> 'n' AND c.contypid = t1.oid \
+      \WHERE c.contype = 'c' AND c.contypid = t1.oid \
       \ORDER by c.oid)" -- constraint definitions
     sqlResult
       "ARRAY(SELECT c.convalidated FROM pg_catalog.pg_constraint c \
-      \WHERE c.contype <> 'n' AND c.contypid = t1.oid \
+      \WHERE c.contype = 'c' AND c.contypid = t1.oid \
       \ORDER by c.oid)" -- are constraints validated?
     sqlWhereEq "t1.typname" $ unRawSQL $ domName def
   mdom <- fetchMaybe $
