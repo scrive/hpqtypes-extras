@@ -1224,20 +1224,31 @@ checkDBConsistency options domains enums tablesWithVersions migrations = do
       validateMigrationsToRun migrationsToRun dbTablesWithVersions
       unless (null migrationsToRun) $ do
         logInfo_ "Running migrations..."
-        forM_ migrationsToRun $ \mgr -> fix $ \loop -> do
-          let restartMigration query = do
-                logAttention "Failed to acquire a lock" $ object ["query" .= query]
-                logInfo_ "Restarting the migration shortly..."
-                liftIO $ threadDelay 1000000
-                loop
+        forM_ migrationsToRun $ \mgr -> (`fix` 1) $ \loop attempts -> do
+          let restartMigration query =
+                if attempts < maxAttempts
+                  then do
+                    logInfo "Failed to acquire a lock, backing off..." $
+                      object
+                        [ "query" .= query
+                        , "attempts" .= attempts
+                        , "backoff_seconds" .= backoffSecs
+                        ]
+                    liftIO . threadDelay $ backoffSecs * 1_000_000
+                    loop $ attempts + 1
+                  else do
+                    logAttention_ "Failed to lock the table, aborting."
+                    error "Lock acquisition failure"
           handleJust lockNotAvailable restartMigration $ do
-            forM_ (eoLockTimeoutMs options) $ \lockTimeout -> do
-              runSQL_ $ "SET LOCAL lock_timeout TO" <+> intToSQL lockTimeout
+            runSQL_ $ "SET LOCAL lock_timeout TO" <+> intToSQL (eoLockTimeoutMs options)
             runMigration mgr `onException` rollback
             logInfo_ "Committing migration changes..."
             commit
-        logInfo_ "Running migrations... done."
+        logInfo_ "Running migrations done."
       where
+        backoffSecs = eoLockFailureBackoffSecs options
+        maxAttempts = eoLockAttempts options
+
         intToSQL :: Int -> SQL
         intToSQL = unsafeSQL . show
 

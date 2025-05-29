@@ -36,6 +36,7 @@ common common-stanza
                     , ImportQualifiedPost
                     , LambdaCase
                     , MultiWayIf
+                    , NumericUnderscores
                     , OverloadedStrings
                     , RankNTypes
                     , RecordWildCards

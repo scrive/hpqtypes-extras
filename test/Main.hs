@@ -890,7 +890,7 @@ migrateDBToSchema2 step = do
   let definitions = tableDefsWithPgCrypto schema2Tables
   step "Migrating the database (schema version 1 -> schema version 2)..."
   migrateDatabase
-    defaultExtrasOptions {eoLockTimeoutMs = Just 1000}
+    defaultExtrasOptions
     definitions
     schema2Migrations
   checkDatabase defaultExtrasOptions definitions

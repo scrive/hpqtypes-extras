@@ -6,7 +6,9 @@ module Database.PostgreSQL.PQTypes.ExtrasOptions
 
 data ExtrasOptions
   = ExtrasOptions
-  { eoLockTimeoutMs :: !(Maybe Int)
+  { eoLockTimeoutMs :: !Int
+  , eoLockFailureBackoffSecs :: !Int
+  , eoLockAttempts :: !Int
   , eoEnforcePKs :: !Bool
   -- ^ Validate that every handled table has a primary key
   , eoObjectsValidationMode :: !ObjectsValidationMode
@@ -24,7 +26,9 @@ data ExtrasOptions
 defaultExtrasOptions :: ExtrasOptions
 defaultExtrasOptions =
   ExtrasOptions
-    { eoLockTimeoutMs = Nothing
+    { eoLockTimeoutMs = 3000
+    , eoLockFailureBackoffSecs = 30
+    , eoLockAttempts = 5
     , eoEnforcePKs = False
     , eoObjectsValidationMode = DontAllowUnknownObjects
     , eoAllowHigherTableVersions = False
