@@ -1491,7 +1491,6 @@ sqlGetIndexes nullsNotDistinctSupported table = toSQLCommand . sqlSelect "pg_cat
   sqlResult $ "ARRAY(" <> selectCoordinates "i.indnkeyatts" "i.indnatts" <> ")" -- array of included columns in the index
   sqlResult "am.amname::text" -- the method used (btree, gin etc)
   sqlResult "i.indisunique" -- is it unique?
-  sqlResult "i.indisvalid" -- is it valid?
   -- does it have NULLS NOT DISTINCT ?
   if nullsNotDistinctSupported
     then sqlResult "i.indnullsnotdistinct"
@@ -1503,6 +1502,10 @@ sqlGetIndexes nullsNotDistinctSupported table = toSQLCommand . sqlSelect "pg_cat
   sqlLeftJoinOn
     "pg_catalog.pg_constraint r"
     "r.conrelid = i.indrelid AND r.conindid = i.indexrelid"
+  -- Indexes currently being built by CREATE INDEX CONCURRENTLY (or ones that
+  -- weren't successfully built by it) are marked as invalid, so we don't want
+  -- to consider them at a time.
+  sqlWhere "i.indisvalid"
   sqlWhereEqSql "i.indrelid" $ sqlGetTableID table
   sqlWhereIsNULL "r.contype" -- fetch only "pure" indexes
   where
@@ -1520,15 +1523,14 @@ sqlGetIndexes nullsNotDistinctSupported table = toSQLCommand . sqlSelect "pg_cat
         ]
 
 fetchTableIndex
-  :: (String, Array1 String, Array1 String, String, Bool, Bool, Bool, Maybe String)
+  :: (String, Array1 String, Array1 String, String, Bool, Bool, Maybe String)
   -> (TableIndex, RawSQL ())
-fetchTableIndex (name, Array1 keyColumns, Array1 includeColumns, method, unique, valid, nullsNotDistinct, mconstraint) =
+fetchTableIndex (name, Array1 keyColumns, Array1 includeColumns, method, unique, nullsNotDistinct, mconstraint) =
   ( TableIndex
       { idxColumns = map (indexColumn . unsafeSQL) keyColumns
       , idxInclude = map unsafeSQL includeColumns
       , idxMethod = read method
       , idxUnique = unique
-      , idxValid = valid
       , idxWhere = unsafeSQL <$> mconstraint
       , idxNotDistinctNulls = nullsNotDistinct
       }

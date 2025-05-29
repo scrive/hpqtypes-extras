@@ -37,7 +37,6 @@ data TableIndex = TableIndex
   , idxInclude :: [RawSQL ()]
   , idxMethod :: IndexMethod
   , idxUnique :: Bool
-  , idxValid :: Bool
   , -- \^ If creation of index with CONCURRENTLY fails, index
     -- will be marked as invalid. Set it to 'False' if such
     -- situation is expected.
@@ -97,7 +96,6 @@ tblIndex =
     , idxInclude = []
     , idxMethod = BTree
     , idxUnique = False
-    , idxValid = True
     , idxWhere = Nothing
     , idxNotDistinctNulls = False
     }
@@ -134,7 +132,6 @@ uniqueIndexOnColumn column =
     , idxInclude = []
     , idxMethod = BTree
     , idxUnique = True
-    , idxValid = True
     , idxWhere = Nothing
     , idxNotDistinctNulls = False
     }
@@ -146,7 +143,6 @@ uniqueIndexOnColumns columns =
     , idxInclude = []
     , idxMethod = BTree
     , idxUnique = True
-    , idxValid = True
     , idxWhere = Nothing
     , idxNotDistinctNulls = False
     }
@@ -158,7 +154,6 @@ uniqueIndexOnColumnWithCondition column whereC =
     , idxInclude = []
     , idxMethod = BTree
     , idxUnique = True
-    , idxValid = True
     , idxWhere = Just whereC
     , idxNotDistinctNulls = False
     }
