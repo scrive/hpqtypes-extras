@@ -1,6 +1,7 @@
 # hpqtypes-extras-1.18.0.0 (2025-??-??)
 * Don't consider invalid indexes when checking consistency of the database.
 * Improve handling of lock failures during migrations.
+* Rename `eoLockTimeoutMs` to `eoLockTimeoutSecs` to normalize units.
 
 # hpqtypes-extras-1.17.0.1 (2025-03-27)
 * Fix validation of NOT NULL domains with PostgreSQL >= 17.

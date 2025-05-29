@@ -6,7 +6,7 @@ module Database.PostgreSQL.PQTypes.ExtrasOptions
 
 data ExtrasOptions
   = ExtrasOptions
-  { eoLockTimeoutMs :: !Int
+  { eoLockTimeoutSecs :: !Int
   , eoLockFailureBackoffSecs :: !Int
   , eoLockAttempts :: !Int
   , eoEnforcePKs :: !Bool
@@ -26,7 +26,7 @@ data ExtrasOptions
 defaultExtrasOptions :: ExtrasOptions
 defaultExtrasOptions =
   ExtrasOptions
-    { eoLockTimeoutMs = 3000
+    { eoLockTimeoutSecs = 3
     , eoLockFailureBackoffSecs = 30
     , eoLockAttempts = 5
     , eoEnforcePKs = False

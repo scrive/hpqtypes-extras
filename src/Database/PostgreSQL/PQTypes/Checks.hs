@@ -1240,7 +1240,7 @@ checkDBConsistency options domains enums tablesWithVersions migrations = do
                     logAttention_ "Failed to lock the table, aborting."
                     error "Lock acquisition failure"
           handleJust lockNotAvailable restartMigration $ do
-            runSQL_ $ "SET LOCAL lock_timeout TO" <+> intToSQL (eoLockTimeoutMs options)
+            runSQL_ $ "SET LOCAL lock_timeout TO" <+> intToSQL (eoLockTimeoutSecs options * 1_000)
             runMigration mgr `onException` rollback
             logInfo_ "Committing migration changes..."
             commit
