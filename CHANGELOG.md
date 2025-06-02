@@ -1,4 +1,4 @@
-# hpqtypes-extras-1.18.0.0 (2025-??-??)
+# hpqtypes-extras-1.18.0.0 (2025-06-02)
 * Don't consider invalid indexes when checking consistency of the database.
 * Improve handling of lock failures during migrations.
 * Rename `eoLockTimeoutMs` to `eoLockTimeoutSecs` to normalize units.
