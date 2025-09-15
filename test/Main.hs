@@ -1839,13 +1839,10 @@ migrationTest5 connSource =
       sqlSetList "name" $ (\i -> "bank" <> show i) <$> numbers
       sqlSetList "location" $ (\i -> "location" <> show i) <$> numbers
 
-    -- Explicitly vacuum to update the catalog so that getting the row number estimates
-    -- works. The bracket_ trick is here because vacuum can't run inside a transaction
-    -- block, which every test runs in.
-    bracket_
-      (runSQL_ "COMMIT")
-      (runSQL_ "BEGIN")
-      (runSQL_ "VACUUM bank")
+    -- Explicitly vacuum to update the catalog so that getting the row number
+    -- estimates works. Note that vacuum can't run inside a transaction block,
+    -- which every test runs in.
+    unsafeWithoutTransaction $ runSQL_ "VACUUM bank"
 
     forM_ (zip4 tables migrations steps assertions) $
       \(table, migration, step', assertion) -> do

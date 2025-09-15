@@ -1,3 +1,6 @@
+# hpqtypes-extras-1.19.0.0 (2025-??-??)
+* Compatibility with `hpqtypes` >= 0.13.0.0.
+
 # hpqtypes-extras-1.18.0.0 (2025-06-02)
 * Don't consider invalid indexes when checking consistency of the database.
 * Improve handling of lock failures during migrations.
