@@ -71,6 +71,7 @@ library
                  , Database.PostgreSQL.PQTypes.Model.EnumType
                  , Database.PostgreSQL.PQTypes.Model.Extension
                  , Database.PostgreSQL.PQTypes.Model.ForeignKey
+                 , Database.PostgreSQL.PQTypes.Model.Function
                  , Database.PostgreSQL.PQTypes.Model.Index
                  , Database.PostgreSQL.PQTypes.Model.Migration
                  , Database.PostgreSQL.PQTypes.Model.PrimaryKey

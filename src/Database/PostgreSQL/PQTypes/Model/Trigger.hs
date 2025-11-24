@@ -19,6 +19,7 @@ module Database.PostgreSQL.PQTypes.Model.Trigger
   , getDBTriggers
 
     -- * Trigger functions
+  , defaultTriggerFunction
   , sqlCreateTriggerFunction
   , sqlDropTriggerFunction
   , triggerFunctionMakeName
@@ -30,12 +31,15 @@ module Database.PostgreSQL.PQTypes.Model.Trigger
 import Data.Bits (testBit)
 import Data.Foldable qualified as F
 import Data.Int
+import Data.List qualified as List
 import Data.Monoid.Utils
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text (Text)
+import Data.Text qualified as T
 import Data.Text qualified as Text
 import Database.PostgreSQL.PQTypes
+import Database.PostgreSQL.PQTypes.Model.Function
 import Database.PostgreSQL.PQTypes.SQL.Builder
 
 -- | Timing for a regular trigger.
@@ -105,7 +109,7 @@ data Trigger = Trigger
   , triggerWhen :: Maybe (RawSQL ())
   -- ^ The condition that specifies whether the trigger should fire. Corresponds to the
   -- @WHEN ( __condition__ )@ in the trigger definition.
-  , triggerFunction :: RawSQL ()
+  , triggerFunction :: Function
   -- ^ The function to execute when the trigger fires.
   -- The function is declared as taking no arguments and returning type @trigger@.
   }
@@ -189,7 +193,7 @@ sqlCreateTrigger Trigger {..} =
       TriggerConstraint Deferrable -> "DEFERRABLE"
       TriggerConstraint DeferrableInitiallyDeferred -> "DEFERRABLE INITIALLY DEFERRED"
     trgWhen = maybe "" (\w -> "WHEN (" <+> w <+> ")") triggerWhen
-    trgFunction = triggerFunctionMakeName triggerName
+    trgFunction = fnName triggerFunction
 
 -- | Build an SQL statement that drops a trigger.
 --
@@ -212,8 +216,7 @@ sqlDropTrigger Trigger {..} =
 -- @since 1.15.0
 createTrigger :: MonadDB m => Trigger -> m ()
 createTrigger trigger = do
-  -- TODO: Use 'withTransaction' here? That would mean adding MonadMask...
-  runQuery_ $ sqlCreateTriggerFunction trigger
+  runQuery_ $ sqlCreateFunction (triggerFunction trigger)
   runQuery_ $ sqlCreateTrigger trigger
 
 -- | Drop the trigger from the database.
@@ -223,9 +226,8 @@ dropTrigger :: MonadDB m => Trigger -> m ()
 dropTrigger trigger = do
   -- First, drop the trigger, as it is dependent on the function. See the comment in
   -- 'sqlDropTrigger'.
-  -- TODO: Use 'withTransaction' here? That would mean adding MonadMask...
   runQuery_ $ sqlDropTrigger trigger
-  runQuery_ $ sqlDropTriggerFunction trigger
+  runQuery_ $ sqlDropFunction (triggerFunction trigger)
 
 -- | Get all noninternal triggers from the database.
 --
@@ -240,7 +242,7 @@ dropTrigger trigger = do
 -- originally typed.
 --
 -- @since 1.15.0
-getDBTriggers :: forall m. MonadDB m => RawSQL () -> m [(Trigger, RawSQL ())]
+getDBTriggers :: forall m. MonadDB m => RawSQL () -> m [Trigger]
 getDBTriggers tableName = do
   runQuery_ . sqlSelect "pg_trigger t" $ do
     sqlResult "t.tgname::text" -- name
@@ -255,24 +257,44 @@ getDBTriggers tableName = do
     sqlResult "pg_get_triggerdef(t.oid, true)::text"
     sqlResult "p.proname::text"
     sqlResult "p.prosrc" -- text
+    sqlResult "p.prosecdef" -- bool => true = SECURITY DEFINER, false = SECURITY INVOKER
+    sqlResult "fn_rettype.typname::text" -- text
+    sqlResult "p.proconfig::text[]" -- [text]
     sqlResult "c.relname::text"
     sqlJoinOn "pg_proc p" "t.tgfoid = p.oid"
     sqlJoinOn "pg_class c" "c.oid = t.tgrelid"
+    sqlJoinOn "pg_type fn_rettype" "fn_rettype.oid = p.prorettype"
     sqlWhereEq "t.tgisinternal" False
     sqlWhereEq "c.relname" $ unRawSQL tableName
   fetchMany getTrigger
   where
-    getTrigger :: (String, Int16, Bool, Bool, Bool, String, String, String, String) -> (Trigger, RawSQL ())
-    getTrigger (tgname, tgtype, tgconstraint, tgdeferrable, tginitdeferrable, triggerdef, proname, prosrc, tblName) =
+    getTrigger :: (String, Int16, Bool, Bool, Bool, String, String, String, Bool, String, Maybe (Array1 Text), String) -> Trigger
+    getTrigger (tgname, tgtype, tgconstraint, tgdeferrable, tginitdeferrable, triggerdef, proname, prosrc, prosecdef, prorettype, proconfig, tblName) =
       ( Trigger
           { triggerTable = tableName'
           , triggerName = triggerBaseName (unsafeSQL tgname) tableName'
           , triggerKind = tgrKind
           , triggerEvents = trgEvents
           , triggerWhen = tgrWhen
-          , triggerFunction = unsafeSQL prosrc
+          , triggerFunction =
+              Function
+                { fnName = unsafeSQL proname
+                , fnBody = unsafeSQL prosrc
+                , fnReturns = unsafeSQL prorettype
+                , fnSecurity =
+                    if prosecdef
+                      then Definer
+                      else Invoker
+                , fnSearchPath = case List.find (T.isPrefixOf "search_path") (maybe [] unArray1 proconfig) of
+                    Nothing -> Nothing
+                    Just searchPath ->
+                      Just
+                        . unsafeSQL
+                        . T.unpack
+                        . snd
+                        $ T.break (== '=') searchPath
+                }
           }
-      , unsafeSQL proname
       )
       where
         tableName' :: RawSQL ()
@@ -352,16 +374,20 @@ getDBTriggers tableName = do
 -- @since 1.15.0.0
 sqlCreateTriggerFunction :: Trigger -> RawSQL ()
 sqlCreateTriggerFunction Trigger {..} =
-  "CREATE FUNCTION"
-    <+> triggerFunctionMakeName triggerName
-    <> "()"
-    <+> "RETURNS TRIGGER"
-    <+> "AS $$"
-    <+> triggerFunction
-    <+> "$$"
-    <+> "LANGUAGE PLPGSQL"
-    <+> "VOLATILE"
-    <+> "RETURNS NULL ON NULL INPUT"
+  sqlCreateFunction triggerFunction
+
+-- | Backwards compatible helper for using pre-1.xx.x.x trigger functions
+--
+-- @since 1.xx.x.x
+defaultTriggerFunction :: RawSQL () -> RawSQL () -> Function
+defaultTriggerFunction triggerName functionBody =
+  Function
+    { fnName = triggerFunctionMakeName triggerName
+    , fnBody = functionBody
+    , fnReturns = "trigger"
+    , fnSecurity = Invoker
+    , fnSearchPath = Nothing
+    }
 
 -- | Build an SQL statement for dropping a trigger function.
 --
