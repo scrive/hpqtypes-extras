@@ -28,7 +28,7 @@ module Database.PostgreSQL.PQTypes.Model.Trigger
   ) where
 
 import Data.Bits (testBit)
-import Data.Foldable (foldl')
+import Data.Foldable qualified as F
 import Data.Int
 import Data.Monoid.Utils
 import Data.Set (Set)
@@ -320,7 +320,7 @@ getDBTriggers tableName = do
         -- the same bit set in the underlying tgtype bit field.
         trgEvents :: Set TriggerEvent
         trgEvents =
-          foldl'
+          F.foldl'
             ( \set (mask, event) ->
                 if testBit tgtype mask
                   then

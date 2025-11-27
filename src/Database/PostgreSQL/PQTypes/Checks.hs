@@ -855,9 +855,6 @@ checkDBConsistency
   -> [Migration m]
   -> m ()
 checkDBConsistency options domains enums tablesWithVersions migrations = do
-  autoTransaction <- tsAutoTransaction <$> getTransactionSettings
-  unless autoTransaction $ do
-    error "checkDBConsistency: tsAutoTransaction setting needs to be True"
   -- Check the validity of the migrations list.
   validateMigrations
   validateDropTableMigrations
@@ -1135,7 +1132,7 @@ checkDBConsistency options domains enums tablesWithVersions migrations = do
           -- because using 'commit' function automatically starts another
           -- transaction. We don't want that as concurrent creation of index
           -- won't run inside a transaction.
-          bracket_ (runSQL_ "COMMIT") (runSQL_ "BEGIN") $ do
+          unsafeWithoutTransaction $ do
             -- If migration was run before but creation of an index failed, index
             -- will be left in the database in an inactive state, so when we
             -- rerun, we need to remove it first (see
@@ -1151,7 +1148,7 @@ checkDBConsistency options domains enums tablesWithVersions migrations = do
           -- because using 'commit' function automatically starts another
           -- transaction. We don't want that as concurrent dropping of index
           -- won't run inside a transaction.
-          bracket_ (runSQL_ "COMMIT") (runSQL_ "BEGIN") $ do
+          unsafeWithoutTransaction $ do
             runQuery_ (sqlDropIndexConcurrently tname idx)
           updateTableVersion
         ModifyColumnMigration tableName cursorSql updateSql batchSize -> do
