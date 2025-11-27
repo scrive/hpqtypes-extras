@@ -1,4 +1,4 @@
-# hpqtypes-extras-1.19.0.0 (2025-??-??)
+# hpqtypes-extras-1.19.0.0 (2025-11-27)
 * Compatibility with `hpqtypes` >= 0.13.0.0.
 
 # hpqtypes-extras-1.18.0.0 (2025-06-02)
