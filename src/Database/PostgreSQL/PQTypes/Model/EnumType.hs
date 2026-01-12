@@ -33,5 +33,5 @@ sqlDropEnum :: RawSQL () -> RawSQL ()
 sqlDropEnum = ("DROP TYPE" <+>)
 
 -- | Add a value to an enum type
-sqlAddEnumValue :: SQL -> SQL -> SQL
+sqlAddEnumValue :: RawSQL () -> RawSQL () -> RawSQL ()
 sqlAddEnumValue enumName value = "ALTER TYPE " <> enumName <> " ADD VALUE '" <> value <> "'"
