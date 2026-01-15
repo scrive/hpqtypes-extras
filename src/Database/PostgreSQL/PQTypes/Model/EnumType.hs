@@ -2,6 +2,7 @@ module Database.PostgreSQL.PQTypes.Model.EnumType
   ( EnumType (..)
   , sqlCreateEnum
   , sqlDropEnum
+  , sqlAddEnumValue
   ) where
 
 import Data.Monoid.Utils
@@ -30,3 +31,7 @@ sqlCreateEnum EnumType {..} =
 -- | Make SQL query that drops a composite type.
 sqlDropEnum :: RawSQL () -> RawSQL ()
 sqlDropEnum = ("DROP TYPE" <+>)
+
+-- | Add a value to an enum type
+sqlAddEnumValue :: RawSQL () -> RawSQL () -> RawSQL ()
+sqlAddEnumValue enumName value = "ALTER TYPE " <> enumName <> " ADD VALUE '" <> value <> "'"
