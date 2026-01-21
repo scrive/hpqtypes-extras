@@ -21,6 +21,7 @@ import Database.PostgreSQL.PQTypes.SQL.Builder
 import Log
 import Log.Backend.StandardOutput
 
+import Data.Map qualified as M
 import Database.PostgreSQL.PQTypes.Model.Function
 import Test.Tasty
 import Test.Tasty.HUnit
@@ -1123,7 +1124,6 @@ bankTrigger1 =
     , triggerFunction =
         defaultTriggerFunction "trigger_1" $
           "begin"
-            <+> "  perform true;"
             <+> "  return null;"
             <+> "end;"
     }
@@ -1149,7 +1149,6 @@ bankTrigger3 =
     , triggerFunction =
         defaultTriggerFunction "trigger_3" $
           "begin"
-            <+> "  perform true;"
             <+> "  return null;"
             <+> "end;"
     }
@@ -1166,7 +1165,7 @@ bankTrigger4 =
         Function
           { fnName = "trigger_4_fun"
           , fnSecurity = Definer
-          , fnSearchPath = Nothing
+          , fnConfigurationParameters = mempty
           , fnReturns = "trigger"
           , fnBody =
               mconcat
@@ -1465,8 +1464,8 @@ testTriggers step = do
         triggerModifiers =
           [ modTrigger (\fn -> fn {fnSecurity = Definer})
           , modTrigger (\fn -> fn {fnSecurity = Invoker})
-          , modTrigger (\fn -> fn {fnSearchPath = Nothing})
-          , modTrigger (\fn -> fn {fnSearchPath = Just "pg_catalog"})
+          , modTrigger (\fn -> fn {fnConfigurationParameters = mempty})
+          , modTrigger (\fn -> fn {fnConfigurationParameters = M.singleton "search_path" "pg_catalog"})
           ]
     forM_ (zip [1 :: Int ..] (map (\f -> f trigger) triggerModifiers)) $ \(i, trg) -> do
       let i' = show i

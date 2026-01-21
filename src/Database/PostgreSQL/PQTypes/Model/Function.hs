@@ -1,6 +1,8 @@
 module Database.PostgreSQL.PQTypes.Model.Function where
 
+import Data.Map.Strict qualified as M
 import Data.Monoid.Utils
+import Data.Text qualified as T
 import Database.PostgreSQL.PQTypes
 
 data Function = Function
@@ -8,12 +10,20 @@ data Function = Function
   , fnBody :: RawSQL ()
   , fnReturns :: RawSQL ()
   , fnSecurity :: Security
-  , fnSearchPath :: Maybe (RawSQL ())
+  , fnConfigurationParameters :: M.Map T.Text (RawSQL ())
   }
   deriving (Show)
 
+instance Eq Function where
+  f1 == f2 =
+    fnName f1 == fnName f2
+      && fnBody f1 == fnBody f2
+      && fnReturns f1 == fnReturns f2
+      && fnSecurity f1 == fnSecurity f2
+      && fnConfigurationParameters f1 == fnConfigurationParameters f2
+
 data Security = Invoker | Definer
-  deriving (Show)
+  deriving (Show, Eq)
 
 -- | Turn the function into a SQL statement.
 --
@@ -27,8 +37,8 @@ sqlCreateFunction Function {..} =
     <> "()"
     <+> returns
     <+> "AS $$"
-    <+> fnBody
-    <+> "$$"
+    <> fnBody
+    <> "$$"
     <+> "LANGUAGE PLPGSQL"
     <+> "VOLATILE"
     <+> security
@@ -40,9 +50,11 @@ sqlCreateFunction Function {..} =
     security = case fnSecurity of
       Invoker -> "SECURITY INVOKER"
       Definer -> "SECURITY DEFINER"
-    searchPath = case fnSearchPath of
-      Nothing -> ""
-      Just contents -> "SET search_path = " <> contents
+    searchPath =
+      foldr
+        (\(param, value) prev -> "SET" <+> unsafeSQL (T.unpack param) <+> "=" <+> value <+> prev)
+        (unsafeSQL "")
+        $ M.toList fnConfigurationParameters
 
 -- | Build an SQL statement for dropping a function.
 --
