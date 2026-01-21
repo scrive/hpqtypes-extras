@@ -31,7 +31,8 @@ module Database.PostgreSQL.PQTypes.Model.Trigger
 import Data.Bits (testBit)
 import Data.Foldable qualified as F
 import Data.Int
-import Data.List qualified as List
+import Data.Map qualified as M
+import Data.Maybe
 import Data.Monoid.Utils
 import Data.Set (Set)
 import Data.Set qualified as Set
@@ -122,6 +123,7 @@ instance Eq Trigger where
       && triggerKind t1 == triggerKind t2
       && triggerEvents t1 == triggerEvents t2
       && triggerWhen t1 == triggerWhen t2
+      && triggerFunction t1 == triggerFunction t2
 
 -- Function source code is not guaranteed to be equal, so we ignore it.
 
@@ -285,18 +287,19 @@ getDBTriggers tableName = do
                     if prosecdef
                       then Definer
                       else Invoker
-                , fnSearchPath = case List.find (T.isPrefixOf "search_path") (maybe [] unArray1 proconfig) of
-                    Nothing -> Nothing
-                    Just searchPath ->
-                      Just
-                        . unsafeSQL
-                        . T.unpack
-                        . snd
-                        $ T.break (== '=') searchPath
+                , fnConfigurationParameters =
+                    M.fromList . mapMaybe parseFnConfigurationParameter $
+                      maybe [] unArray1 proconfig
                 }
           }
       )
       where
+        -- Parses "config_name=value" strings into tuples ("config_name", value)
+        parseFnConfigurationParameter s
+          | [configName, value] <- T.splitOn "=" s =
+              Just (configName, unsafeSQL $ T.unpack value)
+          | otherwise = Nothing
+
         tableName' :: RawSQL ()
         tableName' = unsafeSQL tblName
 
@@ -386,7 +389,7 @@ defaultTriggerFunction triggerName functionBody =
     , fnBody = functionBody
     , fnReturns = "trigger"
     , fnSecurity = Invoker
-    , fnSearchPath = Nothing
+    , fnConfigurationParameters = mempty
     }
 
 -- | Build an SQL statement for dropping a trigger function.
