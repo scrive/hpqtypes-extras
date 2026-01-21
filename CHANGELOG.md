@@ -1,3 +1,8 @@
+# hpqtypes-extras-1.XX.X.X (2025-11-27)
+* Add support for customizing trigger functions.
+* Adds a `Function` datatype and `defaultTriggerFunction` backwards compatible
+  trigger function helper.
+
 # hpqtypes-extras-1.19.0.0 (2025-11-27)
 * Compatibility with `hpqtypes` >= 0.13.0.0.
 
