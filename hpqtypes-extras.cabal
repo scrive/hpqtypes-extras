@@ -90,7 +90,7 @@ library
                , crypton           >= 0.32
                , exceptions        >= 0.10
                , extra             >= 1.6.17
-               , memory            >= 0.18
+               , ram               >= 0.21
                , mtl               >= 2.2
                , text              >= 1.2
                , text-show         >= 3.7
