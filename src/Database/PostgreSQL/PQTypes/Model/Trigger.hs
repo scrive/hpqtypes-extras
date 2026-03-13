@@ -370,9 +370,9 @@ sqlCreateTriggerFunction :: Trigger -> RawSQL ()
 sqlCreateTriggerFunction Trigger {..} =
   sqlCreateFunction triggerFunction
 
--- | Backwards compatible helper for using pre-1.xx.x.x trigger functions
+-- | Backwards compatible helper for using pre-1.20.0.0 trigger functions
 --
--- @since 1.xx.x.x
+-- @since 1.20.0.0
 defaultTriggerFunction :: RawSQL () -> RawSQL () -> Function
 defaultTriggerFunction triggerName functionBody =
   Function

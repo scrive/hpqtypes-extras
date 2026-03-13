@@ -32,7 +32,7 @@ data Security = Invoker | Definer
 --
 -- NB: If an existing function has the same name, it is replaced.
 --
--- @since 1.xx.x.x
+-- @since 1.20.0.0
 sqlCreateFunction :: Function -> RawSQL ()
 sqlCreateFunction Function {..} =
   "CREATE OR REPLACE FUNCTION"
@@ -61,7 +61,7 @@ sqlCreateFunction Function {..} =
 
 -- | Build an SQL statement for dropping a function.
 --
--- @since 1.xx.x.x
+-- @since 1.20.0.0
 sqlDropFunction :: Function -> RawSQL ()
 sqlDropFunction Function {..} =
   "DROP FUNCTION" <+> fnName <+> "RESTRICT"
