@@ -7,20 +7,23 @@ import Database.PostgreSQL.PQTypes
 
 data Function = Function
   { fnName :: RawSQL ()
+  -- ^ Name of the function it can be referenced with.
   , fnBody :: RawSQL ()
+  -- ^ The body of the function.
   , fnReturns :: RawSQL ()
+  -- ^ The return type of the function.
   , fnSecurity :: Security
+  -- ^ Indicates with which privileges the function is executed with. By default
+  -- this is usually the caller (INVOKER). The alternative is DEFINER, where the
+  -- function is executed under the user that owns, not calls, it.
   , fnConfigurationParameters :: M.Map T.Text (RawSQL ())
+  -- ^ Functions allow setting configuration parameters during the execution of
+  -- the function. This corresponds to the SET clause in CREATE FUNCTION. See
+  -- the following:
+  --   - https://www.postgresql.org/docs/current/sql-createfunction.html
+  --   - https://www.postgresql.org/docs/current/sql-set.html
   }
-  deriving (Show)
-
-instance Eq Function where
-  f1 == f2 =
-    fnName f1 == fnName f2
-      && fnBody f1 == fnBody f2
-      && fnReturns f1 == fnReturns f2
-      && fnSecurity f1 == fnSecurity f2
-      && fnConfigurationParameters f1 == fnConfigurationParameters f2
+  deriving (Show, Eq)
 
 data Security = Invoker | Definer
   deriving (Show, Eq)

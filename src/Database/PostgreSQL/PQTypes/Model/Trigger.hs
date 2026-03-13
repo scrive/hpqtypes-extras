@@ -114,16 +114,7 @@ data Trigger = Trigger
   -- ^ The function to execute when the trigger fires.
   -- The function is declared as taking no arguments and returning type @trigger@.
   }
-  deriving (Show)
-
-instance Eq Trigger where
-  t1 == t2 =
-    triggerTable t1 == triggerTable t2
-      && triggerName t1 == triggerName t2
-      && triggerKind t1 == triggerKind t2
-      && triggerEvents t1 == triggerEvents t2
-      && triggerWhen t1 == triggerWhen t2
-      && triggerFunction t1 == triggerFunction t2
+  deriving (Show, Eq)
 
 -- Function source code is not guaranteed to be equal, so we ignore it.
 
@@ -260,8 +251,8 @@ getDBTriggers tableName = do
     sqlResult "p.proname::text"
     sqlResult "p.prosrc" -- text
     sqlResult "p.prosecdef" -- bool => true = SECURITY DEFINER, false = SECURITY INVOKER
-    sqlResult "fn_rettype.typname::text" -- text
-    sqlResult "p.proconfig::text[]" -- [text]
+    sqlResult "fn_rettype.typname::text"
+    sqlResult "p.proconfig::text[]"
     sqlResult "c.relname::text"
     sqlJoinOn "pg_proc p" "t.tgfoid = p.oid"
     sqlJoinOn "pg_class c" "c.oid = t.tgrelid"
