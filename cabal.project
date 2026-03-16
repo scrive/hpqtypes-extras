@@ -1,1 +1,11 @@
 packages: .
+
+if impl(ghc >= 9.14)
+  allow-newer:
+    , *:base
+    , *:template-haskell
+    , aeson:containers
+    , aeson:indexed-traversable
+    , aeson:semialign
+    , aeson:time
+    , indexed-traversable:containers

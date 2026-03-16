@@ -197,6 +197,15 @@ jobs:
           echo "package hpqtypes-extras" >> cabal.project
           echo "    ghc-options: -Werror=incomplete-patterns -Werror=incomplete-uni-patterns" >> cabal.project
           cat >> cabal.project <<EOF
+          if impl ( ghc >= 9.14 )
+            allow-newer:
+              , *:base
+              , *:template-haskell
+              , aeson:containers
+              , aeson:indexed-traversable
+              , aeson:semialign
+              , aeson:time
+              , indexed-traversable:containers
           EOF
           cat cabal.project
           cat cabal.project.local
