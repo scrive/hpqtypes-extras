@@ -249,7 +249,7 @@ getDBTriggers tableName = do
     -- result.
     sqlResult "pg_get_triggerdef(t.oid, true)::text"
     sqlResult "p.proname::text"
-    sqlResult "p.prosrc" -- text
+    sqlResult "trim(p.prosrc)" -- text
     sqlResult "p.prosecdef" -- bool => true = SECURITY DEFINER, false = SECURITY INVOKER
     sqlResult "fn_rettype.typname::text"
     sqlResult "p.proconfig::text[]"
