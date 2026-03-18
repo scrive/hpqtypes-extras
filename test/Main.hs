@@ -1176,6 +1176,29 @@ bankTrigger4 =
           }
     }
 
+bankTrigger5 :: Trigger
+bankTrigger5 =
+  bankTrigger5WithWhiteSpace {
+    triggerFunction = (triggerFunction bankTrigger5WithWhiteSpace) {
+      fnBody = rawSQL (T.strip (unRawSQL (fnBody (triggerFunction bankTrigger5WithWhiteSpace)))) ()
+    }
+  }
+
+bankTrigger5WithWhiteSpace :: Trigger
+bankTrigger5WithWhiteSpace =
+  Trigger
+    { triggerTable = "bank"
+    , triggerName = "trigger_5"
+    , triggerKind = TriggerConstraint NotDeferrable
+    , triggerEvents = Set.fromList [TriggerInsert]
+    , triggerWhen = Nothing
+    , triggerFunction =
+        defaultTriggerFunction "trigger_5" $
+          "    begin"
+            <+> "  return null;"
+            <+> "end;  "
+    }
+
 bankTrigger2Proper :: Trigger
 bankTrigger2Proper =
   bankTrigger2 {triggerName = "trigger_2"}
@@ -1223,6 +1246,36 @@ testTriggers step = do
     triggerStep msg $ do
       assertNoException msg $ migrate ts ms
       verify [bankTrigger1] True
+
+  do
+    -- Test that we always pull trigger function bodies with stripped whitespace
+    -- from the database. This means that table definitions with unnecessary whitespace
+    -- get nudged to remove them.
+    let msg = "test succeeds validation with whitespaces in trigger definition"
+        ts =
+          [ tableBankSchema1
+              { tblVersion = 2
+              , tblTriggers = [bankTrigger5]
+              }
+          ]
+        ms = [createTriggerMigration 1 bankTrigger5WithWhiteSpace]
+    triggerStep msg $ do
+      assertNoException msg $ migrate ts ms
+      verify [bankTrigger5] True
+
+  do
+    -- Validates the above by checking if it correctly fails validation if
+    -- whitespace is seen in a trigger Haskell definition.
+    let msg = "test fails validation with whitespaces in trigger definition"
+        ts =
+          [ tableBankSchema1
+              { tblVersion = 2
+              , tblTriggers = [bankTrigger5WithWhiteSpace]
+              }
+          ]
+        ms = [createTriggerMigration 1 bankTrigger5WithWhiteSpace]
+    triggerStep msg $ do
+      assertException msg $ migrate ts ms
 
   do
     -- Attempt to create the same triggers twice. Should fail with a DBException saying
