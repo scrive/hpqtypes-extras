@@ -1178,11 +1178,12 @@ bankTrigger4 =
 
 bankTrigger5 :: Trigger
 bankTrigger5 =
-  bankTrigger5WithWhiteSpace {
-    triggerFunction = (triggerFunction bankTrigger5WithWhiteSpace) {
-      fnBody = rawSQL (T.strip (unRawSQL (fnBody (triggerFunction bankTrigger5WithWhiteSpace)))) ()
+  bankTrigger5WithWhiteSpace
+    { triggerFunction =
+        (triggerFunction bankTrigger5WithWhiteSpace)
+          { fnBody = rawSQL (T.strip (unRawSQL (fnBody (triggerFunction bankTrigger5WithWhiteSpace)))) ()
+          }
     }
-  }
 
 bankTrigger5WithWhiteSpace :: Trigger
 bankTrigger5WithWhiteSpace =
