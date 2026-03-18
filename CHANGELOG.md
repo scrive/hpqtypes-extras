@@ -1,5 +1,8 @@
 # hpqtypes-extras-1.20.0.0 (2026-??-??)
 * Move the dependency requirement on `crypton` to a version that does not depend on `memory`.
+* Add support for customizing trigger functions.
+* Adds a `Function` datatype and a `defaultTriggerFunction` backwards-compatible
+  trigger function helper.
 
 # hpqtypes-extras-1.19.0.0 (2025-11-27)
 * Compatibility with `hpqtypes` >= 0.13.0.0.

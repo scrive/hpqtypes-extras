@@ -21,6 +21,8 @@ import Database.PostgreSQL.PQTypes.SQL.Builder
 import Log
 import Log.Backend.StandardOutput
 
+import Data.Map qualified as M
+import Database.PostgreSQL.PQTypes.Model.Function
 import Test.Tasty
 import Test.Tasty.HUnit
 import Test.Tasty.Options
@@ -1120,19 +1122,20 @@ bankTrigger1 =
     , triggerEvents = Set.fromList [TriggerInsert]
     , triggerWhen = Nothing
     , triggerFunction =
-        "begin"
-          <+> "  perform true;"
-          <+> "  return null;"
-          <+> "end;"
+        defaultTriggerFunction "trigger_1" $
+          "begin"
+            <+> "  return null;"
+            <+> "end;"
     }
 
 bankTrigger2 :: Trigger
 bankTrigger2 =
   bankTrigger1
     { triggerFunction =
-        "begin"
-          <+> "  return null;"
-          <+> "end;"
+        defaultTriggerFunction "trigger_1" $
+          "begin"
+            <+> "  return null;"
+            <+> "end;"
     }
 
 bankTrigger3 :: Trigger
@@ -1144,10 +1147,57 @@ bankTrigger3 =
     , triggerEvents = Set.fromList [TriggerInsert, TriggerUpdateOf [unsafeSQL "location"]]
     , triggerWhen = Nothing
     , triggerFunction =
-        "begin"
-          <+> "  perform true;"
-          <+> "  return null;"
-          <+> "end;"
+        defaultTriggerFunction "trigger_3" $
+          "begin"
+            <+> "  return null;"
+            <+> "end;"
+    }
+
+bankTrigger4 :: Trigger
+bankTrigger4 =
+  Trigger
+    { triggerTable = "bank"
+    , triggerName = "trigger_4"
+    , triggerKind = TriggerConstraint DeferrableInitiallyDeferred
+    , triggerEvents = Set.fromList [TriggerInsert, TriggerUpdateOf [unsafeSQL "location"]]
+    , triggerWhen = Nothing
+    , triggerFunction =
+        Function
+          { fnName = "trigger_4_fun"
+          , fnSecurity = Definer
+          , fnConfigurationParameters = mempty
+          , fnReturns = "trigger"
+          , fnBody =
+              mconcat
+                [ "BEGIN"
+                , "    RETURN NULL;"
+                , "END;"
+                ]
+          }
+    }
+
+bankTrigger5 :: Trigger
+bankTrigger5 =
+  bankTrigger5WithWhiteSpace
+    { triggerFunction =
+        (triggerFunction bankTrigger5WithWhiteSpace)
+          { fnBody = rawSQL (T.strip (unRawSQL (fnBody (triggerFunction bankTrigger5WithWhiteSpace)))) ()
+          }
+    }
+
+bankTrigger5WithWhiteSpace :: Trigger
+bankTrigger5WithWhiteSpace =
+  Trigger
+    { triggerTable = "bank"
+    , triggerName = "trigger_5"
+    , triggerKind = TriggerConstraint NotDeferrable
+    , triggerEvents = Set.fromList [TriggerInsert]
+    , triggerWhen = Nothing
+    , triggerFunction =
+        defaultTriggerFunction "trigger_5" $
+          "    begin"
+            <+> "  return null;"
+            <+> "end;  "
     }
 
 bankTrigger2Proper :: Trigger
@@ -1197,6 +1247,36 @@ testTriggers step = do
     triggerStep msg $ do
       assertNoException msg $ migrate ts ms
       verify [bankTrigger1] True
+
+  do
+    -- Test that we always pull trigger function bodies with stripped whitespace
+    -- from the database. This means that table definitions with unnecessary whitespace
+    -- get nudged to remove them.
+    let msg = "test succeeds validation with whitespaces in trigger definition"
+        ts =
+          [ tableBankSchema1
+              { tblVersion = 2
+              , tblTriggers = [bankTrigger5]
+              }
+          ]
+        ms = [createTriggerMigration 1 bankTrigger5WithWhiteSpace]
+    triggerStep msg $ do
+      assertNoException msg $ migrate ts ms
+      verify [bankTrigger5] True
+
+  do
+    -- Validates the above by checking if it correctly fails validation if
+    -- whitespace is seen in a trigger Haskell definition.
+    let msg = "test fails validation with whitespaces in trigger definition"
+        ts =
+          [ tableBankSchema1
+              { tblVersion = 2
+              , tblTriggers = [bankTrigger5WithWhiteSpace]
+              }
+          ]
+        ms = [createTriggerMigration 1 bankTrigger5WithWhiteSpace]
+    triggerStep msg $ do
+      assertException msg $ migrate ts ms
 
   do
     -- Attempt to create the same triggers twice. Should fail with a DBException saying
@@ -1429,6 +1509,37 @@ testTriggers step = do
     triggerStep msg $ do
       assertNoException msg $ migrate ts ms
       verify [trg] True
+
+  do
+    -- Test that we can create custom trigger functions _and_ read them back
+    -- for validation.
+    let trigger = bankTrigger4
+        modTrigger f t = t {triggerFunction = f (triggerFunction trigger)}
+        triggerModifiers =
+          [ modTrigger (\fn -> fn {fnSecurity = Definer})
+          , modTrigger (\fn -> fn {fnSecurity = Invoker})
+          , modTrigger (\fn -> fn {fnConfigurationParameters = mempty})
+          , modTrigger (\fn -> fn {fnConfigurationParameters = M.singleton "search_path" "pg_catalog"})
+          ]
+    forM_ (zip [1 :: Int ..] (map (\f -> f trigger) triggerModifiers)) $ \(i, trg) -> do
+      let i' = show i
+          idSQL = rawSQL (T.pack (show i)) ()
+          msg = "successfully create trigger with custom functions: " <> i'
+          trg' =
+            trg
+              { triggerName = triggerName trg <> idSQL
+              , triggerFunction = (triggerFunction trg) {fnName = fnName (triggerFunction trg) <> idSQL}
+              }
+          ts =
+            [ tableBankSchema1
+                { tblVersion = 2
+                , tblTriggers = [trg']
+                }
+            ]
+          ms = [createTriggerMigration 1 trg']
+      triggerStep msg $ do
+        assertNoException msg $ migrate ts ms
+        verify [trg'] True
   where
     triggerStep msg rest = do
       recreateTriggerDB
@@ -1444,7 +1555,7 @@ testTriggers step = do
     verify :: (MonadIO m, MonadDB m, HasCallStack) => [Trigger] -> Bool -> m ()
     verify triggers present = do
       dbTriggers <- getDBTriggers "bank"
-      let trgs = map fst dbTriggers
+      let trgs = dbTriggers
           ok = all (`elem` trgs) triggers
           err = "Triggers " <> (if present then "" else "not ") <> "present in the database."
           trans = if present then id else not
