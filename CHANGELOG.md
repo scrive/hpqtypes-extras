@@ -3,6 +3,8 @@
 * Add support for customizing trigger functions.
 * Adds a `Function` datatype and a `defaultTriggerFunction` backwards-compatible
   trigger function helper.
+* Add cabal flag `memory` to be able to use the old memory package for
+  downstream compatibility.
 
 # hpqtypes-extras-1.19.0.0 (2025-11-27)
 * Compatibility with `hpqtypes` >= 0.13.0.0.
