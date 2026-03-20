@@ -20,8 +20,7 @@ module Database.PostgreSQL.PQTypes.Model.Index
   , sqlDropIndexConcurrently
   ) where
 
-import Crypto.Hash qualified as H
-import Data.ByteArray qualified as BA
+import Crypto.Hash.RIPEMD160 qualified as RIPEMD160
 import Data.ByteString.Base16 qualified as B16
 import Data.ByteString.Char8 qualified as BS
 import Data.Char
@@ -191,8 +190,7 @@ indexName tname TableIndex {..} =
         T.decodeUtf8
           . B16.encode
           . BS.take 10
-          . BA.convert
-          . H.hash @_ @H.RIPEMD160
+          . RIPEMD160.hash
           . T.encodeUtf8
 
 -- | Create an index. Warning: if the affected table is large, this will prevent

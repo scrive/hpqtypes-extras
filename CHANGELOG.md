@@ -1,5 +1,5 @@
 # hpqtypes-extras-1.20.0.0 (2026-??-??)
-* Move the dependency requirement on `crypton` to a version that does not depend on `memory`.
+* Drop `crypton` dependency in favor of `ppad-ripemd160`.
 * Add support for customizing trigger functions.
 * Adds a `Function` datatype and a `defaultTriggerFunction` backwards-compatible
   trigger function helper.
