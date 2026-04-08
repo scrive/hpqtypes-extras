@@ -2325,6 +2325,102 @@ nullsNotDistinctTests connSource = do
             ]
         }
 
+reservedWordColumnTests :: ConnectionSourceM (LogT IO) -> TestTree
+reservedWordColumnTests connSource =
+  testCaseSteps' "Reserved word column tests" connSource $ \step -> do
+    freshTestDB step
+
+    step "Create a table with a plain index on a 'timestamp' column"
+    assertNoException "Table with index on 'timestamp' column should be created successfully" $ do
+      let definitions = tableDefsWithPgCrypto [tableWithTimestampIndex]
+      migrateDatabase
+        defaultExtrasOptions
+        definitions
+        [createTableMigration tableWithTimestampIndex]
+      checkDatabase defaultExtrasOptions definitions
+
+    freshTestDB step
+
+    step "Create a table with a unique index on a 'timestamp' column"
+    assertNoException "Table with unique index on 'timestamp' column should be created successfully" $ do
+      let definitions = tableDefsWithPgCrypto [tableWithUniqueTimestampIndex]
+      migrateDatabase
+        defaultExtrasOptions
+        definitions
+        [createTableMigration tableWithUniqueTimestampIndex]
+      checkDatabase defaultExtrasOptions definitions
+
+    freshTestDB step
+
+    step "Create a table with a composite index including a 'timestamp' column"
+    assertNoException "Table with composite index on 'timestamp' column should be created successfully" $ do
+      let definitions = tableDefsWithPgCrypto [tableWithCompositeTimestampIndex]
+      migrateDatabase
+        defaultExtrasOptions
+        definitions
+        [createTableMigration tableWithCompositeTimestampIndex]
+      checkDatabase defaultExtrasOptions definitions
+
+    freshTestDB step
+
+    step "Attempt to create a table with an index on a 'select' column"
+    assertException "Table with index on 'select' column can't be created" $ do
+      let definitions = tableDefsWithPgCrypto [tableWithSelectIndex]
+      migrateDatabase
+        defaultExtrasOptions
+        definitions
+        [createTableMigration tableWithSelectIndex]
+      checkDatabase defaultExtrasOptions definitions
+  where
+    tableWithTimestampIndex =
+      tblTable
+        { tblName = "reserved_word_test1"
+        , tblVersion = 1
+        , tblColumns =
+            [ tblColumn {colName = "id", colType = UuidT, colNullable = False, colDefault = Just "gen_random_uuid()"}
+            , tblColumn {colName = "timestamp", colType = TimestampWithZoneT, colNullable = False}
+            ]
+        , tblPrimaryKey = pkOnColumn "id"
+        , tblIndexes = [indexOnColumn "timestamp"]
+        }
+
+    tableWithUniqueTimestampIndex =
+      tblTable
+        { tblName = "reserved_word_test2"
+        , tblVersion = 1
+        , tblColumns =
+            [ tblColumn {colName = "id", colType = UuidT, colNullable = False, colDefault = Just "gen_random_uuid()"}
+            , tblColumn {colName = "timestamp", colType = TimestampWithZoneT, colNullable = False}
+            ]
+        , tblPrimaryKey = pkOnColumn "id"
+        , tblIndexes = [uniqueIndexOnColumn "timestamp"]
+        }
+
+    tableWithCompositeTimestampIndex =
+      tblTable
+        { tblName = "reserved_word_test3"
+        , tblVersion = 1
+        , tblColumns =
+            [ tblColumn {colName = "id", colType = UuidT, colNullable = False, colDefault = Just "gen_random_uuid()"}
+            , tblColumn {colName = "timestamp", colType = TimestampWithZoneT, colNullable = False}
+            , tblColumn {colName = "name", colType = TextT, colNullable = True}
+            ]
+        , tblPrimaryKey = pkOnColumn "id"
+        , tblIndexes = [indexOnColumns [indexColumn "timestamp", indexColumn "name"]]
+        }
+
+    tableWithSelectIndex =
+      tblTable
+        { tblName = "reserved_word_test4"
+        , tblVersion = 1
+        , tblColumns =
+            [ tblColumn {colName = "id", colType = UuidT, colNullable = False, colDefault = Just "gen_random_uuid()"}
+            , tblColumn {colName = "select", colType = TextT, colNullable = True}
+            ]
+        , tblPrimaryKey = pkOnColumn "id"
+        , tblIndexes = [indexOnColumn "select"]
+        }
+
 sqlAnyAllTests :: TestTree
 sqlAnyAllTests =
   testGroup
@@ -2551,6 +2647,7 @@ main = do
           , foreignKeyIndexesTests connSource
           , overlapingIndexesTests connSource
           , nullsNotDistinctTests connSource
+          , reservedWordColumnTests connSource
           , sqlAnyAllTests
           , enumTest connSource
           ]
