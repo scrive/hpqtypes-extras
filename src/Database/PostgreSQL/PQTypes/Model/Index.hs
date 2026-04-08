@@ -77,16 +77,7 @@ indexColumnName (IndexColumn col _) = col
 data IndexMethod
   = BTree
   | GIN
-  deriving (Eq, Ord)
-
-instance Show IndexMethod where
-  show BTree = "btree"
-  show GIN = "gin"
-
-instance Read IndexMethod where
-  readsPrec _ (map toLower -> "btree") = [(BTree, "")]
-  readsPrec _ (map toLower -> "gin") = [(GIN, "")]
-  readsPrec _ _ = []
+  deriving (Eq, Ord, Show)
 
 tblIndex :: TableIndex
 tblIndex =

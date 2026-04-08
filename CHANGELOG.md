@@ -3,6 +3,7 @@
 * Add support for customizing trigger functions.
 * Adds a `Function` datatype and a `defaultTriggerFunction` backwards-compatible
   trigger function helper.
+* Remove `Read` instance of `IndexMethod`.
 
 # hpqtypes-extras-1.19.0.0 (2025-11-27)
 * Compatibility with `hpqtypes` >= 0.13.0.0.
