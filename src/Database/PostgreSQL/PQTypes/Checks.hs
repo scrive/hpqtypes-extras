@@ -950,8 +950,10 @@ checkDBConsistency options domains enums tablesWithVersions migrations = do
             [ mgrs | mgrs <- migrationsByTable, any isDropTableMigration mgrs
             ]
           invalidMigrationLists =
-            [ mgrs | mgrs <- dropMigrationLists, (not . isDropTableMigration . last $ mgrs)
-                                                  || (length . filter isDropTableMigration $ mgrs) > 1
+            [ mgrs
+            | mgrs <- dropMigrationLists
+            , (not . isDropTableMigration . last $ mgrs)
+                || (length . filter isDropTableMigration $ mgrs) > 1
             ]
 
       unless (null invalidMigrationLists) $ do
@@ -1550,7 +1552,6 @@ fetchTableIndex (name, Array1 keyColumns, Array1 includeColumns, method, unique,
     stripIdentifierQuotes str = case fmap T.unsnoc <$> T.uncons str of
       Just ('"', Just (identifier, '"')) -> identifier
       _ -> str
-
 
 -- *** FOREIGN KEYS ***
 
