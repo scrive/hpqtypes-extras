@@ -1465,10 +1465,10 @@ sqlGetPrimaryKey table = do
 
       join <$> fetchMaybe fetchPrimaryKey
 
-fetchPrimaryKey :: (String, Array1 String) -> Maybe (PrimaryKey, RawSQL ())
+fetchPrimaryKey :: (Text, Array1 Text) -> Maybe (PrimaryKey, RawSQL ())
 fetchPrimaryKey (name, Array1 columns) =
-  (,unsafeSQL name)
-    <$> pkOnColumns (map unsafeSQL columns)
+  (,rawSQL name ())
+    <$> pkOnColumns (map (`rawSQL` ()) columns)
 
 -- *** CHECKS ***
 
@@ -1482,11 +1482,11 @@ sqlGetChecks table = toSQLCommand . sqlSelect "pg_catalog.pg_constraint c" $ do
   sqlWhereEq "c.contype" 'c'
   sqlWhereEqSql "c.conrelid" $ sqlGetTableID table
 
-fetchTableCheck :: (String, String, Bool) -> Check
+fetchTableCheck :: (Text, Text, Bool) -> Check
 fetchTableCheck (name, condition, validated) =
   Check
-    { chkName = unsafeSQL name
-    , chkCondition = unsafeSQL condition
+    { chkName = rawSQL name ()
+    , chkCondition = rawSQL condition ()
     , chkValidated = validated
     }
 
@@ -1530,18 +1530,21 @@ sqlGetIndexes nullsNotDistinctSupported table = toSQLCommand . sqlSelect "pg_cat
         ]
 
 fetchTableIndex
-  :: (String, Array1 String, Array1 String, String, Bool, Bool, Maybe String)
+  :: (Text, Array1 Text, Array1 Text, Text, Bool, Bool, Maybe Text)
   -> (TableIndex, RawSQL ())
 fetchTableIndex (name, Array1 keyColumns, Array1 includeColumns, method, unique, nullsNotDistinct, mconstraint) =
   ( TableIndex
-      { idxColumns = map (indexColumn . unsafeSQL) keyColumns
-      , idxInclude = map unsafeSQL includeColumns
-      , idxMethod = read method
+      { idxColumns = map (indexColumn . (`rawSQL` ())) keyColumns
+      , idxInclude = map (`rawSQL` ()) includeColumns
+      , idxMethod = case method of
+          "gin" -> GIN
+          "btree" -> BTree
+          _ -> error $ "unexpected index method: " ++ T.unpack method
       , idxUnique = unique
-      , idxWhere = unsafeSQL <$> mconstraint
+      , idxWhere = (`rawSQL` ()) <$> mconstraint
       , idxNotDistinctNulls = nullsNotDistinct
       }
-  , unsafeSQL name
+  , rawSQL name ()
   )
 
 -- *** FOREIGN KEYS ***
@@ -1583,7 +1586,7 @@ sqlGetForeignKeys table = toSQLCommand
         <> ", 1) AS n"
 
 fetchForeignKey
-  :: (String, Array1 String, String, Array1 String, Char, Char, Bool, Bool, Bool)
+  :: (Text, Array1 Text, Text, Array1 Text, Char, Char, Bool, Bool, Bool)
   -> (ForeignKey, RawSQL ())
 fetchForeignKey
   ( name
@@ -1597,16 +1600,16 @@ fetchForeignKey
     , validated
     ) =
     ( ForeignKey
-        { fkColumns = map unsafeSQL columns
-        , fkRefTable = unsafeSQL reftable
-        , fkRefColumns = map unsafeSQL refcolumns
+        { fkColumns = map (`rawSQL` ()) columns
+        , fkRefTable = rawSQL reftable ()
+        , fkRefColumns = map (`rawSQL` ()) refcolumns
         , fkOnUpdate = charToForeignKeyAction on_update
         , fkOnDelete = charToForeignKeyAction on_delete
         , fkDeferrable = deferrable
         , fkDeferred = deferred
         , fkValidated = validated
         }
-    , unsafeSQL name
+    , rawSQL name ()
     )
     where
       charToForeignKeyAction c = case c of
