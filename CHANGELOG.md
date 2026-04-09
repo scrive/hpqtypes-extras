@@ -4,6 +4,7 @@
 * Adds a `Function` datatype and a `defaultTriggerFunction` backwards-compatible
   trigger function helper.
 * Remove `Read` instance of `IndexMethod`.
+* Allow using nonreserved keywords, e.g. `timestamp`, in table indices.
 
 # hpqtypes-extras-1.19.0.0 (2025-11-27)
 * Compatibility with `hpqtypes` >= 0.13.0.0.

@@ -950,8 +950,10 @@ checkDBConsistency options domains enums tablesWithVersions migrations = do
             [ mgrs | mgrs <- migrationsByTable, any isDropTableMigration mgrs
             ]
           invalidMigrationLists =
-            [ mgrs | mgrs <- dropMigrationLists, (not . isDropTableMigration . last $ mgrs)
-                                                  || (length . filter isDropTableMigration $ mgrs) > 1
+            [ mgrs
+            | mgrs <- dropMigrationLists
+            , (not . isDropTableMigration . last $ mgrs)
+                || (length . filter isDropTableMigration $ mgrs) > 1
             ]
 
       unless (null invalidMigrationLists) $ do
@@ -1534,8 +1536,8 @@ fetchTableIndex
   -> (TableIndex, RawSQL ())
 fetchTableIndex (name, Array1 keyColumns, Array1 includeColumns, method, unique, nullsNotDistinct, mconstraint) =
   ( TableIndex
-      { idxColumns = map (indexColumn . (`rawSQL` ())) keyColumns
-      , idxInclude = map (`rawSQL` ()) includeColumns
+      { idxColumns = map (indexColumn . (`rawSQL` ()) . stripIdentifierQuotes) keyColumns
+      , idxInclude = map ((`rawSQL` ()) . stripIdentifierQuotes) includeColumns
       , idxMethod = case method of
           "gin" -> GIN
           "btree" -> BTree
@@ -1546,6 +1548,10 @@ fetchTableIndex (name, Array1 keyColumns, Array1 includeColumns, method, unique,
       }
   , rawSQL name ()
   )
+  where
+    stripIdentifierQuotes str = case fmap T.unsnoc <$> T.uncons str of
+      Just ('"', Just (identifier, '"')) -> identifier
+      _ -> str
 
 -- *** FOREIGN KEYS ***
 
