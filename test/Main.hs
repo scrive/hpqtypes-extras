@@ -2623,6 +2623,67 @@ tableDefsWithPgCrypto tables =
               ]
         }
 
+numericColumnTypeTestTable :: Table
+numericColumnTypeTestTable =
+  tblTable
+    { tblName = "unicorns"
+    , tblVersion = 1
+    , tblColumns =
+        [ tblColumn
+            { colName = "id"
+            , colType = UuidT
+            , colNullable = False
+            , colDefault = Just "gen_random_uuid()"
+            }
+        , tblColumn
+            { colName = "balance"
+            , colType = NumericT Nothing
+            , colCollation = Nothing
+            , colNullable = False
+            }
+        , tblColumn
+            { colName = "employees"
+            , colType = NumericT (Just (5, Nothing))
+            , colCollation = Nothing
+            , colNullable = False
+            }
+        , tblColumn
+            { colName = "foo"
+            , colType = NumericT (Just (5, Just 2))
+            , colCollation = Nothing
+            , colNullable = False
+            }
+        ]
+    , tblPrimaryKey = pkOnColumn "id"
+    , tblTriggers = []
+    }
+
+numericColumnTypeTestMigration :: MonadDB m => Migration m
+numericColumnTypeTestMigration =
+  let tableName = tblName numericColumnTypeTestTable
+  in Migration
+       { mgrTableName = tableName
+       , mgrFrom = 0
+       , mgrAction = StandardMigration $ do
+           runQuery_
+             $ sqlAlterTable
+               tableName
+             $ sqlAddColumn <$> tblColumns numericColumnTypeTestTable
+       }
+
+numericColumnTypeTest :: ConnectionSourceM (LogT IO) -> TestTree
+numericColumnTypeTest connSource =
+  testCaseSteps' "NUMERIC column test" connSource $ \step -> do
+    freshTestDB step
+
+    let dbDefinitions = emptyDbDefinitions {dbTables = [numericColumnTypeTestTable]}
+
+    step "run the migration"
+    migrateDatabase defaultExtrasOptions dbDefinitions [numericColumnTypeTestMigration]
+
+    step "check database"
+    checkDatabase defaultExtrasOptions dbDefinitions
+
 main :: IO ()
 main = do
   defaultMainWithIngredients ings $
@@ -2650,6 +2711,7 @@ main = do
            , reservedWordColumnTests connSource
            , sqlAnyAllTests
            , enumTest connSource
+           , numericColumnTypeTest connSource
            ]
   where
     ings =

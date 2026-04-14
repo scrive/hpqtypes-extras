@@ -3,6 +3,8 @@ module Database.PostgreSQL.PQTypes.Model.ColumnType
   , columnTypeToSQL
   ) where
 
+import Data.Attoparsec.Text qualified as A
+import Data.Functor
 import Data.Text qualified as T
 import Database.PostgreSQL.PQTypes
 
@@ -25,6 +27,7 @@ data ColumnType
   | XmlT
   | ArrayT !ColumnType
   | CustomT !(RawSQL ())
+  | NumericT !(Maybe (Int, Maybe Int))
   deriving (Eq, Ord, Show)
 
 instance PQFormat ColumnType where
@@ -32,27 +35,54 @@ instance PQFormat ColumnType where
 instance FromSQL ColumnType where
   type PQBase ColumnType = PQBase T.Text
   fromSQL mbase = parseType . T.toLower <$> fromSQL mbase
-    where
-      parseType :: T.Text -> ColumnType
-      parseType = \case
-        "bigint" -> BigIntT
-        "bytea" -> BinaryT
-        "boolean" -> BoolT
-        "date" -> DateT
-        "double precision" -> DoubleT
-        "integer" -> IntegerT
-        "uuid" -> UuidT
-        "interval" -> IntervalT
-        "json" -> JsonT
-        "jsonb" -> JsonbT
-        "smallint" -> SmallIntT
-        "text" -> TextT
-        "timestamp with time zone" -> TimestampWithZoneT
-        "tsvector" -> TSVectorT
-        "xml" -> XmlT
-        tname
-          | "[]" `T.isSuffixOf` tname -> ArrayT . parseType $ T.take (T.length tname - 2) tname
-          | otherwise -> CustomT $ rawSQL tname ()
+
+parseType :: T.Text -> ColumnType
+parseType = \case
+  "bigint" -> BigIntT
+  "bytea" -> BinaryT
+  "boolean" -> BoolT
+  "date" -> DateT
+  "double precision" -> DoubleT
+  "integer" -> IntegerT
+  "uuid" -> UuidT
+  "interval" -> IntervalT
+  "json" -> JsonT
+  "jsonb" -> JsonbT
+  "smallint" -> SmallIntT
+  "text" -> TextT
+  "timestamp with time zone" -> TimestampWithZoneT
+  "tsvector" -> TSVectorT
+  "xml" -> XmlT
+  tname -> case parseNumeric tname of
+    Just t -> t
+    Nothing
+      | "[]" `T.isSuffixOf` tname -> ArrayT . parseType $ T.take (T.length tname - 2) tname
+      | otherwise -> CustomT $ rawSQL tname ()
+
+parseNumeric :: T.Text -> Maybe ColumnType
+parseNumeric tname =
+  let inParens p = A.string "(" *> p <* A.string ")"
+      comma = A.string "," $> ()
+      scale = do
+        s <- A.signed A.decimal
+        pure $
+          if s == 0
+            then
+              Nothing
+            else
+              Just s
+      precisionAndScale = Just <$> inParens ((,) <$> (A.decimal <* comma) <*> scale)
+      precisionOnly = Just . (,Nothing) <$> inParens A.decimal
+      numericParser =
+        NumericT
+          <$> ( A.string "numeric"
+                  *> A.choice
+                    [ precisionAndScale
+                    , precisionOnly
+                    , pure Nothing
+                    ]
+              )
+  in either (const Nothing) Just $ A.parseOnly numericParser tname
 
 columnTypeToSQL :: ColumnType -> RawSQL ()
 columnTypeToSQL BigIntT = "BIGINT"
@@ -73,3 +103,15 @@ columnTypeToSQL TimestampWithZoneT = "TIMESTAMPTZ"
 columnTypeToSQL XmlT = "XML"
 columnTypeToSQL (ArrayT t) = columnTypeToSQL t <> "[]"
 columnTypeToSQL (CustomT tname) = tname
+columnTypeToSQL (NumericT mPrecision) =
+  let typeName =
+        "NUMERIC"
+          <> case mPrecision of
+            Just (precision, mScale) ->
+              "("
+                <> T.pack (show precision)
+                <> case mScale of
+                  Just scale -> "," <> T.pack (show scale) <> ")"
+                  Nothing -> ")"
+            Nothing -> ""
+  in rawSQL typeName ()
