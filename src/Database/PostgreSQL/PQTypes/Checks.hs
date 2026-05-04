@@ -596,18 +596,18 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version)
             sqlWhere "a.atthasdef"
         sqlWhere "a.attnum > 0"
         sqlWhere "NOT a.attisdropped"
-        sqlWhereEqSql "a.attrelid" $ sqlGetTableID table
+        sqlWhereEqSql "a.attrelid" $ sqlGetTableID tblName
         sqlOrderBy "a.attnum"
       desc <- fetchMany fetchTableColumn
 
       isAbove15 <- checkVersionIsAtLeast15
       -- get info about constraints from pg_catalog
-      pk <- sqlGetPrimaryKey table
-      runQuery_ $ sqlGetChecks table
+      pk <- sqlGetPrimaryKey tblName
+      runQuery_ $ sqlGetChecks tblName
       checks <- fetchMany fetchTableCheck
-      runQuery_ $ sqlGetIndexes isAbove15 table
+      runQuery_ $ sqlGetIndexes isAbove15 tblName Nothing
       indexes <- fetchMany fetchTableIndex
-      runQuery_ $ sqlGetForeignKeys table
+      runQuery_ $ sqlGetForeignKeys tblName
       fkeys <- fetchMany fetchForeignKey
       triggers <- getDBTriggers tblName
       checkedOverlaps <- checkOverlappingIndexes tblName
@@ -1126,23 +1126,43 @@ checkDBConsistency options domains enums tablesWithVersions migrations = do
               mgrDropTableMode
           runQuery_ $ sqlDelete "table_versions" $ do
             sqlWhereEq "name" (T.unpack . unRawSQL $ mgrTableName)
-        CreateIndexConcurrentlyMigration tname idx -> do
+        CreateIndexConcurrentlyMigration mLocalIndexName tableName idx -> do
           logMigration
+          indexSet <- case mLocalIndexName of
+            Nothing -> pure False
+            Just localIndexName -> do
+              isAbove15 <- checkVersionIsAtLeast15
+              runQuery_ $ sqlGetIndexes isAbove15 tableName (Just localIndexName)
+              fetchMaybe fetchTableIndex >>= \case
+                Nothing -> do
+                  logInfo_ "Local index not found"
+                  pure False
+                Just (localIdx, _) -> do
+                  when (localIdx /= idx) $ do
+                    logInfo "Local index doesn't match the definition" $
+                      object
+                        [ "index_local" .= show localIdx
+                        , "index_definition" .= show idx
+                        ]
+                    error "Indexes don't match"
+                  logInfo_ "Local index found, renaming"
+                  runQuery_ $ "ALTER INDEX" <+> localIndexName <+> "RENAME TO" <+> indexName tableName idx
+                  pure True
           -- We're in auto transaction mode (as ensured at the beginning of
           -- 'checkDBConsistency'), so we need to issue explicit SQL commit,
           -- because using 'commit' function automatically starts another
           -- transaction. We don't want that as concurrent creation of index
           -- won't run inside a transaction.
-          unsafeWithoutTransaction $ do
+          unless indexSet . unsafeWithoutTransaction $ do
             -- If migration was run before but creation of an index failed, index
             -- will be left in the database in an inactive state, so when we
             -- rerun, we need to remove it first (see
             -- https://www.postgresql.org/docs/9.6/sql-createindex.html for more
             -- information).
-            runQuery_ $ "DROP INDEX CONCURRENTLY IF EXISTS" <+> indexName tname idx
-            runQuery_ (sqlCreateIndexConcurrently tname idx)
+            runQuery_ $ "DROP INDEX CONCURRENTLY IF EXISTS" <+> indexName tableName idx
+            runQuery_ (sqlCreateIndexConcurrently tableName idx)
           updateTableVersion
-        DropIndexConcurrentlyMigration tname idx -> do
+        DropIndexConcurrentlyMigration tableName idx -> do
           logMigration
           -- We're in auto transaction mode (as ensured at the beginning of
           -- 'checkDBConsistency'), so we need to issue explicit SQL commit,
@@ -1150,7 +1170,7 @@ checkDBConsistency options domains enums tablesWithVersions migrations = do
           -- transaction. We don't want that as concurrent dropping of index
           -- won't run inside a transaction.
           unsafeWithoutTransaction $ do
-            runQuery_ (sqlDropIndexConcurrently tname idx)
+            runQuery_ (sqlDropIndexConcurrently tableName idx)
           updateTableVersion
         ModifyColumnMigration tableName cursorSql updateSql batchSize -> do
           logMigration
@@ -1413,25 +1433,25 @@ checkTableVersion tblName = do
 
 -- *** TABLE STRUCTURE ***
 
-sqlGetTableID :: Table -> SQL
-sqlGetTableID table = parenthesize . toSQLCommand $
+sqlGetTableID :: RawSQL () -> SQL
+sqlGetTableID tableName = parenthesize . toSQLCommand $
   sqlSelect "pg_catalog.pg_class c" $ do
     sqlResult "c.oid"
     sqlLeftJoinOn "pg_catalog.pg_namespace n" "n.oid = c.relnamespace"
-    sqlWhereEq "c.relname" $ tblNameString table
+    sqlWhereEq "c.relname" $ unRawSQL tableName
     sqlWhere "pg_catalog.pg_table_is_visible(c.oid)"
 
 -- *** PRIMARY KEY ***
 
 sqlGetPrimaryKey
   :: (MonadDB m, MonadThrow m)
-  => Table
+  => RawSQL ()
   -> m (Maybe (PrimaryKey, RawSQL ()))
-sqlGetPrimaryKey table = do
+sqlGetPrimaryKey tableName = do
   (mColumnNumbers :: Maybe [Int16]) <- do
     runQuery_ . sqlSelect "pg_catalog.pg_constraint" $ do
       sqlResult "conkey"
-      sqlWhereEqSql "conrelid" (sqlGetTableID table)
+      sqlWhereEqSql "conrelid" $ sqlGetTableID tableName
       sqlWhereEq "contype" 'p'
     fetchMaybe $ unArray1 . runIdentity
 
@@ -1443,14 +1463,14 @@ sqlGetPrimaryKey table = do
           runQuery_ . sqlSelect "pk_columns" $ do
             sqlWith "key_series" . sqlSelect "pg_constraint as c2" $ do
               sqlResult "unnest(c2.conkey) as k"
-              sqlWhereEqSql "c2.conrelid" $ sqlGetTableID table
+              sqlWhereEqSql "c2.conrelid" $ sqlGetTableID tableName
               sqlWhereEq "c2.contype" 'p'
 
             sqlWith "pk_columns" . sqlSelect "key_series" $ do
               sqlJoinOn "pg_catalog.pg_attribute as a" "a.attnum = key_series.k"
               sqlResult "a.attname::text as column_name"
               sqlResult "key_series.k as column_order"
-              sqlWhereEqSql "a.attrelid" $ sqlGetTableID table
+              sqlWhereEqSql "a.attrelid" $ sqlGetTableID tableName
 
             sqlResult "pk_columns.column_name"
             sqlWhereEq "pk_columns.column_order" k
@@ -1459,7 +1479,7 @@ sqlGetPrimaryKey table = do
 
       runQuery_ . sqlSelect "pg_catalog.pg_constraint as c" $ do
         sqlWhereEq "c.contype" 'p'
-        sqlWhereEqSql "c.conrelid" $ sqlGetTableID table
+        sqlWhereEqSql "c.conrelid" $ sqlGetTableID tableName
         sqlResult "c.conname::text"
         sqlResult $
           Data.String.fromString
@@ -1474,15 +1494,15 @@ fetchPrimaryKey (name, Array1 columns) =
 
 -- *** CHECKS ***
 
-sqlGetChecks :: Table -> SQL
-sqlGetChecks table = toSQLCommand . sqlSelect "pg_catalog.pg_constraint c" $ do
+sqlGetChecks :: RawSQL () -> SQL
+sqlGetChecks tableName = toSQLCommand . sqlSelect "pg_catalog.pg_constraint c" $ do
   sqlResult "c.conname::text"
   sqlResult
     "regexp_replace(pg_get_constraintdef(c.oid, true), \
     \'CHECK \\((.*)\\)', '\\1') AS body" -- check body
   sqlResult "c.convalidated" -- validated?
   sqlWhereEq "c.contype" 'c'
-  sqlWhereEqSql "c.conrelid" $ sqlGetTableID table
+  sqlWhereEqSql "c.conrelid" $ sqlGetTableID tableName
 
 fetchTableCheck :: (Text, Text, Bool) -> Check
 fetchTableCheck (name, condition, validated) =
@@ -1493,8 +1513,8 @@ fetchTableCheck (name, condition, validated) =
     }
 
 -- *** INDEXES ***
-sqlGetIndexes :: Bool -> Table -> SQL
-sqlGetIndexes nullsNotDistinctSupported table = toSQLCommand . sqlSelect "pg_catalog.pg_class c" $ do
+sqlGetIndexes :: Bool -> RawSQL () -> Maybe (RawSQL ()) -> SQL
+sqlGetIndexes nullsNotDistinctSupported tableName mname = toSQLCommand . sqlSelect "pg_catalog.pg_class c" $ do
   sqlResult "c.relname::text" -- index name
   sqlResult $ "ARRAY(" <> selectCoordinates "0" "i.indnkeyatts" <> ")" -- array of key columns in the index
   sqlResult $ "ARRAY(" <> selectCoordinates "i.indnkeyatts" "i.indnatts" <> ")" -- array of included columns in the index
@@ -1515,8 +1535,9 @@ sqlGetIndexes nullsNotDistinctSupported table = toSQLCommand . sqlSelect "pg_cat
   -- weren't successfully built by it) are marked as invalid, so we don't want
   -- to consider them at a time.
   sqlWhere "i.indisvalid"
-  sqlWhereEqSql "i.indrelid" $ sqlGetTableID table
+  sqlWhereEqSql "i.indrelid" $ sqlGetTableID tableName
   sqlWhereIsNULL "r.contype" -- fetch only "pure" indexes
+  forM_ mname $ sqlWhereEq "c.relname" . unRawSQL
   where
     -- Get all coordinates of the index.
     selectCoordinates start end =
@@ -1555,8 +1576,8 @@ fetchTableIndex (name, Array1 keyColumns, Array1 includeColumns, method, unique,
 
 -- *** FOREIGN KEYS ***
 
-sqlGetForeignKeys :: Table -> SQL
-sqlGetForeignKeys table = toSQLCommand
+sqlGetForeignKeys :: RawSQL () -> SQL
+sqlGetForeignKeys tableName = toSQLCommand
   . sqlSelect "pg_catalog.pg_constraint r"
   $ do
     sqlResult "r.conname::text" -- fk name
@@ -1580,7 +1601,7 @@ sqlGetForeignKeys table = toSQLCommand
     sqlResult "r.condeferred" -- initially deferred?
     sqlResult "r.convalidated" -- validated?
     sqlJoinOn "pg_catalog.pg_class c" "c.oid = r.confrelid"
-    sqlWhereEqSql "r.conrelid" $ sqlGetTableID table
+    sqlWhereEqSql "r.conrelid" $ sqlGetTableID tableName
     sqlWhereEq "r.contype" 'f'
   where
     unnestWithOrdinality :: RawSQL () -> SQL
