@@ -147,19 +147,35 @@ tableBankMigration5snd =
     , mgrFrom = 3
     , mgrAction =
         CreateIndexConcurrentlyMigration
+          (Just "local_idx_doesnt_exist")
           (tblName tableBankSchema3)
           ((indexOnColumn "name") {idxInclude = ["id", "location"]})
+    }
+
+tableBankMigration5thrd :: MonadDB m => Migration m
+tableBankMigration5thrd =
+  Migration
+    { mgrTableName = tblName tableBankSchema3
+    , mgrFrom = 4
+    , mgrAction =
+        CreateIndexConcurrentlyMigration
+          (Just localBankIndexToRename)
+          (tblName tableBankSchema3)
+          (indexOnColumns ["id", "name"])
     }
 
 tableBankSchema5 :: Table
 tableBankSchema5 =
   tableBankSchema4
-    { tblVersion = tblVersion tableBankSchema4 + 2
+    { tblVersion = tblVersion tableBankSchema4 + 3
     , tblColumns =
         filter
           (\c -> colName c /= "cash")
           (tblColumns tableBankSchema4)
-    , tblIndexes = [(indexOnColumn "name") {idxInclude = ["id", "location"]}]
+    , tblIndexes =
+        [ (indexOnColumn "name") {idxInclude = ["id", "location"]}
+        , indexOnColumns ["id", "name"]
+        ]
     }
 
 tableBadGuySchema1 :: Table
@@ -557,6 +573,7 @@ schema5Migrations =
     ++ [ createTableMigration tableFlash
        , tableBankMigration5fst
        , tableBankMigration5snd
+       , tableBankMigration5thrd
        , dropTableMigration tableFlash
        ]
 
@@ -589,6 +606,9 @@ schema6Migrations =
 
 type TestM a = DBT (LogT IO) a
 
+localBankIndexToRename :: RawSQL ()
+localBankIndexToRename = "local_idx_bank_id_name"
+
 createTablesSchema1 :: (String -> TestM ()) -> TestM ()
 createTablesSchema1 step = do
   let definitions = tableDefsWithPgCrypto schema1Tables
@@ -597,6 +617,9 @@ createTablesSchema1 step = do
 
   -- Add a local index that shouldn't trigger validation errors.
   runSQL_ "CREATE INDEX local_idx_bank_name ON bank(name)"
+
+  -- Add a local index that will be renamed during a migration later.
+  runQuery_ $ "CREATE INDEX" <+> localBankIndexToRename <+> "ON bank(id, name)"
 
   checkDatabase defaultExtrasOptions definitions
 
