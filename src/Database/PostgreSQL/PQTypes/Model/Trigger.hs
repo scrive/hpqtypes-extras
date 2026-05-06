@@ -298,8 +298,8 @@ getDBTriggers tableName = do
         parseBetween left right =
           let (prefix, match) = Text.breakOnEnd left $ Text.pack triggerdef
           in if Text.null prefix
-              then Nothing
-              else Just $ (rawSQL . fst $ Text.breakOn right match) ()
+               then Nothing
+               else Just $ (rawSQL . fst $ Text.breakOn right match) ()
 
         -- Get the WHEN part of the query. Anything between WHEN and EXECUTE is what we
         -- want. The Postgres' grammar guarantees that WHEN and EXECUTE are always next to

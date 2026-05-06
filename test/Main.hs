@@ -119,11 +119,11 @@ tableBankSchema4 =
     , tblColumns =
         tblColumns tableBankSchema3
           ++ [ tblColumn
-                { colName = "cash"
-                , colType = IntegerT
-                , colNullable = False
-                , colDefault = Just "0"
-                }
+                 { colName = "cash"
+                 , colType = IntegerT
+                 , colNullable = False
+                 , colDefault = Just "0"
+                 }
              ]
     }
 
@@ -2633,24 +2633,24 @@ main = do
               }
           ConnectionSource connSource = simpleSource connSettings
       in testGroup
-          "DB tests"
-          [ migrationTest1 connSource
-          , migrationTest2 connSource
-          , migrationTest3 connSource
-          , migrationTest4 connSource
-          , migrationTest5 connSource
-          , triggerTests connSource
-          , sqlWithTests connSource
-          , unionTests connSource
-          , unionAllTests connSource
-          , sqlWithRecursiveTests connSource
-          , foreignKeyIndexesTests connSource
-          , overlapingIndexesTests connSource
-          , nullsNotDistinctTests connSource
-          , reservedWordColumnTests connSource
-          , sqlAnyAllTests
-          , enumTest connSource
-          ]
+           "DB tests"
+           [ migrationTest1 connSource
+           , migrationTest2 connSource
+           , migrationTest3 connSource
+           , migrationTest4 connSource
+           , migrationTest5 connSource
+           , triggerTests connSource
+           , sqlWithTests connSource
+           , unionTests connSource
+           , unionAllTests connSource
+           , sqlWithRecursiveTests connSource
+           , foreignKeyIndexesTests connSource
+           , overlapingIndexesTests connSource
+           , nullsNotDistinctTests connSource
+           , reservedWordColumnTests connSource
+           , sqlAnyAllTests
+           , enumTest connSource
+           ]
   where
     ings =
       includingOptions [Option (Proxy :: Proxy ConnectionString)]
