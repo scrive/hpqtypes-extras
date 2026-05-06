@@ -508,18 +508,18 @@ checkCompositesStructure tablesWithVersions ccm ovm compositeList =
         checkDatabaseComposites = mconcat . (`map` dbCompositeTypes) $ \dbComposite ->
           let cname = unRawSQL $ ctName dbComposite
           in case cname `M.lookup` compositeMap of
-              Just columns ->
-                topMessage "composite type" cname $
-                  checkColumns 1 columns (ctColumns dbComposite)
-              Nothing -> case ovm of
-                AllowUnknownObjects -> mempty
-                DontAllowUnknownObjects ->
-                  validationError $
-                    mconcat
-                      [ "Composite type '"
-                      , T.pack $ show dbComposite
-                      , "' from the database doesn't have a corresponding code definition"
-                      ]
+               Just columns ->
+                 topMessage "composite type" cname $
+                   checkColumns 1 columns (ctColumns dbComposite)
+               Nothing -> case ovm of
+                 AllowUnknownObjects -> mempty
+                 DontAllowUnknownObjects ->
+                   validationError $
+                     mconcat
+                       [ "Composite type '"
+                       , T.pack $ show dbComposite
+                       , "' from the database doesn't have a corresponding code definition"
+                       ]
           where
             checkColumns
               :: Int -> [CompositeColumn] -> [CompositeColumn] -> ValidationResult
@@ -657,8 +657,8 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version)
               validateDefaults $
                 colDefault d == colDefault c
                   || ( isNothing (colDefault d)
-                        && (T.isPrefixOf "nextval('" . unRawSQL <$> colDefault c)
-                          == Just True
+                         && (T.isPrefixOf "nextval('" . unRawSQL <$> colDefault c)
+                           == Just True
                      )
             , validateNullables $ colNullable d == colNullable c
             , checkColumns (n + 1) defs cols
@@ -800,8 +800,8 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version)
             go fk =
               let columns = map unRawSQL (fkColumns fk)
               in if coveredFK fk allCoverage
-                  then mempty
-                  else validationError $ mconcat ["\n  ● Foreign key '(", T.intercalate "," columns, ")' is missing an index"]
+                   then mempty
+                   else validationError $ mconcat ["\n  ● Foreign key '(", T.intercalate "," columns, ")' is missing an index"]
 
         checkTriggers :: [Trigger] -> [Trigger] -> ValidationResult
         checkTriggers defs triggers =
@@ -1101,8 +1101,8 @@ checkDBConsistency options domains enums tablesWithVersions migrations = do
             let ret = reverse additionalMigrations'
                 grps = L.groupBy ((==) `on` mgrTableName) ret
             in if any ((/=) 0 . mgrFrom . head) grps
-                then []
-                else ret
+                 then []
+                 else ret
           -- Also there's no point in adding these extra migrations if
           -- we're not running any migrations to begin with.
           migrationsToRun =
