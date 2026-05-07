@@ -2637,25 +2637,31 @@ numericColumnTypeTestTable =
             }
         , tblColumn
             { colName = "balance"
-            , colType = NumericT Nothing
+            , colType = NumericT (Just (1000, 0))
             , colCollation = Nothing
             , colNullable = False
             }
         , tblColumn
             { colName = "employees"
-            , colType = NumericT (Just (5, Nothing))
+            , colType = NumericT (Just (5, 0))
+            , colCollation = Nothing
+            , colNullable = False
+            }
+        , tblColumn
+            { colName = "baz"
+            , colType = NumericT (Just (5, -32))
             , colCollation = Nothing
             , colNullable = False
             }
         , tblColumn
             { colName = "foo"
-            , colType = NumericT (Just (5, Just 2))
+            , colType = NumericT (Just (5, 2))
             , colCollation = Nothing
             , colNullable = False
             }
         , tblColumn
             { colName = "bar"
-            , colType = NumericT (Just (5, Just 0))
+            , colType = NumericT Nothing
             , colCollation = Nothing
             , colNullable = False
             }

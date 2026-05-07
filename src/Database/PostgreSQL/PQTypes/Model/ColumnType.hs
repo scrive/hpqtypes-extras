@@ -29,32 +29,8 @@ data ColumnType
   | XmlT
   | ArrayT !ColumnType
   | CustomT !(RawSQL ())
-  | NumericT !(Maybe (Int, Maybe Int))
-  deriving (Ord, Show)
-
-instance Eq ColumnType where
-  BigIntT == BigIntT = True
-  BigSerialT == BigSerialT = True
-  BinaryT == BinaryT = True
-  BoolT == BoolT = True
-  DateT == DateT = True
-  DoubleT == DoubleT = True
-  IntegerT == IntegerT = True
-  UuidT == UuidT = True
-  IntervalT == IntervalT = True
-  JsonT == JsonT = True
-  JsonbT == JsonbT = True
-  SmallIntT == SmallIntT = True
-  TextT == TextT = True
-  TimestampWithZoneT == TimestampWithZoneT = True
-  TSVectorT == TSVectorT = True
-  XmlT == XmlT = True
-  ArrayT t == ArrayT t' = t == t'
-  CustomT t == CustomT t' = t == t'
-  NumericT (Just (precision, Nothing)) == NumericT (Just (precision', Just 0)) = precision == precision'
-  NumericT (Just (precision, Just 0)) == NumericT (Just (precision', Nothing)) = precision == precision'
-  NumericT mPrecisionScale == NumericT mPrecisionScale' = mPrecisionScale == mPrecisionScale'
-  _ == _ = False
+  | NumericT !(Maybe (Int, Int))
+  deriving (Eq, Ord, Show)
 
 instance PQFormat ColumnType where
   pqFormat = pqFormat @T.Text
@@ -89,16 +65,8 @@ parseNumeric :: T.Text -> Maybe ColumnType
 parseNumeric tname =
   let inParens p = A.string "(" *> p <* A.string ")"
       comma = A.string "," $> ()
-      scale = do
-        s <- A.signed A.decimal
-        pure $
-          if s == 0
-            then
-              Nothing
-            else
-              Just s
-      precisionAndScale = Just <$> inParens ((,) <$> (A.decimal <* comma) <*> scale)
-      precisionOnly = Just . (,Nothing) <$> inParens A.decimal
+      precisionAndScale = Just <$> inParens ((,) <$> (A.decimal <* comma) <*> A.signed A.decimal)
+      precisionOnly = Just . (,0) <$> inParens A.decimal
       numericParser =
         NumericT
           <$> ( A.string "numeric"
@@ -130,6 +98,4 @@ columnTypeToSQL XmlT = "XML"
 columnTypeToSQL (ArrayT t) = columnTypeToSQL t <> "[]"
 columnTypeToSQL (CustomT tname) = tname
 columnTypeToSQL (NumericT Nothing) = rawSQL "NUMERIC" ()
-columnTypeToSQL (NumericT (Just (precision, Nothing))) = rawSQL ("NUMERIC(" <> T.pack (show precision) <> ")") ()
-columnTypeToSQL (NumericT (Just (precision, Just 0))) = rawSQL ("NUMERIC(" <> T.pack (show precision) <> ")") ()
-columnTypeToSQL (NumericT (Just (precision, Just scale))) = rawSQL ("NUMERIC(" <> T.pack (show precision) <> "," <> T.pack (show scale) <> ")") ()
+columnTypeToSQL (NumericT (Just (precision, scale))) = rawSQL ("NUMERIC(" <> T.pack (show precision) <> "," <> T.pack (show scale) <> ")") ()
