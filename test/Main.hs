@@ -2653,6 +2653,12 @@ numericColumnTypeTestTable =
             , colCollation = Nothing
             , colNullable = False
             }
+        , tblColumn
+            { colName = "bar"
+            , colType = NumericT (Just (5, Just 0))
+            , colCollation = Nothing
+            , colNullable = False
+            }
         ]
     , tblPrimaryKey = pkOnColumn "id"
     , tblTriggers = []

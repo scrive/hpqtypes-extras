@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -Wno-incomplete-patterns #-}
+
 module Database.PostgreSQL.PQTypes.Model.ColumnType
   ( ColumnType (..)
   , columnTypeToSQL
@@ -28,7 +30,31 @@ data ColumnType
   | ArrayT !ColumnType
   | CustomT !(RawSQL ())
   | NumericT !(Maybe (Int, Maybe Int))
-  deriving (Eq, Ord, Show)
+  deriving (Ord, Show)
+
+instance Eq ColumnType where
+  BigIntT == BigIntT = True
+  BigSerialT == BigSerialT = True
+  BinaryT == BinaryT = True
+  BoolT == BoolT = True
+  DateT == DateT = True
+  DoubleT == DoubleT = True
+  IntegerT == IntegerT = True
+  UuidT == UuidT = True
+  IntervalT == IntervalT = True
+  JsonT == JsonT = True
+  JsonbT == JsonbT = True
+  SmallIntT == SmallIntT = True
+  TextT == TextT = True
+  TimestampWithZoneT == TimestampWithZoneT = True
+  TSVectorT == TSVectorT = True
+  XmlT == XmlT = True
+  ArrayT t == ArrayT t' = t == t'
+  CustomT t == CustomT t' = t == t'
+  NumericT (Just (precision, Nothing)) == NumericT (Just (precision', Just 0)) = precision == precision'
+  NumericT (Just (precision, Just 0)) == NumericT (Just (precision', Nothing)) = precision == precision'
+  NumericT mPrecisionScale == NumericT mPrecisionScale' = mPrecisionScale == mPrecisionScale'
+  _ == _ = False
 
 instance PQFormat ColumnType where
   pqFormat = pqFormat @T.Text
@@ -111,6 +137,7 @@ columnTypeToSQL (NumericT mPrecision) =
               "("
                 <> T.pack (show precision)
                 <> case mScale of
+                  Just scale | scale == 0 -> ")"
                   Just scale -> "," <> T.pack (show scale) <> ")"
                   Nothing -> ")"
             Nothing -> ""
