@@ -129,16 +129,7 @@ columnTypeToSQL TimestampWithZoneT = "TIMESTAMPTZ"
 columnTypeToSQL XmlT = "XML"
 columnTypeToSQL (ArrayT t) = columnTypeToSQL t <> "[]"
 columnTypeToSQL (CustomT tname) = tname
-columnTypeToSQL (NumericT mPrecision) =
-  let typeName =
-        "NUMERIC"
-          <> case mPrecision of
-            Just (precision, mScale) ->
-              "("
-                <> T.pack (show precision)
-                <> case mScale of
-                  Just scale | scale == 0 -> ")"
-                  Just scale -> "," <> T.pack (show scale) <> ")"
-                  Nothing -> ")"
-            Nothing -> ""
-  in rawSQL typeName ()
+columnTypeToSQL (NumericT Nothing) = rawSQL "NUMERIC" ()
+columnTypeToSQL (NumericT (Just (precision, Nothing))) = rawSQL ("NUMERIC(" <> T.pack (show precision) <> ")") ()
+columnTypeToSQL (NumericT (Just (precision, Just 0))) = rawSQL ("NUMERIC(" <> T.pack (show precision) <> ")") ()
+columnTypeToSQL (NumericT (Just (precision, Just scale))) = rawSQL ("NUMERIC(" <> T.pack (show precision) <> "," <> T.pack (show scale) <> ")") ()
