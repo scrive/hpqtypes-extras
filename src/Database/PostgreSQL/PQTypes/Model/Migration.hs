@@ -46,6 +46,15 @@ data MigrationAction m
     DropTableMigration DropTableMode
   | -- | Migration for creating an index concurrently.
     CreateIndexConcurrentlyMigration
+      (Maybe (RawSQL ()))
+      -- ^ Optional name of the local index that, if exists, will be renamed to
+      -- the desired index instead of creating it from scratch.
+      --
+      -- - If the index doesn't exist, the migration will proceed as usual and
+      --  create the index from scratch.
+      --
+      -- - If the index exists and its structure doesn't match the desired
+      --   index, the migration will abort with an error.
       (RawSQL ())
       -- ^ Table name
       TableIndex
