@@ -3,8 +3,11 @@ module Database.PostgreSQL.PQTypes.Model.ColumnType
   , columnTypeToSQL
   ) where
 
+import Data.Attoparsec.Text qualified as A
+import Data.Functor
 import Data.Text qualified as T
 import Database.PostgreSQL.PQTypes
+import TextShow
 
 data ColumnType
   = BigIntT
@@ -25,6 +28,7 @@ data ColumnType
   | XmlT
   | ArrayT !ColumnType
   | CustomT !(RawSQL ())
+  | NumericT !(Maybe (Int, Int))
   deriving (Eq, Ord, Show)
 
 instance PQFormat ColumnType where
@@ -50,9 +54,27 @@ instance FromSQL ColumnType where
         "timestamp with time zone" -> TimestampWithZoneT
         "tsvector" -> TSVectorT
         "xml" -> XmlT
-        tname
-          | "[]" `T.isSuffixOf` tname -> ArrayT . parseType $ T.take (T.length tname - 2) tname
-          | otherwise -> CustomT $ rawSQL tname ()
+        tname -> case parseNumeric tname of
+          Just t -> t
+          Nothing
+            | "[]" `T.isSuffixOf` tname -> ArrayT . parseType $ T.take (T.length tname - 2) tname
+            | otherwise -> CustomT $ rawSQL tname ()
+      parseNumeric :: T.Text -> Maybe ColumnType
+      parseNumeric tname =
+        let inParens p = A.string "(" *> p <* A.string ")"
+            comma = A.string "," $> ()
+            precisionAndScale = Just <$> inParens ((,) <$> (A.decimal <* comma) <*> A.signed A.decimal)
+            precisionOnly = Just . (,0) <$> inParens A.decimal
+            numericParser =
+              NumericT
+                <$> ( A.string "numeric"
+                        *> A.choice
+                          [ precisionAndScale
+                          , precisionOnly
+                          , pure Nothing
+                          ]
+                    )
+        in either (const Nothing) Just $ A.parseOnly numericParser tname
 
 columnTypeToSQL :: ColumnType -> RawSQL ()
 columnTypeToSQL BigIntT = "BIGINT"
@@ -73,3 +95,5 @@ columnTypeToSQL TimestampWithZoneT = "TIMESTAMPTZ"
 columnTypeToSQL XmlT = "XML"
 columnTypeToSQL (ArrayT t) = columnTypeToSQL t <> "[]"
 columnTypeToSQL (CustomT tname) = tname
+columnTypeToSQL (NumericT Nothing) = rawSQL "NUMERIC" ()
+columnTypeToSQL (NumericT (Just (precision, scale))) = rawSQL ("NUMERIC(" <> showt precision <> "," <> showt scale <> ")") ()
