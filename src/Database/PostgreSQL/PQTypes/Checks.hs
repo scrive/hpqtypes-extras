@@ -1211,7 +1211,10 @@ checkDBConsistency options domains enums tablesWithVersions migrations = do
         getRowEstimate tableName = do
           runQuery_ . sqlSelect "pg_class" $ do
             sqlResult "reltuples::integer"
-            sqlWhereEq "relname" $ unRawSQL tableName
+            -- If tables with the same name are present in multiple schemas,
+            -- casting the name to regclass resolves the ambiguity using search
+            -- path priority.
+            sqlWhere $ "oid =" <?> unRawSQL tableName <> "::regclass"
           fetchOne runIdentity
 
     runMigrations :: [(Text, Int32)] -> m ()
