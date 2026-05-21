@@ -14,6 +14,8 @@ module Database.PostgreSQL.PQTypes.Model.Index
   , uniqueIndexOnColumnWithCondition
   , uniqueIndexOnColumns
   , indexName
+  , IncludeColumn (unIncludeColumn)
+  , includeColumn
   , sqlCreateIndexMaybeDowntime
   , sqlCreateIndexConcurrently
   , sqlDropIndexMaybeDowntime
@@ -33,7 +35,7 @@ import Database.PostgreSQL.PQTypes
 
 data TableIndex = TableIndex
   { idxColumns :: [IndexColumn]
-  , idxInclude :: [RawSQL ()]
+  , idxInclude :: [IncludeColumn]
   , idxMethod :: IndexMethod
   , idxUnique :: Bool
   , -- \^ If creation of index with CONCURRENTLY fails, index
@@ -48,31 +50,71 @@ data TableIndex = TableIndex
   -- \^ NB: will only be used if idxUnique is set to True
   deriving (Eq, Ord, Show)
 
+-- | A key column of an index, optionally with an operator class. The 'Bool'
+-- records whether the identifier was surrounded by double quotes in the source.
 data IndexColumn
-  = IndexColumn (RawSQL ()) (Maybe (RawSQL ()))
+  = IndexColumn (RawSQL ()) (Maybe (RawSQL ())) Bool
   deriving (Show)
 
 -- If one of the two columns doesn't specify the operator class, we just ignore
 -- it and still treat them as equivalent.
 instance Eq IndexColumn where
-  IndexColumn x Nothing == IndexColumn y _ = x == y
-  IndexColumn x _ == IndexColumn y Nothing = x == y
-  IndexColumn x (Just x') == IndexColumn y (Just y') = x == y && x' == y'
+  IndexColumn x Nothing _ == IndexColumn y _ _ = x == y
+  IndexColumn x _ _ == IndexColumn y Nothing _ = x == y
+  IndexColumn x (Just x') _ == IndexColumn y (Just y') _ = x == y && x' == y'
 
 instance Ord IndexColumn where
   compare = compare `on` indexColumnName
 
 instance IsString IndexColumn where
-  fromString s = IndexColumn (fromString s) Nothing
+  fromString = indexColumn . fromString
+
+-- | A column appearing in an @INCLUDE@ clause. The 'Bool' records whether the
+-- identifier was surrounded by double quotes in the source.
+data IncludeColumn = IncludeColumn {unIncludeColumn :: RawSQL (), _incWasQuoted :: Bool}
+  deriving (Show)
+
+instance Eq IncludeColumn where
+  IncludeColumn x _ == IncludeColumn y _ = x == y
+
+instance Ord IncludeColumn where
+  compare = compare `on` unIncludeColumn
+
+instance IsString IncludeColumn where
+  fromString = includeColumn . fromString
+
+-- | Strip a single surrounding pair of double quotes. The 'Bool' reports
+-- whether stripping happened.
+mkIdent :: RawSQL () -> (RawSQL (), Bool)
+mkIdent r = case fmap T.unsnoc <$> T.uncons (unRawSQL r) of
+  Just ('"', Just (body, '"')) -> (rawSQL body (), True)
+  _ -> (r, False)
+
+-- | Wrap an identifier in double quotes for DDL emission.
+quoteIdent :: RawSQL () -> RawSQL ()
+quoteIdent r = "\"" <> r <> "\""
+
+-- | Apply 'quoteIdent' iff the bit is set.
+quoteWhen :: Bool -> RawSQL () -> RawSQL ()
+quoteWhen True = quoteIdent
+quoteWhen False = id
+
+-- | Lift a 'Text' transformation onto the body of a 'RawSQL' ().
+asText :: (T.Text -> T.Text) -> RawSQL () -> RawSQL ()
+asText f = (`rawSQL` ()) . f . unRawSQL
 
 indexColumn :: RawSQL () -> IndexColumn
-indexColumn col = IndexColumn col Nothing
+indexColumn col = let (c, q) = mkIdent col in IndexColumn c Nothing q
 
 indexColumnWithOperatorClass :: RawSQL () -> RawSQL () -> IndexColumn
-indexColumnWithOperatorClass col opclass = IndexColumn col (Just opclass)
+indexColumnWithOperatorClass col opclass =
+  let (c, q) = mkIdent col in IndexColumn c (Just opclass) q
 
 indexColumnName :: IndexColumn -> RawSQL ()
-indexColumnName (IndexColumn col _) = col
+indexColumnName (IndexColumn col _ _) = col
+
+includeColumn :: RawSQL () -> IncludeColumn
+includeColumn col = let (c, q) = mkIdent col in IncludeColumn c q
 
 data IndexMethod
   = BTree
@@ -148,22 +190,22 @@ uniqueIndexOnColumnWithCondition column whereC =
     , idxNotDistinctNulls = False
     }
 
+-- | Canonical auto-generated name for an index.
 indexName :: RawSQL () -> TableIndex -> RawSQL ()
 indexName tname TableIndex {..} =
-  flip rawSQL () $
-    T.take 63 . unRawSQL $
-      mconcat
-        [ if idxUnique then "unique_idx__" else "idx__"
-        , tname
-        , "__"
-        , mintercalate "__" $ map (asText sanitize . indexColumnName) idxColumns
-        , if null idxInclude
-            then ""
-            else "$$" <> mintercalate "__" (map (asText sanitize) idxInclude)
-        , maybe "" (("__" <>) . hashWhere) idxWhere
-        ]
+  asText (T.take 63) $
+    mconcat
+      [ if idxUnique then "unique_idx__" else "idx__"
+      , tname
+      , "__"
+      , mintercalate "__" $ map (\(IndexColumn col _ q) -> renderIdent q col) idxColumns
+      , if null idxInclude
+          then ""
+          else "$$" <> mintercalate "__" (map (\(IncludeColumn col q) -> renderIdent q col) idxInclude)
+      , maybe "" (("__" <>) . hashWhere) idxWhere
+      ]
   where
-    asText f = flip rawSQL () . f . unRawSQL
+    renderIdent q = asText sanitize . quoteWhen q
     -- See http://www.postgresql.org/docs/9.4/static/sql-syntax-lexical.html#SQL-SYNTAX-IDENTIFIERS.
     -- Remove all unallowed characters and replace them by at most one adjacent dollar sign.
     sanitize = T.pack . foldr go [] . T.unpack
@@ -210,15 +252,18 @@ sqlCreateIndex_ concurrently tname idx@TableIndex {..} =
         ", "
         ( map
             ( \case
-                IndexColumn col Nothing -> col
-                IndexColumn col (Just opclass) -> col <+> opclass
+                IndexColumn col Nothing q -> quoteWhen q col
+                IndexColumn col (Just opclass) q -> quoteWhen q col <+> opclass
             )
             idxColumns
         )
     , ")"
     , if null idxInclude
         then ""
-        else " INCLUDE (" <> mintercalate ", " idxInclude <> ")"
+        else
+          " INCLUDE ("
+            <> mintercalate ", " (map (\(IncludeColumn c q) -> quoteWhen q c) idxInclude)
+            <> ")"
     , if idxUnique && idxNotDistinctNulls
         then " NULLS NOT DISTINCT"
         else ""

@@ -748,9 +748,13 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version)
         checkIndexes defs allIndexes =
           mconcat $
             checkEquality "INDEXes" defs (map fst indexes)
-              : checkNames (indexName tblName) indexes
+              : checkNames expectedName indexes
               : map localIndexInfo localIndexes
           where
+            -- Recover the user-declared form because introspection always quotes.
+            expectedName dbIdx =
+              indexName tblName (fromMaybe dbIdx (L.find (== dbIdx) defs))
+
             localIndexInfo (index, name) =
               validationInfo $
                 T.concat
@@ -1539,8 +1543,8 @@ fetchTableIndex
   -> (TableIndex, RawSQL ())
 fetchTableIndex (name, Array1 keyColumns, Array1 includeColumns, method, unique, nullsNotDistinct, mconstraint) =
   ( TableIndex
-      { idxColumns = map (indexColumn . (`rawSQL` ()) . stripIdentifierQuotes) keyColumns
-      , idxInclude = map ((`rawSQL` ()) . stripIdentifierQuotes) includeColumns
+      { idxColumns = map (indexColumn . (`rawSQL` ())) keyColumns
+      , idxInclude = map (includeColumn . (`rawSQL` ())) includeColumns
       , idxMethod = case method of
           "gin" -> GIN
           "btree" -> BTree
@@ -1551,10 +1555,6 @@ fetchTableIndex (name, Array1 keyColumns, Array1 includeColumns, method, unique,
       }
   , rawSQL name ()
   )
-  where
-    stripIdentifierQuotes str = case fmap T.unsnoc <$> T.uncons str of
-      Just ('"', Just (identifier, '"')) -> identifier
-      _ -> str
 
 -- *** FOREIGN KEYS ***
 

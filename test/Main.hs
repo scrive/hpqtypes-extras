@@ -2363,6 +2363,69 @@ reservedWordColumnTests connSource =
 
     freshTestDB step
 
+    step "Definition using the legacy quoted form (\"\\\"timestamp\\\"\") still validates"
+    assertNoException "Quoted-keyword column in tblIndexes is accepted" $ do
+      let definitions = tableDefsWithPgCrypto [tableWithLegacyQuotedIndex]
+      migrateDatabase
+        defaultExtrasOptions
+        definitions
+        [createTableMigration tableWithLegacyQuotedIndex]
+      checkDatabase defaultExtrasOptions definitions
+
+    freshTestDB step
+
+    step "Index pre-existing under the quoted-source name validates"
+    assertNoException "Quoted-source index name is accepted by checkDatabase" $ do
+      -- Hand-roll the index under its canonical @$ident$@ name, then validate
+      -- against a definition that includes it.
+      migrateDatabase
+        defaultExtrasOptions
+        (tableDefsWithPgCrypto [tableWithLegacyQuotedIndexNoIndexes])
+        [createTableMigration tableWithLegacyQuotedIndexNoIndexes]
+      runSQL_
+        "CREATE INDEX \"idx__reserved_word_test5__$timestamp$\" \
+        \ON reserved_word_test5 (\"timestamp\")"
+      checkDatabase defaultExtrasOptions $
+        tableDefsWithPgCrypto [tableWithLegacyQuotedIndex]
+
+    freshTestDB step
+
+    step "Index with a reserved-word column in INCLUDE validates"
+    assertNoException "Reserved-word column in idxInclude is accepted" $ do
+      let definitions = tableDefsWithPgCrypto [tableWithReservedWordInclude]
+      migrateDatabase
+        defaultExtrasOptions
+        definitions
+        [createTableMigration tableWithReservedWordInclude]
+      checkDatabase defaultExtrasOptions definitions
+
+    freshTestDB step
+
+    step "Multi-column index mixing unquoted and quoted-keyword columns validates"
+    assertNoException "Mixed quoted/unquoted composite index is accepted" $ do
+      let definitions = tableDefsWithPgCrypto [tableWithMixedQuotedComposite]
+      migrateDatabase
+        defaultExtrasOptions
+        definitions
+        [createTableMigration tableWithMixedQuotedComposite]
+      checkDatabase defaultExtrasOptions definitions
+
+    freshTestDB step
+
+    step "Index on a JSONB expression is created without being quoted as an identifier"
+    assertNoException "Expression index is accepted" $ do
+      let definitions = tableDefsWithPgCrypto [tableWithExpressionIndex]
+      migrateDatabase
+        defaultExtrasOptions
+        definitions
+        [createTableMigration tableWithExpressionIndex]
+      checkDatabase defaultExtrasOptions definitions
+
+    freshTestDB step
+
+    -- NB: keep this step last. The CREATE INDEX failure on a reserved-word
+    -- column leaves the connection's transaction in aborted state, so a
+    -- subsequent `freshTestDB` (which runs DROP SCHEMA) fails.
     step "Attempt to create a table with an index on a 'select' column"
     assertException "Table with index on 'select' column can't be created" $ do
       let definitions = tableDefsWithPgCrypto [tableWithSelectIndex]
@@ -2420,6 +2483,84 @@ reservedWordColumnTests connSource =
         , tblPrimaryKey = pkOnColumn "id"
         , tblIndexes = [indexOnColumn "select"]
         }
+
+    tableWithLegacyQuotedIndex =
+      tblTable
+        { tblName = "reserved_word_test5"
+        , tblVersion = 1
+        , tblColumns =
+            [ tblColumn {colName = "id", colType = UuidT, colNullable = False, colDefault = Just "gen_random_uuid()"}
+            , tblColumn {colName = "timestamp", colType = TimestampWithZoneT, colNullable = False}
+            ]
+        , tblPrimaryKey = pkOnColumn "id"
+        , tblIndexes = [indexOnColumn "\"timestamp\""]
+        }
+
+    tableWithLegacyQuotedIndexNoIndexes = tableWithLegacyQuotedIndex {tblIndexes = []}
+
+    tableWithReservedWordInclude =
+      tblTable
+        { tblName = "reserved_word_test6"
+        , tblVersion = 1
+        , tblColumns =
+            [ tblColumn {colName = "id", colType = UuidT, colNullable = False, colDefault = Just "gen_random_uuid()"}
+            , tblColumn {colName = "name", colType = TextT, colNullable = False}
+            , tblColumn {colName = "timestamp", colType = TimestampWithZoneT, colNullable = False}
+            ]
+        , tblPrimaryKey = pkOnColumn "id"
+        , tblIndexes = [(uniqueIndexOnColumn "name") {idxInclude = ["timestamp"]}]
+        }
+
+    tableWithMixedQuotedComposite =
+      tblTable
+        { tblName = "reserved_word_test7"
+        , tblVersion = 1
+        , tblColumns =
+            [ tblColumn {colName = "id", colType = UuidT, colNullable = False, colDefault = Just "gen_random_uuid()"}
+            , tblColumn {colName = "other_id", colType = UuidT, colNullable = False}
+            , tblColumn {colName = "name", colType = TextT, colNullable = False}
+            , tblColumn {colName = "time", colType = TimestampWithZoneT, colNullable = False}
+            ]
+        , tblPrimaryKey = pkOnColumn "id"
+        , tblIndexes = [indexOnColumns ["other_id", "name", "\"time\""]]
+        }
+
+    tableWithExpressionIndex =
+      tblTable
+        { tblName = "reserved_word_test8"
+        , tblVersion = 1
+        , tblColumns =
+            [ tblColumn {colName = "id", colType = UuidT, colNullable = False, colDefault = Just "gen_random_uuid()"}
+            , tblColumn {colName = "data", colType = JsonbT, colNullable = False}
+            ]
+        , tblPrimaryKey = pkOnColumn "id"
+        , tblIndexes = [uniqueIndexOnColumn (indexColumn "(data ->> 'key'::text)")]
+        }
+
+sqlCreateIndexEmissionTests :: TestTree
+sqlCreateIndexEmissionTests =
+  testGroup
+    "sqlCreateIndex emission"
+    [ testCase "expression column is emitted without identifier quoting" $
+        assertCreateIndex
+          "CREATE UNIQUE INDEX unique_idx__t__$data$key$text$\
+          \ ON t USING BTree ((data ->> 'key'::text))"
+          (uniqueIndexOnColumn (indexColumn "(data ->> 'key'::text)"))
+    , testCase "quoted reserved-word column round-trips as a quoted identifier" $
+        assertCreateIndex
+          "CREATE INDEX idx__t__$timestamp$ ON t USING BTree (\"timestamp\")"
+          (indexOnColumn "\"timestamp\"")
+    , testCase "unquoted column is emitted bare" $
+        assertCreateIndex
+          "CREATE INDEX idx__t__name ON t USING BTree (name)"
+          (indexOnColumn "name")
+    ]
+  where
+    assertCreateIndex expected idx =
+      assertEqual
+        "sqlCreateIndexMaybeDowntime output"
+        expected
+        (unRawSQL (sqlCreateIndexMaybeDowntime "t" idx))
 
 sqlAnyAllTests :: TestTree
 sqlAnyAllTests =
@@ -2721,6 +2862,7 @@ main = do
            , overlapingIndexesTests connSource
            , nullsNotDistinctTests connSource
            , reservedWordColumnTests connSource
+           , sqlCreateIndexEmissionTests
            , sqlAnyAllTests
            , enumTest connSource
            , numericColumnTypeTest connSource
