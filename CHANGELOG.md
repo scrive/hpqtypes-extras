@@ -4,7 +4,6 @@
 * Adds a `Function` datatype and a `defaultTriggerFunction` backwards-compatible
   trigger function helper.
 * Remove `Read` instance of `IndexMethod`.
-* Allow using nonreserved keywords, e.g. `timestamp`, in table indices.
 * Add support for the `NUMERIC` column type.
 * Fix getting the row estimate for `ModifyColumnMigration` if a table with the
   same name is present in multiple schemas.
