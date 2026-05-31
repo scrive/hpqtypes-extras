@@ -65,6 +65,16 @@ instance Ord IndexColumn where
 instance IsString IndexColumn where
   fromString s = IndexColumn (fromString s) Nothing
 
+-- | Build an 'IndexColumn' from a column name.
+--
+-- If the column name is a non-reserved keyword in PostgreSQL it must be given
+-- double-quoted, e.g.
+--
+--   @timestamp@ -> @\"\\\"timestamp\\\"\"@
+--
+-- PostgreSQL stores the index definition with the keyword quoted, so the column
+-- name passed here has to match that exactly or the database consistency check
+-- will report a mismatch.
 indexColumn :: RawSQL () -> IndexColumn
 indexColumn col = IndexColumn col Nothing
 
@@ -166,6 +176,7 @@ indexName tname TableIndex {..} =
     asText f = flip rawSQL () . f . unRawSQL
     -- See http://www.postgresql.org/docs/9.4/static/sql-syntax-lexical.html#SQL-SYNTAX-IDENTIFIERS.
     -- Remove all unallowed characters and replace them by at most one adjacent dollar sign.
+    -- NB: This allows the behavior as described in @indexColumn@.
     sanitize = T.pack . foldr go [] . T.unpack
       where
         go c acc =
