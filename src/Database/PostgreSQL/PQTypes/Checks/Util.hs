@@ -206,8 +206,14 @@ checkOverlappingIndexesQuery tableName =
     , "                         , ((regexp_match(pg_get_indexdef(indexrelid)"
     , "                                        , 'WHERE (.*)$')))[1] AS preddef"
     , "                    FROM pg_index"
+    , "                    JOIN pg_class ON (oid = indexrelid)"
     , "                    WHERE indexprs IS NULL"
-    , "                    AND indrelid = '" <> raw tableName <> "'::regclass)"
+    , "                    AND NOT relname ILIKE 'local_%'"
+    , -- Use to_regclass instead of '...'::regclass: both respect the search
+      -- path, but the cast throws if the table doesn't exist whereas
+      -- to_regclass returns NULL, so the query yields no rows (e.g. when
+      -- checking an invalid schema with missing tables).
+      "                    AND indrelid = to_regclass('" <> raw tableName <> "'))"
     , -- add the rest of metadata and do the join
       "   , indexdata2 AS (SELECT t1.*"
     , "                         , pg_get_indexdef(t1.indexrelid) AS contained"
@@ -224,12 +230,9 @@ checkOverlappingIndexesQuery tableName =
     , "  SELECT contained"
     , "       , contains"
     , "  FROM indexdata2"
-    , " JOIN pg_class c ON (c.oid = indexdata2.indexrelid)"
     , -- The indexes are the same or the "other" is larger than us
       "  WHERE (colotherindex = colindex"
     , "      OR colotherindex LIKE colindex || '+%')"
-    , -- and this is not a local index
-      "    AND NOT c.relname ILIKE 'local_%'"
     , -- and we have the same predicate
       "    AND other_preddef IS NOT DISTINCT FROM preddef"
     , -- and either the other is unique (so better than us) or none of us is unique
