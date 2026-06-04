@@ -39,6 +39,12 @@ instance IsOption ConnectionString where
   optionName = return "connection-string"
   optionHelp = return "Postgres connection string"
 
+testExtrasOptions :: ExtrasOptions
+testExtrasOptions =
+  defaultExtrasOptions
+    { eoCheckOverlappingIndexes = True
+    }
+
 -- Simple example schemata inspired by the one in
 -- <  http://www.databaseanswers.org/data_models/bank_robberies/index.htm>
 --
@@ -613,15 +619,17 @@ createTablesSchema1 :: (String -> TestM ()) -> TestM ()
 createTablesSchema1 step = do
   let definitions = tableDefsWithPgCrypto schema1Tables
   step "Creating the database (schema version 1)..."
-  migrateDatabase defaultExtrasOptions definitions schema1Migrations
+  migrateDatabase testExtrasOptions definitions schema1Migrations
 
-  -- Add a local index that shouldn't trigger validation errors.
-  runSQL_ "CREATE INDEX local_idx_bank_name ON bank(name)"
+  -- Add local indexes that shouldn't trigger validation (in particular overlap,
+  -- both "is included in" and "includes" case) errors.
+  runSQL_ "CREATE INDEX local_idx__bank__id ON bank(id)"
+  runSQL_ "CREATE INDEX local_idx__bank__id__name__location ON bank(id,name,location)"
 
   -- Add a local index that will be renamed during a migration later.
   runQuery_ $ "CREATE INDEX" <+> localBankIndexToRename <+> "ON bank(id, name)"
 
-  checkDatabase defaultExtrasOptions definitions
+  checkDatabase testExtrasOptions definitions
 
 testDBSchema1 :: (String -> TestM ()) -> TestM ([UUID], [UUID])
 testDBSchema1 step = do
@@ -915,10 +923,10 @@ migrateDBToSchema2 step = do
   let definitions = tableDefsWithPgCrypto schema2Tables
   step "Migrating the database (schema version 1 -> schema version 2)..."
   migrateDatabase
-    defaultExtrasOptions
+    testExtrasOptions
     definitions
     schema2Migrations
-  checkDatabase defaultExtrasOptions definitions
+  checkDatabase testExtrasOptions definitions
 
 -- | Hacky version of 'migrateDBToSchema2' used by 'migrationTest3'.
 migrateDBToSchema2Hacky :: (String -> TestM ()) -> TestM ()
@@ -928,10 +936,10 @@ migrateDBToSchema2Hacky step = do
     "Hackily migrating the database (schema version 1 \
     \-> schema version 2)..."
   migrateDatabase
-    defaultExtrasOptions
+    testExtrasOptions
     definitions
     schema2Migrations'
-  checkDatabase defaultExtrasOptions definitions
+  checkDatabase testExtrasOptions definitions
   where
     schema2Migrations' = createTableMigration tableFlash : schema2Migrations
 
@@ -987,10 +995,10 @@ migrateDBToSchema3 step = do
   let definitions = tableDefsWithPgCrypto schema3Tables
   step "Migrating the database (schema version 2 -> schema version 3)..."
   migrateDatabase
-    defaultExtrasOptions
+    testExtrasOptions
     definitions
     schema3Migrations
-  checkDatabase defaultExtrasOptions definitions
+  checkDatabase testExtrasOptions definitions
 
 testDBSchema3 :: (String -> TestM ()) -> [UUID] -> [UUID] -> TestM ()
 testDBSchema3 step badGuyIds robberyIds = do
@@ -1052,10 +1060,10 @@ migrateDBToSchema4 step = do
   let definitions = tableDefsWithPgCrypto schema4Tables
   step "Migrating the database (schema version 3 -> schema version 4)..."
   migrateDatabase
-    defaultExtrasOptions
+    testExtrasOptions
     definitions
     schema4Migrations
-  checkDatabase defaultExtrasOptions definitions
+  checkDatabase testExtrasOptions definitions
 
 testDBSchema4 :: (String -> TestM ()) -> TestM ()
 testDBSchema4 step = do
@@ -1080,8 +1088,8 @@ migrateDBToSchema5 :: (String -> TestM ()) -> TestM ()
 migrateDBToSchema5 step = do
   let definitions = tableDefsWithPgCrypto schema5Tables
   step "Migrating the database (schema version 4 -> schema version 5)..."
-  migrateDatabase defaultExtrasOptions definitions schema5Migrations
-  checkDatabase defaultExtrasOptions definitions
+  migrateDatabase testExtrasOptions definitions schema5Migrations
+  checkDatabase testExtrasOptions definitions
 
 testDBSchema5 :: (String -> TestM ()) -> TestM ()
 testDBSchema5 step = do
@@ -1571,8 +1579,8 @@ testTriggers step = do
 
     migrate tables migrations = do
       let definitions = tableDefsWithPgCrypto tables
-      migrateDatabase defaultExtrasOptions definitions migrations
-      checkDatabase defaultExtrasOptions definitions
+      migrateDatabase testExtrasOptions definitions migrations
+      checkDatabase testExtrasOptions definitions
 
     -- Verify that the given triggers are (not) present in the database.
     verify :: (MonadIO m, MonadDB m, HasCallStack) => [Trigger] -> Bool -> m ()
@@ -1619,8 +1627,8 @@ testSqlWith step = do
   where
     migrate tables migrations = do
       let definitions = tableDefsWithPgCrypto tables
-      migrateDatabase defaultExtrasOptions definitions migrations
-      checkDatabase defaultExtrasOptions definitions
+      migrateDatabase testExtrasOptions definitions migrations
+      checkDatabase testExtrasOptions definitions
     testPass = do
       step "create the initial database"
       migrate [tableBankSchema1] [createTableMigration tableBankSchema1]
@@ -1673,8 +1681,8 @@ testSqlWithRecursive step = do
   where
     migrate tables migrations = do
       let definitions = tableDefsWithPgCrypto tables
-      migrateDatabase defaultExtrasOptions definitions migrations
-      checkDatabase defaultExtrasOptions definitions
+      migrateDatabase testExtrasOptions definitions migrations
+      checkDatabase testExtrasOptions definitions
     testPass = do
       step "create the initial database"
       migrate [tableBadGuySchema1, tableCartelSchema1] [createTableMigration tableBadGuySchema1, createTableMigration tableCartelSchema1]
@@ -1796,7 +1804,7 @@ migrationTest2 connSource =
             }
         currentSchema = schema1Tables
         differentSchema = schema5Tables
-        extrasOptions = defaultExtrasOptions {eoEnforcePKs = True}
+        extrasOptions = testExtrasOptions {eoEnforcePKs = True}
         extrasOptionsWithUnknownObjects = extrasOptions {eoObjectsValidationMode = AllowUnknownObjects}
 
     runQuery_ $ sqlCreateComposite composite
@@ -1862,11 +1870,11 @@ migrationTest2 connSource =
     let withMissingPKSchema = schema6Tables
         schema1MigrationsWithMissingPK = schema6Migrations
         optionsNoPKCheck =
-          defaultExtrasOptions
+          testExtrasOptions
             { eoEnforcePKs = False
             }
         optionsWithPKCheck =
-          defaultExtrasOptions
+          testExtrasOptions
             { eoEnforcePKs = True
             }
 
@@ -1965,8 +1973,8 @@ migrationTest5 connSource =
     freshTestDB step
 
     step "Creating the database (schema version 1)..."
-    migrateDatabase defaultExtrasOptions (tableDefsWithPgCrypto [table1]) [createTableMigration table1]
-    checkDatabase defaultExtrasOptions (tableDefsWithPgCrypto [table1])
+    migrateDatabase testExtrasOptions (tableDefsWithPgCrypto [table1]) [createTableMigration table1]
+    checkDatabase testExtrasOptions (tableDefsWithPgCrypto [table1])
 
     step "Populating the 'bank' table..."
     runQuery_ . sqlInsert "bank" $ do
@@ -1981,8 +1989,8 @@ migrationTest5 connSource =
     forM_ (zip4 tables migrations steps assertions) $
       \(table, migration, step', assertion) -> do
         step step'
-        migrateDatabase defaultExtrasOptions (tableDefsWithPgCrypto [table]) [migration]
-        checkDatabase defaultExtrasOptions (tableDefsWithPgCrypto [table])
+        migrateDatabase testExtrasOptions (tableDefsWithPgCrypto [table]) [migration]
+        checkDatabase testExtrasOptions (tableDefsWithPgCrypto [table])
         uncurry assertNoException assertion
 
     freshTestDB step
@@ -2121,16 +2129,16 @@ foreignKeyIndexesTests connSource =
 
     step "Create database with two tables, no foreign key checking"
     do
-      let options = defaultExtrasOptions
+      let options = testExtrasOptions
       migrateDatabase
         options
         (tableDefsWithPgCrypto [table1, table2])
         [createTableMigration table1, createTableMigration table2]
-      checkDatabase defaultExtrasOptions (tableDefsWithPgCrypto [table1, table2])
+      checkDatabase testExtrasOptions (tableDefsWithPgCrypto [table1, table2])
 
     step "Create database with two tables, with foreign key checking"
     do
-      let options = defaultExtrasOptions {eoCheckForeignKeysIndexes = True}
+      let options = testExtrasOptions {eoCheckForeignKeysIndexes = True}
       assertException "Foreign keys are missing" $
         migrateDatabase
           options
@@ -2139,7 +2147,7 @@ foreignKeyIndexesTests connSource =
 
     step "Table is missing several foreign key indexes"
     do
-      let options = defaultExtrasOptions {eoCheckForeignKeysIndexes = True}
+      let options = testExtrasOptions {eoCheckForeignKeysIndexes = True}
       assertException "Foreign keys are missing" $
         migrateDatabase
           options
@@ -2148,7 +2156,7 @@ foreignKeyIndexesTests connSource =
 
     step "Multi column indexes covering a FK pass the checks"
     do
-      let options = defaultExtrasOptions {eoCheckForeignKeysIndexes = True}
+      let options = testExtrasOptions {eoCheckForeignKeysIndexes = True}
       migrateDatabase
         options
         (tableDefsWithPgCrypto [table4])
@@ -2160,7 +2168,7 @@ foreignKeyIndexesTests connSource =
       checkDatabase options (tableDefsWithPgCrypto [table4])
     step "Multi column indexes not covering a FK fail the checks"
     do
-      let options = defaultExtrasOptions {eoCheckForeignKeysIndexes = True}
+      let options = testExtrasOptions {eoCheckForeignKeysIndexes = True}
       assertException "Foreign keys are missing" $
         migrateDatabase
           options
@@ -2259,7 +2267,7 @@ overlapingIndexesTests connSource = do
 
     step "Migration is correct if not checking for overlapping indexes"
     do
-      let options = defaultExtrasOptions {eoCheckOverlappingIndexes = False}
+      let options = testExtrasOptions {eoCheckOverlappingIndexes = False}
       migrateDatabase
         options
         definitions
@@ -2267,7 +2275,7 @@ overlapingIndexesTests connSource = do
 
     step "Migration invalid when flagging overlapping indexes"
     do
-      let options = defaultExtrasOptions {eoCheckOverlappingIndexes = True}
+      let options = testExtrasOptions {eoCheckOverlappingIndexes = True}
       assertException "Some indexes are overlapping" $
         migrateDatabase
           options
@@ -2301,10 +2309,10 @@ nullsNotDistinctTests connSource = do
     do
       let definitions = tableDefsWithPgCrypto [nullTableTest1, nullTableTest2]
       migrateDatabase
-        defaultExtrasOptions
+        testExtrasOptions
         definitions
         [createTableMigration nullTableTest1, createTableMigration nullTableTest2]
-      checkDatabase defaultExtrasOptions definitions
+      checkDatabase testExtrasOptions definitions
 
     step "Insert two NULLs on a column with a default UNIQUE index"
     do
@@ -2441,16 +2449,16 @@ enumTest connSource =
 
     step "Create a database with an enum"
     migrateDatabase
-      defaultExtrasOptions
+      testExtrasOptions
       (emptyDbDefinitions {dbEnums = [enum1]})
       []
 
     step "Check the database"
-    checkDatabase defaultExtrasOptions (emptyDbDefinitions {dbEnums = [enum1]})
+    checkDatabase testExtrasOptions (emptyDbDefinitions {dbEnums = [enum1]})
 
     step "Check the database with missing enum"
     do
-      report <- checkDatabaseWithReport defaultExtrasOptions (emptyDbDefinitions {dbEnums = [enum1, enum2]})
+      report <- checkDatabaseWithReport testExtrasOptions (emptyDbDefinitions {dbEnums = [enum1, enum2]})
       liftIO $
         assertEqual
           "Missing enum2 should be reported"
@@ -2459,7 +2467,7 @@ enumTest connSource =
 
     step "Check the database with reordered enum"
     do
-      report <- checkDatabaseWithReport defaultExtrasOptions (emptyDbDefinitions {dbEnums = [enum1misorder]})
+      report <- checkDatabaseWithReport testExtrasOptions (emptyDbDefinitions {dbEnums = [enum1misorder]})
       liftIO $
         assertEqual
           "Order mismatch should be reported"
@@ -2472,7 +2480,7 @@ enumTest connSource =
 
     step "Check the database with mismatching enum"
     do
-      report <- checkDatabaseWithReport defaultExtrasOptions (emptyDbDefinitions {dbEnums = [enum1mismatch]})
+      report <- checkDatabaseWithReport testExtrasOptions (emptyDbDefinitions {dbEnums = [enum1mismatch]})
       liftIO $
         assertEqual
           "DB mismatch should be reported"
@@ -2481,7 +2489,7 @@ enumTest connSource =
 
     step "Check the database with extra enum values"
     do
-      report <- checkDatabaseWithReport defaultExtrasOptions (emptyDbDefinitions {dbEnums = [enum1missing]})
+      report <- checkDatabaseWithReport testExtrasOptions (emptyDbDefinitions {dbEnums = [enum1missing]})
       liftIO $
         assertEqual
           "Extra values in the DB enum should be reported"
@@ -2618,10 +2626,10 @@ numericColumnTypeTest connSource =
     let dbDefinitions = emptyDbDefinitions {dbTables = [numericColumnTypeTestTable]}
 
     step "run the migration"
-    migrateDatabase defaultExtrasOptions dbDefinitions [numericColumnTypeTestMigration]
+    migrateDatabase testExtrasOptions dbDefinitions [numericColumnTypeTestMigration]
 
     step "check database"
-    checkDatabase defaultExtrasOptions dbDefinitions
+    checkDatabase testExtrasOptions dbDefinitions
 
 main :: IO ()
 main = do

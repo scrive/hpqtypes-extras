@@ -10,6 +10,8 @@
 * Allow using nonreserved keywords, e.g. `timestamp`, in table indices.
 * Add support for renaming an existing local index during a migration that
   creates index concurrently.
+* Fix two bugs in overlapping indexes check (not excluding local indexes
+  properly and query failure when the table doesn't exist).
 
 # hpqtypes-extras-1.19.0.0 (2025-11-27)
 * Compatibility with `hpqtypes` >= 0.13.0.0.
