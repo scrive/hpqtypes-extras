@@ -621,8 +621,8 @@ createTablesSchema1 step = do
   step "Creating the database (schema version 1)..."
   migrateDatabase testExtrasOptions definitions schema1Migrations
 
-  -- Add local indexes that shouldn't trigger validation (in particular overlap)
-  -- errors.
+  -- Add local indexes that shouldn't trigger validation (in particular overlap,
+  -- both "is included in" and "includes" case) errors.
   runSQL_ "CREATE INDEX local_idx__bank__id ON bank(id)"
   runSQL_ "CREATE INDEX local_idx__bank__id__name__location ON bank(id,name,location)"
 
