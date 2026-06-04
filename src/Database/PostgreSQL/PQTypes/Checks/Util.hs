@@ -203,17 +203,16 @@ checkOverlappingIndexesQuery tableName =
       -- can differ even if the predicate is the same), ignore functional indexes at the same time
       -- as that would make this query very ugly
       "     indexdata1 AS (SELECT *"
-    , "                         , ((regexp_match(pg_get_indexdef(indexrelid)"
+    , "                         , ((regexp_match(pg_get_indexdef(i.indexrelid)"
     , "                                        , 'WHERE (.*)$')))[1] AS preddef"
-    , "                    FROM pg_index"
-    , "                    JOIN pg_class ON (oid = indexrelid)"
-    , "                    WHERE indexprs IS NULL"
-    , "                    AND NOT relname ILIKE 'local_%'"
+    , "                    FROM pg_index i JOIN pg_class c ON i.indexrelid = c.oid"
+    , "                    WHERE i.indexprs IS NULL"
+    , "                    AND NOT c.relname ILIKE 'local_%'"
     , -- Use to_regclass instead of '...'::regclass: both respect the search
       -- path, but the cast throws if the table doesn't exist whereas
       -- to_regclass returns NULL, so the query yields no rows (e.g. when
       -- checking an invalid schema with missing tables).
-      "                    AND indrelid = to_regclass('" <> raw tableName <> "'))"
+      "                    AND i.indrelid = to_regclass('" <> raw tableName <> "'))"
     , -- add the rest of metadata and do the join
       "   , indexdata2 AS (SELECT t1.*"
     , "                         , pg_get_indexdef(t1.indexrelid) AS contained"
