@@ -7,7 +7,6 @@
 * Add support for the `NUMERIC` column type.
 * Fix getting the row estimate for `ModifyColumnMigration` if a table with the
   same name is present in multiple schemas.
-* Allow using nonreserved keywords, e.g. `timestamp`, in table indices.
 * Add support for renaming an existing local index during a migration that
   creates index concurrently.
 * Fix two bugs in overlapping indexes check (not excluding local indexes
