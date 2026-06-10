@@ -63,9 +63,6 @@ data MigrationAction m
       -- ^ Index
   | -- | Migration for modifying columns. Parameters are:
     --
-    -- Name of the table that the cursor is associated with. It has to be the same as in the
-    -- cursor SQL, see the second parameter.
-    --
     -- SQL providing a list of primary keys from the associated table that will be used for the cursor.
     --
     -- Function that takes a batch of primary keys provided by the cursor SQL and runs an arbitrary computation
