@@ -8,9 +8,9 @@
 #
 # For more information, see https://github.com/haskell-CI/haskell-ci
 #
-# version: 0.19.20260104
+# version: 0.19.20260331
 #
-# REGENDATA ("0.19.20260104",["github","--config=cabal.haskell-ci","cabal.project"])
+# REGENDATA ("0.19.20260331",["github","--config=cabal.haskell-ci","cabal.project"])
 #
 name: Haskell-CI
 on:
@@ -23,6 +23,8 @@ on:
   merge_group:
     branches:
       - master
+  workflow_dispatch:
+    {}
 jobs:
   linux:
     name: Haskell-CI - Linux - ${{ matrix.compiler }}
@@ -46,9 +48,9 @@ jobs:
             compilerVersion: 9.14.1
             setup-method: ghcup
             allow-failure: false
-          - compiler: ghc-9.12.2
+          - compiler: ghc-9.12.4
             compilerKind: ghc
-            compilerVersion: 9.12.2
+            compilerVersion: 9.12.4
             setup-method: ghcup
             allow-failure: false
           - compiler: ghc-9.10.3
@@ -197,15 +199,6 @@ jobs:
           echo "package hpqtypes-extras" >> cabal.project
           echo "    ghc-options: -Werror=incomplete-patterns -Werror=incomplete-uni-patterns" >> cabal.project
           cat >> cabal.project <<EOF
-          if impl ( ghc >= 9.14 )
-            allow-newer:
-              , *:base
-              , *:template-haskell
-              , aeson:containers
-              , aeson:indexed-traversable
-              , aeson:semialign
-              , aeson:time
-              , indexed-traversable:containers
           EOF
           cat cabal.project
           cat cabal.project.local
