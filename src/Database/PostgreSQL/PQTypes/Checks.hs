@@ -1126,13 +1126,13 @@ checkDBConsistency options domains enums tablesWithVersions migrations = do
               mgrDropTableMode
           runQuery_ $ sqlDelete "table_versions" $ do
             sqlWhereEq "name" (T.unpack . unRawSQL $ mgrTableName)
-        CreateIndexConcurrentlyMigration mLocalIndexName tableName idx -> do
+        CreateIndexConcurrentlyMigration mLocalIndexName idx -> do
           logMigration
           indexSet <- case mLocalIndexName of
             Nothing -> pure False
             Just localIndexName -> do
               isAbove15 <- checkVersionIsAtLeast15
-              runQuery_ $ sqlGetIndexes isAbove15 tableName (Just localIndexName)
+              runQuery_ $ sqlGetIndexes isAbove15 mgrTableName (Just localIndexName)
               fetchMaybe fetchTableIndex >>= \case
                 Nothing -> do
                   logInfo_ "Local index not found"
@@ -1146,7 +1146,7 @@ checkDBConsistency options domains enums tablesWithVersions migrations = do
                         ]
                     error "Indexes don't match"
                   logInfo_ "Local index found, renaming"
-                  runQuery_ $ "ALTER INDEX" <+> localIndexName <+> "RENAME TO" <+> indexName tableName idx
+                  runQuery_ $ "ALTER INDEX" <+> localIndexName <+> "RENAME TO" <+> indexName mgrTableName idx
                   pure True
           -- We're in auto transaction mode (as ensured at the beginning of
           -- 'checkDBConsistency'), so we need to issue explicit SQL commit,
@@ -1159,10 +1159,10 @@ checkDBConsistency options domains enums tablesWithVersions migrations = do
             -- rerun, we need to remove it first (see
             -- https://www.postgresql.org/docs/9.6/sql-createindex.html for more
             -- information).
-            runQuery_ $ "DROP INDEX CONCURRENTLY IF EXISTS" <+> indexName tableName idx
-            runQuery_ (sqlCreateIndexConcurrently tableName idx)
+            runQuery_ $ "DROP INDEX CONCURRENTLY IF EXISTS" <+> indexName mgrTableName idx
+            runQuery_ (sqlCreateIndexConcurrently mgrTableName idx)
           updateTableVersion
-        DropIndexConcurrentlyMigration tableName idx -> do
+        DropIndexConcurrentlyMigration idx -> do
           logMigration
           -- We're in auto transaction mode (as ensured at the beginning of
           -- 'checkDBConsistency'), so we need to issue explicit SQL commit,
@@ -1170,9 +1170,9 @@ checkDBConsistency options domains enums tablesWithVersions migrations = do
           -- transaction. We don't want that as concurrent dropping of index
           -- won't run inside a transaction.
           unsafeWithoutTransaction $ do
-            runQuery_ (sqlDropIndexConcurrently tableName idx)
+            runQuery_ (sqlDropIndexConcurrently mgrTableName idx)
           updateTableVersion
-        ModifyColumnMigration tableName cursorSql updateSql batchSize -> do
+        ModifyColumnMigration cursorSql updateSql batchSize -> do
           logMigration
           when (batchSize < 1000) $ do
             error "Batch size cannot be less than 1000"
@@ -1195,7 +1195,7 @@ checkDBConsistency options domains enums tablesWithVersions migrations = do
             -- arbitrary, but a reasonable ballpark estimate: it more or less
             -- makes sure we keep dead records in the 10% envelope and the table
             -- doesn't grow too much during the operation.
-            vacuumThreshold <- max 1000 . fromIntegral . (`div` 20) <$> getRowEstimate tableName
+            vacuumThreshold <- max 1000 . fromIntegral . (`div` 20) <$> getRowEstimate mgrTableName
             let cursorLoop processed = do
                   cursorFetch_ cursor (CD_Forward batchSize)
                   primaryKeys <- fetchMany id
@@ -1206,7 +1206,7 @@ checkDBConsistency options domains enums tablesWithVersions migrations = do
                         bracket_
                           (runSQL_ "COMMIT")
                           (runSQL_ "BEGIN")
-                          (runQuery_ $ "VACUUM" <+> tableName)
+                          (runQuery_ $ "VACUUM" <+> mgrTableName)
                         cursorLoop 0
                       else do
                         commit
