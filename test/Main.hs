@@ -154,7 +154,6 @@ tableBankMigration5snd =
     , mgrAction =
         CreateIndexConcurrentlyMigration
           (Just "local_idx_doesnt_exist")
-          (tblName tableBankSchema3)
           ((indexOnColumn "name") {idxInclude = ["id", "location"]})
     }
 
@@ -166,7 +165,6 @@ tableBankMigration5thrd =
     , mgrAction =
         CreateIndexConcurrentlyMigration
           (Just localBankIndexToRename)
-          (tblName tableBankSchema3)
           (indexOnColumns ["id", "name"])
     }
 
@@ -2068,7 +2066,7 @@ migrationTest5 connSource =
       Migration
         { mgrTableName = "bank"
         , mgrFrom = 2
-        , mgrAction = ModifyColumnMigration "bank" cursorSql copyColumnSql 1000
+        , mgrAction = ModifyColumnMigration cursorSql copyColumnSql 1000
         }
     copyColumnSql :: MonadDB m => [Identity UUID] -> m ()
     copyColumnSql primaryKeys =
@@ -2090,7 +2088,7 @@ migrationTest5 connSource =
       Migration
         { mgrTableName = "bank"
         , mgrFrom = 4
-        , mgrAction = ModifyColumnMigration "bank" cursorSql modifyColumnSql 1000
+        , mgrAction = ModifyColumnMigration cursorSql modifyColumnSql 1000
         }
     modifyColumnSql :: MonadDB m => [Identity UUID] -> m ()
     modifyColumnSql primaryKeys =

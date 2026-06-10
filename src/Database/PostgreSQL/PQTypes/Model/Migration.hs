@@ -55,14 +55,10 @@ data MigrationAction m
       --
       -- - If the index exists and its structure doesn't match the desired
       --   index, the migration will abort with an error.
-      (RawSQL ())
-      -- ^ Table name
       TableIndex
       -- ^ Index
   | -- | Migration for dropping an index concurrently.
     DropIndexConcurrentlyMigration
-      (RawSQL ())
-      -- ^ Table name
       TableIndex
       -- ^ Index
   | -- | Migration for modifying columns. Parameters are:
@@ -83,7 +79,7 @@ data MigrationAction m
     --   2. Unzip them into a tuple of lists in Haskell.
     --   3. Pass the lists to PostgreSQL as separate parameters and zip them back in the SQL,
     --      see https://stackoverflow.com/questions/12414750/is-there-something-like-a-zip-function-in-postgresql-that-combines-two-arrays for more details.
-    forall t. FromRow t => ModifyColumnMigration (RawSQL ()) SQL ([t] -> m ()) Int
+    forall t. FromRow t => ModifyColumnMigration SQL ([t] -> m ()) Int
 
 -- | Migration object.
 data Migration m

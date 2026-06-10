@@ -12,6 +12,8 @@
   creates index concurrently.
 * Fix two bugs in overlapping indexes check (not excluding local indexes
   properly and query failure when the table doesn't exist).
+* Drop redundant table name from `CreateIndexConcurrentlyMigration`,
+  `DropIndexConcurrentlyMigration` and `ModifyColumnMigration`.
 
 # hpqtypes-extras-1.19.0.0 (2025-11-27)
 * Compatibility with `hpqtypes` >= 0.13.0.0.
