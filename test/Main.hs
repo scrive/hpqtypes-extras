@@ -652,7 +652,7 @@ testDBSchema1 step = do
       , "6600 Sunset Blvd., Los Angeles, CA, USA"
       ]
     sqlResult "id"
-  (bankIds :: [UUID]) <- fetchMany runIdentity
+  bankIds <- fetchMany $ fromSQL @UUID
   liftIO $ assertEqual "INSERT into 'bank' table" 5 (length bankIds)
 
   -- Try to insert with existing ID to check that ON CONFLICT works properly
@@ -671,7 +671,7 @@ testDBSchema1 step = do
     sqlResult "name"
     sqlResult "location"
     sqlWhereEq "id" bankId
-  details1 <- fetchOne id
+  details1 <- fetchOne ((,) <$> fromSQL <*> fromSQL)
   liftIO $ assertEqual "INSERT ON CONFLICT updates" (name, location) details1
 
   runQuery_ . sqlInsert "bank" $ do
@@ -683,7 +683,7 @@ testDBSchema1 step = do
     sqlResult "name"
     sqlResult "location"
     sqlWhereEq "id" bankId
-  details3 <- fetchOne id
+  details3 <- fetchOne ((,) <$> fromSQL <*> fromSQL)
   liftIO $ assertEqual "INSERT ON CONFLICT does nothing (1)" (name, location) details3
 
   runQuery_ . sqlInsert "bank" $ do
@@ -695,7 +695,7 @@ testDBSchema1 step = do
     sqlResult "name"
     sqlResult "location"
     sqlWhereEq "id" bankId
-  details4 <- fetchOne id
+  details4 <- fetchOne ((,) <$> fromSQL <*> fromSQL)
   liftIO $ assertEqual "INSERT ON CONFLICT does nothing (2)" (name, location) details4
 
   -- If NO CONFLICT is not specified, make sure we throw an exception.
@@ -718,7 +718,7 @@ testDBSchema1 step = do
     sqlResult "name"
     sqlResult "location"
     sqlWhereEq "id" bankId
-  details5 <- fetchOne id
+  details5 <- fetchOne ((,) <$> fromSQL <*> fromSQL)
   liftIO $ assertEqual "INSERT ON CONFLICT updates" (name, location) details5
 
   runQuery_ . sqlInsertSelect "bank" "bank" $ do
@@ -731,7 +731,7 @@ testDBSchema1 step = do
     sqlResult "name"
     sqlResult "location"
     sqlWhereEq "id" bankId
-  details6 <- fetchOne id
+  details6 <- fetchOne ((,) <$> fromSQL <*> fromSQL)
   liftIO $ assertEqual "INSERT ON CONFLICT does nothing (1)" (name, location) details6
 
   runQuery_ . sqlInsertSelect "bank" "bank" $ do
@@ -744,7 +744,7 @@ testDBSchema1 step = do
     sqlResult "name"
     sqlResult "location"
     sqlWhereEq "id" bankId
-  details7 <- fetchOne id
+  details7 <- fetchOne ((,) <$> fromSQL <*> fromSQL)
   liftIO $ assertEqual "INSERT ON CONFLICT does nothing (2)" (name, location) details7
 
   -- If NO CONFLICT is not specified, make sure we throw an exception.
@@ -777,14 +777,14 @@ testDBSchema1 step = do
       , "Shaw"
       ]
     sqlResult "id"
-  (badGuyIds :: [UUID]) <- fetchMany runIdentity
+  badGuyIds <- fetchMany $ fromSQL @UUID
   liftIO $ assertEqual "INSERT into 'bad_guy' table" 6 (length badGuyIds)
 
   -- Populate the 'robbery' table.
   runQuery_ . sqlInsert "robbery" $ do
     sqlSetList "bank_id" [bankIds !! idx | idx <- [0, 3]]
     sqlResult "id"
-  (robberyIds :: [UUID]) <- fetchMany runIdentity
+  robberyIds <- fetchMany $ fromSQL @UUID
   liftIO $ assertEqual "INSERT into 'robbery' table" 2 (length robberyIds)
 
   -- Populate the 'participated_in_robbery' table.
@@ -792,7 +792,7 @@ testDBSchema1 step = do
     sqlSetList "bad_guy_id" [badGuyIds !! idx | idx <- [0, 2]]
     sqlSet "robbery_id" (robberyIds !! 0)
     sqlResult "bad_guy_id"
-  (participatorIds :: [UUID]) <- fetchMany runIdentity
+  participatorIds <- fetchMany $ fromSQL @UUID
   liftIO $
     assertEqual
       "INSERT into 'participated_in_robbery' table"
@@ -803,7 +803,7 @@ testDBSchema1 step = do
     sqlSetList "bad_guy_id" [badGuyIds !! idx | idx <- [3, 4]]
     sqlSet "robbery_id" (robberyIds !! 1)
     sqlResult "bad_guy_id"
-  (participatorIds' :: [UUID]) <- fetchMany runIdentity
+  participatorIds' <- fetchMany $ fromSQL @UUID
   liftIO $
     assertEqual
       "INSERT into 'participated_in_robbery' table"
@@ -831,7 +831,7 @@ testDBSchema1 step = do
       , "Hackett"
       ]
     sqlResult "id"
-  (witnessIds :: [UUID]) <- fetchMany runIdentity
+  witnessIds <- fetchMany $ fromSQL @UUID
   liftIO $ assertEqual "INSERT into 'witness' table" 6 (length witnessIds)
 
   -- Populate the 'witnessed_robbery' table.
@@ -839,7 +839,7 @@ testDBSchema1 step = do
     sqlSetList "witness_id" [witnessIds !! idx | idx <- [0, 1]]
     sqlSet "robbery_id" (robberyIds !! 0)
     sqlResult "witness_id"
-  (robberyWitnessIds :: [UUID]) <- fetchMany runIdentity
+  robberyWitnessIds <- fetchMany $ fromSQL @UUID
   liftIO $
     assertEqual
       "INSERT into 'witnessed_robbery' table"
@@ -850,7 +850,7 @@ testDBSchema1 step = do
     sqlSetList "witness_id" [witnessIds !! idx | idx <- [2, 3, 4]]
     sqlSet "robbery_id" (robberyIds !! 1)
     sqlResult "witness_id"
-  (robberyWitnessIds' :: [UUID]) <- fetchMany runIdentity
+  robberyWitnessIds' <- fetchMany $ fromSQL @UUID
   liftIO $
     assertEqual
       "INSERT into 'witnessed_robbery' table"
@@ -868,11 +868,11 @@ testDBSchema1 step = do
     sqlResult "location"
     sqlOrderBy "location"
 
-  details8 <- fetchMany runIdentity
+  details8 <- fetchMany fromSQL
   liftIO $
     assertEqual
       "Using collation method \"C\" leads to case-sensitive ordering of results"
-      [ "18 Bargatan, Stockholm, Sweden" :: String
+      [ "18 Bargatan, Stockholm, Sweden" :: T.Text
       , "2/3 Quux Ave., Milton Keynes, UK"
       , "23 Baz Lane, Liverpool, UK"
       , "6600 Sunset Blvd., Los Angeles, CA, USA"
@@ -887,11 +887,11 @@ testDBSchema1 step = do
     sqlResult "name"
     sqlOrderBy "name"
 
-  details9 <- fetchMany runIdentity
+  details9 <- fetchMany fromSQL
   liftIO $
     assertEqual
       "Using collation method \"en_US\" leads to case-insensitive ordering of results"
-      [ "byblos bank" :: String
+      [ "byblos bank" :: T.Text
       , "Citi"
       , "Nordea"
       , "Santander"
@@ -907,11 +907,11 @@ testDBSchema1 step = do
       sqlResult "lastname"
     liftIO $ assertEqual "DELETE FROM 'witness' table" 1 deletedRows
 
-    deletedName <- fetchOne id
+    deletedName <- fetchOne ((,) <$> fromSQL <*> fromSQL)
     liftIO $
       assertEqual
         "DELETE FROM 'witness' table RETURNING firstname, lastname"
-        ("Erica" :: String, "Hackett" :: String)
+        ("Erica" :: T.Text, "Hackett" :: T.Text)
         deletedName
 
   return (badGuyIds, robberyIds)
@@ -949,14 +949,14 @@ testDBSchema2 step badGuyIds robberyIds = do
   runSQL_ $
     "SELECT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public'"
       <> " AND tablename = 'witness')"
-  (witnessExists :: Bool) <- fetchOne runIdentity
+  witnessExists <- fetchOne $ fromSQL @Bool
   liftIO $ assertEqual "Table 'witness' doesn't exist" False witnessExists
 
   -- Check that table 'witnessed_robbery' doesn't exist.
   runSQL_ $
     "SELECT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public'"
       <> " AND tablename = 'witnessed_robbery')"
-  (witnessedRobberyExists :: Bool) <- fetchOne runIdentity
+  witnessedRobberyExists <- fetchOne $ fromSQL @Bool
   liftIO $
     assertEqual
       "Table 'witnessed_robbery' doesn't exist"
@@ -968,7 +968,7 @@ testDBSchema2 step badGuyIds robberyIds = do
     sqlSetList "bad_guy_id" [badGuyIds !! idx | idx <- [0, 2]]
     sqlSet "robbery_id" (robberyIds !! 0)
     sqlResult "bad_guy_id"
-  (arrestedIds :: [UUID]) <- fetchMany runIdentity
+  arrestedIds <- fetchMany $ fromSQL @UUID
   liftIO $
     assertEqual
       "INSERT into 'under_arrest' table"
@@ -979,7 +979,7 @@ testDBSchema2 step badGuyIds robberyIds = do
     sqlSetList "bad_guy_id" [badGuyIds !! idx | idx <- [3, 4]]
     sqlSet "robbery_id" (robberyIds !! 1)
     sqlResult "bad_guy_id"
-  (arrestedIds' :: [UUID]) <- fetchMany runIdentity
+  arrestedIds' <- fetchMany $ fromSQL @UUID
   liftIO $
     assertEqual
       "INSERT into 'under_arrest' table"
@@ -1006,7 +1006,7 @@ testDBSchema3 step badGuyIds robberyIds = do
   runSQL_ $
     "SELECT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public'"
       <> " AND tablename = 'under_arrest')"
-  (underArrestExists :: Bool) <- fetchOne runIdentity
+  underArrestExists <- fetchOne $ fromSQL @Bool
   liftIO $
     assertEqual
       "Table 'under_arrest' doesn't exist"
@@ -1017,7 +1017,7 @@ testDBSchema3 step badGuyIds robberyIds = do
   runSQL_ $
     "SELECT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public'"
       <> " AND tablename = 'prison_sentence')"
-  (prisonSentenceExists :: Bool) <- fetchOne runIdentity
+  prisonSentenceExists <- fetchOne $ fromSQL @Bool
   liftIO $
     assertEqual
       "Table 'prison_sentence' does exist"
@@ -1031,7 +1031,7 @@ testDBSchema3 step badGuyIds robberyIds = do
     sqlSet "sentence_length" (12 :: Int)
     sqlSet "prison_name" ("Long Kesh" :: T.Text)
     sqlResult "bad_guy_id"
-  (sentencedIds :: [UUID]) <- fetchMany runIdentity
+  sentencedIds <- fetchMany $ fromSQL @UUID
   liftIO $
     assertEqual
       "INSERT into 'prison_sentence' table"
@@ -1044,7 +1044,7 @@ testDBSchema3 step badGuyIds robberyIds = do
     sqlSet "sentence_length" (9 :: Int)
     sqlSet "prison_name" ("Wormwood Scrubs" :: T.Text)
     sqlResult "bad_guy_id"
-  (sentencedIds' :: [UUID]) <- fetchMany runIdentity
+  sentencedIds' <- fetchMany $ fromSQL @UUID
   liftIO $
     assertEqual
       "INSERT into 'prison_sentence' table"
@@ -1073,7 +1073,7 @@ testDBSchema4 step = do
       <> " WHERE table_schema = 'public'"
       <> " AND table_name = 'bank'"
       <> " AND column_name = 'cash')"
-  (colCashExists :: Bool) <- fetchOne runIdentity
+  colCashExists <- fetchOne $ fromSQL @Bool
   liftIO $
     assertEqual
       "Column 'cash' in the table 'bank' does exist"
@@ -1099,7 +1099,7 @@ testDBSchema5 step = do
       <> " WHERE table_schema = 'public'"
       <> " AND table_name = 'bank'"
       <> " AND column_name = 'cash')"
-  (colCashExists :: Bool) <- fetchOne runIdentity
+  colCashExists <- fetchOne $ fromSQL @Bool
   liftIO $
     assertEqual
       "Column 'cash' in the table 'bank' doesn't exist"
@@ -1110,7 +1110,7 @@ testDBSchema5 step = do
   runSQL_ $
     "SELECT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public'"
       <> " AND tablename = 'flash')"
-  (flashExists :: Bool) <- fetchOne runIdentity
+  flashExists <- fetchOne $ fromSQL @Bool
   liftIO $ assertEqual "Table 'flash' doesn't exist" False flashExists
 
   return ()
@@ -1669,7 +1669,7 @@ testSqlWith step = do
             sqlResult "name"
         sqlFrom "other_bank"
         sqlResult "other_bank.name"
-      (results :: [T.Text]) <- fetchMany runIdentity
+      results <- fetchMany $ fromSQL @T.Text
       liftIO $ assertEqual "Wrong number of banks left" 2 (length results)
 
 testSqlWithRecursive :: HasCallStack => (String -> TestM ()) -> TestM ()
@@ -1689,7 +1689,7 @@ testSqlWithRecursive step = do
         sqlSetList "firstname" ["Pablo" :: T.Text, "Gustavo", "Mario"]
         sqlSetList "lastname" ["Escobar" :: T.Text, "Rivero", "Vallejo"]
         sqlResult "id"
-      (badGuyIds :: [UUID]) <- fetchMany runIdentity
+      badGuyIds <- fetchMany $ fromSQL @UUID
       -- Populate the 'cartel' table
       -- We will have a simple direct hierarchy just to test the recursion:
       -- Pablo is the boss of Gustavo, who is the boss of Mario
@@ -1722,10 +1722,15 @@ testSqlWithRecursive step = do
         sqlResult "boss.lastname"
         sqlJoinOn "bad_guy member" "rcartel.cartel_member_id = member.id"
         sqlLeftJoinOn "bad_guy boss" "rcartel.cartel_boss_id = boss.id"
-      let toCartel :: (T.Text, T.Text, Maybe T.Text, Maybe T.Text) -> (T.Text, Maybe T.Text)
-          toCartel (memberFn, memberLn, bossFn, bossLn) =
-            (T.intercalate " " [memberFn, memberLn], T.intercalate " " <$> sequence [bossFn, bossLn])
-      results <- fetchMany toCartel
+      results <- fetchMany $ do
+        memberFn <- fromSQL
+        memberLn <- fromSQL
+        bossFn <- fromSQL
+        bossLn <- fromSQL
+        pure
+          ( T.intercalate " " [memberFn, memberLn]
+          , T.intercalate " " <$> sequence [bossFn, bossLn]
+          )
       liftIO $
         assertEqual
           "Wrong cartel hierarchy retrieved"
@@ -1749,7 +1754,7 @@ testUnion step = do
           , sqlSelect "" $ do
               sqlResult "true"
           ]
-      result <- fetchMany runIdentity
+      result <- fetchMany fromSQL
       liftIO $
         assertEqual
           "UNION of booleans"
@@ -1770,7 +1775,7 @@ testUnionAll step = do
           , sqlSelect "" $ do
               sqlResult "true"
           ]
-      result <- fetchMany runIdentity
+      result <- fetchMany fromSQL
       liftIO $
         assertEqual
           "UNION ALL of booleans"
@@ -2066,13 +2071,13 @@ migrationTest5 connSource =
       Migration
         { mgrTableName = "bank"
         , mgrFrom = 2
-        , mgrAction = ModifyColumnMigration cursorSql copyColumnSql 1000
+        , mgrAction = ModifyColumnMigration cursorSql fromSQL copyColumnSql 1000
         }
-    copyColumnSql :: MonadDB m => [Identity UUID] -> m ()
+    copyColumnSql :: MonadDB m => [UUID] -> m ()
     copyColumnSql primaryKeys =
       runQuery_ . sqlUpdate "bank" $ do
         sqlSetCmd "name_new" "bank.name"
-        sqlWhereEqualsAny "bank.id" $ runIdentity <$> primaryKeys
+        sqlWhereEqualsAny "bank.id" primaryKeys
 
     addBoolColumnMigration =
       Migration
@@ -2088,36 +2093,36 @@ migrationTest5 connSource =
       Migration
         { mgrTableName = "bank"
         , mgrFrom = 4
-        , mgrAction = ModifyColumnMigration cursorSql modifyColumnSql 1000
+        , mgrAction = ModifyColumnMigration cursorSql fromSQL modifyColumnSql 1000
         }
-    modifyColumnSql :: MonadDB m => [Identity UUID] -> m ()
+    modifyColumnSql :: MonadDB m => [UUID] -> m ()
     modifyColumnSql primaryKeys =
       runQuery_ . sqlUpdate "bank" $ do
         sqlSet "name_is_true" True
-        sqlWhereIn "bank.id" $ runIdentity <$> primaryKeys
+        sqlWhereIn "bank.id" primaryKeys
 
     checkAddStringColumn = do
       runQuery_ . sqlSelect "bank" $ sqlResult "name_new"
-      rows :: [Maybe T.Text] <- fetchMany runIdentity
+      rows <- fetchMany $ fromSQL @(Maybe T.Text)
       liftIO . assertEqual "No name_new in empty column" True $ all (== Nothing) rows
 
     checkCopyStringColumn = do
       runQuery_ . sqlSelect "bank" $ sqlResult "name_new"
-      rows_new :: [Maybe T.Text] <- fetchMany runIdentity
+      rows_new <- fetchMany $ fromSQL @(Maybe T.Text)
       runQuery_ . sqlSelect "bank" $ sqlResult "name"
-      rows_old :: [Maybe T.Text] <- fetchMany runIdentity
+      rows_old <- fetchMany $ fromSQL @(Maybe T.Text)
       liftIO . assertEqual "All name_new are equal name" True $
         all (uncurry (==)) $
           zip rows_new rows_old
 
     checkAddBoolColumn = do
       runQuery_ . sqlSelect "bank" $ sqlResult "name_is_true"
-      rows :: [Maybe Bool] <- fetchMany runIdentity
+      rows <- fetchMany $ fromSQL @(Maybe Bool)
       liftIO . assertEqual "All name_is_true default to false" True $ all (== Just False) rows
 
     checkModifyBoolColumn = do
       runQuery_ . sqlSelect "bank" $ sqlResult "name_is_true"
-      rows :: [Maybe Bool] <- fetchMany runIdentity
+      rows <- fetchMany $ fromSQL @(Maybe Bool)
       liftIO . assertEqual "All name_is_true are true" True $ all (== Just True) rows
 
 foreignKeyIndexesTests :: ConnectionSourceM (LogT IO) -> TestTree

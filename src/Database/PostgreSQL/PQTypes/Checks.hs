@@ -38,7 +38,6 @@ import Data.Map qualified as M
 import Data.Maybe
 import Data.Monoid.Utils
 import Data.Set qualified as S
-import Data.String qualified
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Typeable (cast)
@@ -180,8 +179,8 @@ checkDatabase options dbDefinitions =
 currentCatalog :: (MonadDB m, MonadThrow m) => m (RawSQL ())
 currentCatalog = do
   runSQL_ "SELECT current_catalog::text"
-  dbname <- fetchOne runIdentity
-  return $ unsafeSQL $ "\"" ++ dbname ++ "\""
+  dbname <- fetchOne $ fromSQL @Text
+  return $ rawSQL ("\"" <> dbname <> "\"") ()
 
 -- | Check for a given extension. We need to read from 'pg_extension'
 -- table as Amazon RDS limits usage of 'CREATE EXTENSION IF NOT EXISTS'.
@@ -204,7 +203,7 @@ checkExtension (Extension extension) = do
 setDBTimeZoneToUTC :: (MonadDB m, MonadLog m, MonadThrow m) => m ()
 setDBTimeZoneToUTC = do
   runSQL_ "SHOW timezone"
-  timezone :: String <- fetchOne runIdentity
+  timezone <- fetchOne $ fromSQL @Text
   when (timezone /= "UTC") $ do
     dbname <- currentCatalog
     logInfo_ $
@@ -226,7 +225,7 @@ getDBTableNames = do
     sqlWhereExists $ sqlSelect "unnest(current_schemas(false)) as cs" $ do
       sqlResult "TRUE"
       sqlWhere "cs = table_schema"
-  fetchMany runIdentity
+  fetchMany fromSQL
 
 checkVersions :: ExtrasOptions -> TablesWithVersions -> ValidationResult
 checkVersions options = mconcat . map checkVersion
@@ -280,7 +279,7 @@ checkExistenceOfVersionsForTables
 checkExistenceOfVersionsForTables tables = do
   runQuery_ $ sqlSelect "table_versions" $ do
     sqlResult "name::text"
-  (existingTableNames :: [Text]) <- fetchMany runIdentity
+  existingTableNames <- fetchMany $ fromSQL @Text
 
   let tableNames = map (unRawSQL . tblName) tables
       absent = existingTableNames L.\\ tableNames
@@ -310,40 +309,52 @@ checkDomainsStructure defs = fmap mconcat . forM defs $ \def -> do
       \WHERE t2.oid = t1.typbasetype)" -- type
     sqlResult "NOT t1.typnotnull" -- nullable
     sqlResult "t1.typdefault" -- default value
-    sqlResult
-      "ARRAY(SELECT c.conname::text FROM pg_catalog.pg_constraint c \
-      \WHERE c.contype = 'c' AND c.contypid = t1.oid \
-      \ORDER by c.oid)" -- constraint names
-    sqlResult
-      "ARRAY(SELECT regexp_replace(pg_get_constraintdef(c.oid, true), '\
-      \CHECK \\((.*)\\)', '\\1') FROM pg_catalog.pg_constraint c \
-      \WHERE c.contype = 'c' AND c.contypid = t1.oid \
-      \ORDER by c.oid)" -- constraint definitions
-    sqlResult
-      "ARRAY(SELECT c.convalidated FROM pg_catalog.pg_constraint c \
-      \WHERE c.contype = 'c' AND c.contypid = t1.oid \
-      \ORDER by c.oid)" -- are constraints validated?
+    -- constraint names
+    sqlResultArray . sqlSelect "pg_catalog.pg_constraint c" $ do
+      sqlResult "c.conname::text"
+      sqlWhere "c.contype = 'c'"
+      sqlWhere "c.contypid = t1.oid"
+      sqlOrderBy "c.oid"
+    -- constraint definitions
+    sqlResultArray . sqlSelect "pg_catalog.pg_constraint c" $ do
+      sqlResult "regexp_replace(pg_get_constraintdef(c.oid, true), 'CHECK \\((.*)\\)', '\\1')"
+      sqlWhere "c.contype = 'c'"
+      sqlWhere "c.contypid = t1.oid"
+      sqlOrderBy "c.oid"
+    -- are constraints validated?
+    sqlResultArray . sqlSelect "pg_catalog.pg_constraint c" $ do
+      sqlResult "c.convalidated"
+      sqlWhere "c.contype = 'c'"
+      sqlWhere "c.contypid = t1.oid"
+      sqlOrderBy "c.oid"
     sqlWhereEq "t1.typname" $ unRawSQL $ domName def
-  mdom <- fetchMaybe $
-    \(dname, dtype, nullable, defval, cnames, conds, valids) ->
+  mdom <- fetchMaybe $ do
+    dname <- fromSQL
+    dtype <- fromSQL
+    isNullable <- fromSQL
+    defval <- fromSQL
+    cnames <- fromSQL
+    conds <- fromSQL
+    valids <- fromSQL
+    pure
       Domain
-        { domName = unsafeSQL dname
+        { domName = rawSQL dname ()
         , domType = dtype
-        , domNullable = nullable
-        , domDefault = unsafeSQL <$> defval
+        , domNullable = isNullable
+        , domDefault = (`rawSQL` ()) <$> defval
         , domChecks =
             mkChecks $
               zipWith3
                 ( \cname cond validated ->
                     Check
-                      { chkName = unsafeSQL cname
-                      , chkCondition = unsafeSQL cond
+                      { chkName = rawSQL cname ()
+                      , chkCondition = rawSQL cond ()
                       , chkValidated = validated
                       }
                 )
-                (unArray1 cnames)
-                (unArray1 conds)
-                (unArray1 valids)
+                cnames
+                conds
+                valids
         }
   return $ case mdom of
     Just dom
@@ -389,16 +400,21 @@ checkEnumTypes
 checkEnumTypes defs = fmap mconcat . forM defs $ \defEnum -> do
   runQuery_ . sqlSelect "pg_catalog.pg_type t" $ do
     sqlResult "t.typname::text" -- name
-    sqlResult
-      "ARRAY(SELECT e.enumlabel::text FROM pg_catalog.pg_enum e WHERE e.enumtypid = t.oid ORDER BY e.enumsortorder)" -- values
+    -- values
+    sqlResultArray . sqlSelect "pg_catalog.pg_enum e" $ do
+      sqlResult "e.enumlabel::text"
+      sqlWhere "e.enumtypid = t.oid"
+      sqlOrderBy "e.enumsortorder"
     sqlWhereEq "t.typname" $ unRawSQL $ etName defEnum
-  enum <- fetchMaybe $
-    \(enumName, enumValues) ->
+  mEnum <- fetchMaybe $ do
+    enumName <- fromSQL
+    enumValues <- fromSQL
+    pure
       EnumType
-        { etName = unsafeSQL enumName
-        , etValues = map unsafeSQL $ unArray1 enumValues
+        { etName = rawSQL enumName ()
+        , etValues = map (`rawSQL` ()) enumValues
         }
-  pure $ case enum of
+  pure $ case mEnum of
     Just dbEnum -> do
       let enumName = unRawSQL $ etName defEnum
           dbValues = map unRawSQL $ etValues dbEnum
@@ -623,16 +639,21 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version)
           , checkedOverlaps
           ]
       where
-        fetchTableColumn
-          :: (String, ColumnType, Maybe Text, Bool, Maybe String) -> TableColumn
-        fetchTableColumn (name, ctype, collation, nullable, mdefault) =
-          TableColumn
-            { colName = unsafeSQL name
-            , colType = ctype
-            , colCollation = flip rawSQL () <$> collation
-            , colNullable = nullable
-            , colDefault = unsafeSQL <$> mdefault
-            }
+        fetchTableColumn :: RowDecoder TableColumn
+        fetchTableColumn = do
+          name <- fromSQL
+          ctype <- fromSQL
+          collation <- fromSQL
+          isNullable <- fromSQL
+          mdefault <- fromSQL
+          pure
+            TableColumn
+              { colName = rawSQL name ()
+              , colType = ctype
+              , colCollation = (`rawSQL` ()) <$> collation
+              , colNullable = isNullable
+              , colDefault = (`rawSQL` ()) <$> mdefault
+              }
 
         checkColumns
           :: Int -> [TableColumn] -> [TableColumn] -> ValidationResult
@@ -822,15 +843,17 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version)
             else pure mempty
           where
             go = do
-              let handleOverlap (contained, contains) =
-                    mconcat
-                      [ "\n  ●  Index "
-                      , contains
-                      , " contains index "
-                      , contained
-                      ]
               runSQL_ $ checkOverlappingIndexesQuery tableName
-              overlaps <- fetchMany handleOverlap
+              overlaps <- fetchMany $ do
+                contained <- fromSQL
+                contains <- fromSQL
+                pure $
+                  mconcat
+                    [ "\n  ●  Index "
+                    , contains
+                    , " contains index "
+                    , contained
+                    ]
               pure $
                 if null overlaps
                   then mempty
@@ -1172,7 +1195,7 @@ checkDBConsistency options domains enums tablesWithVersions migrations = do
           unsafeWithoutTransaction $ do
             runQuery_ (sqlDropIndexConcurrently mgrTableName idx)
           updateTableVersion
-        ModifyColumnMigration cursorSql updateSql batchSize -> do
+        ModifyColumnMigration cursorSql decoder updateSql batchSize -> do
           logMigration
           when (batchSize < 1000) $ do
             error "Batch size cannot be less than 1000"
@@ -1198,7 +1221,7 @@ checkDBConsistency options domains enums tablesWithVersions migrations = do
             vacuumThreshold <- max 1000 . fromIntegral . (`div` 20) <$> getRowEstimate mgrTableName
             let cursorLoop processed = do
                   cursorFetch_ cursor (CD_Forward batchSize)
-                  primaryKeys <- fetchMany id
+                  primaryKeys <- fetchMany decoder
                   unless (null primaryKeys) $ do
                     updateSql primaryKeys
                     if processed + batchSize >= vacuumThreshold
@@ -1237,7 +1260,7 @@ checkDBConsistency options domains enums tablesWithVersions migrations = do
             -- casting the name to regclass resolves the ambiguity using search
             -- path priority.
             sqlWhere $ "oid =" <?> unRawSQL tableName <> "::regclass"
-          fetchOne runIdentity
+          fetchOne fromSQL
 
     runMigrations :: [(Text, Int32)] -> m ()
     runMigrations dbTablesWithVersions = do
@@ -1382,7 +1405,7 @@ type TablesWithVersions = [(Table, Int32)]
 checkVersionIsAtLeast15 :: (MonadDB m, MonadThrow m) => m Bool
 checkVersionIsAtLeast15 = do
   runSQL01_ "select current_setting('server_version_num',true)::int >= 150000;"
-  fetchOne runIdentity
+  fetchOne fromSQL
 
 -- | Associate each table in the list with its version as it exists in
 -- the DB, or 0 if it's missing from the DB.
@@ -1422,7 +1445,7 @@ checkTableVersion tblName = do
       runQuery_ $
         "SELECT version FROM table_versions WHERE name ="
           <?> tblName
-      mver <- fetchMaybe runIdentity
+      mver <- fetchMaybe fromSQL
       case mver of
         Just ver -> return $ Just ver
         Nothing ->
@@ -1451,49 +1474,26 @@ sqlGetPrimaryKey
   => RawSQL ()
   -> m (Maybe (PrimaryKey, RawSQL ()))
 sqlGetPrimaryKey tableName = do
-  (mColumnNumbers :: Maybe [Int16]) <- do
-    runQuery_ . sqlSelect "pg_catalog.pg_constraint" $ do
-      sqlResult "conkey"
-      sqlWhereEqSql "conrelid" $ sqlGetTableID tableName
-      sqlWhereEq "contype" 'p'
-    fetchMaybe $ unArray1 . runIdentity
+  runQuery_ . sqlSelect "pg_catalog.pg_constraint c" $ do
+    sqlResult "c.conname::text"
+    -- 'c.conkey' is an ordered array of the constrained columns' attnums;
+    -- unnest it WITH ORDINALITY and order by that to preserve the key order.
+    sqlResultArray . sqlSelect "unnest(c.conkey) WITH ORDINALITY AS conkeys(attnum, n)" $ do
+      sqlJoinOn "pg_catalog.pg_attribute a" "a.attnum = conkeys.attnum"
+      sqlResult "a.attname::text"
+      sqlWhere "a.attrelid = c.conrelid"
+      sqlOrderBy "conkeys.n"
+    sqlWhereEq "c.contype" 'p'
+    sqlWhereEqSql "c.conrelid" $ sqlGetTableID tableName
+  join <$> fetchMaybe fetchPrimaryKey
 
-  case mColumnNumbers of
-    Nothing -> do return Nothing
-    Just columnNumbers -> do
-      columnNames <- do
-        forM columnNumbers $ \k -> do
-          runQuery_ . sqlSelect "pk_columns" $ do
-            sqlWith "key_series" . sqlSelect "pg_constraint as c2" $ do
-              sqlResult "unnest(c2.conkey) as k"
-              sqlWhereEqSql "c2.conrelid" $ sqlGetTableID tableName
-              sqlWhereEq "c2.contype" 'p'
-
-            sqlWith "pk_columns" . sqlSelect "key_series" $ do
-              sqlJoinOn "pg_catalog.pg_attribute as a" "a.attnum = key_series.k"
-              sqlResult "a.attname::text as column_name"
-              sqlResult "key_series.k as column_order"
-              sqlWhereEqSql "a.attrelid" $ sqlGetTableID tableName
-
-            sqlResult "pk_columns.column_name"
-            sqlWhereEq "pk_columns.column_order" k
-
-          fetchOne (\(Identity t) -> t :: String)
-
-      runQuery_ . sqlSelect "pg_catalog.pg_constraint as c" $ do
-        sqlWhereEq "c.contype" 'p'
-        sqlWhereEqSql "c.conrelid" $ sqlGetTableID tableName
-        sqlResult "c.conname::text"
-        sqlResult $
-          Data.String.fromString
-            ("array['" <> mintercalate "', '" columnNames <> "']::text[]")
-
-      join <$> fetchMaybe fetchPrimaryKey
-
-fetchPrimaryKey :: (Text, Array1 Text) -> Maybe (PrimaryKey, RawSQL ())
-fetchPrimaryKey (name, Array1 columns) =
-  (,rawSQL name ())
-    <$> pkOnColumns (map (`rawSQL` ()) columns)
+fetchPrimaryKey :: RowDecoder (Maybe (PrimaryKey, RawSQL ()))
+fetchPrimaryKey = do
+  name <- fromSQL
+  columns <- fromSQL
+  pure $
+    (,rawSQL name ())
+      <$> pkOnColumns (map (`rawSQL` ()) columns)
 
 -- *** CHECKS ***
 
@@ -1507,13 +1507,17 @@ sqlGetChecks tableName = toSQLCommand . sqlSelect "pg_catalog.pg_constraint c" $
   sqlWhereEq "c.contype" 'c'
   sqlWhereEqSql "c.conrelid" $ sqlGetTableID tableName
 
-fetchTableCheck :: (Text, Text, Bool) -> Check
-fetchTableCheck (name, condition, validated) =
-  Check
-    { chkName = rawSQL name ()
-    , chkCondition = rawSQL condition ()
-    , chkValidated = validated
-    }
+fetchTableCheck :: RowDecoder Check
+fetchTableCheck = do
+  name <- fromSQL
+  condition <- fromSQL
+  validated <- fromSQL
+  pure
+    Check
+      { chkName = rawSQL name ()
+      , chkCondition = rawSQL condition ()
+      , chkValidated = validated
+      }
 
 -- *** INDEXES ***
 sqlGetIndexes :: Bool -> RawSQL () -> Maybe (RawSQL ()) -> SQL
@@ -1555,23 +1559,29 @@ sqlGetIndexes nullsNotDistinctSupported tableName mname = toSQLCommand . sqlSele
         , "SELECT name FROM coordinates WHERE name IS NOT NULL"
         ]
 
-fetchTableIndex
-  :: (Text, Array1 Text, Array1 Text, Text, Bool, Bool, Maybe Text)
-  -> (TableIndex, RawSQL ())
-fetchTableIndex (name, Array1 keyColumns, Array1 includeColumns, method, unique, nullsNotDistinct, mconstraint) =
-  ( TableIndex
-      { idxColumns = map (indexColumn . (`rawSQL` ())) keyColumns
-      , idxInclude = map (`rawSQL` ()) includeColumns
-      , idxMethod = case method of
-          "gin" -> GIN
-          "btree" -> BTree
-          _ -> error $ "unexpected index method: " ++ T.unpack method
-      , idxUnique = unique
-      , idxWhere = (`rawSQL` ()) <$> mconstraint
-      , idxNotDistinctNulls = nullsNotDistinct
-      }
-  , rawSQL name ()
-  )
+fetchTableIndex :: RowDecoder (TableIndex, RawSQL ())
+fetchTableIndex = do
+  name <- fromSQL
+  keyColumns <- fromSQL
+  includeColumns <- fromSQL
+  method <- fromSQL
+  unique <- fromSQL
+  nullsNotDistinct <- fromSQL
+  mconstraint <- fromSQL
+  pure
+    ( TableIndex
+        { idxColumns = map (indexColumn . (`rawSQL` ())) keyColumns
+        , idxInclude = map (`rawSQL` ()) includeColumns
+        , idxMethod = case method of
+            "gin" -> GIN
+            "btree" -> BTree
+            _ -> error $ "unexpected index method: " ++ T.unpack method
+        , idxUnique = unique
+        , idxWhere = (`rawSQL` ()) <$> mconstraint
+        , idxNotDistinctNulls = nullsNotDistinct
+        }
+    , rawSQL name ()
+    )
 
 -- *** FOREIGN KEYS ***
 
@@ -1580,20 +1590,19 @@ sqlGetForeignKeys tableName = toSQLCommand
   . sqlSelect "pg_catalog.pg_constraint r"
   $ do
     sqlResult "r.conname::text" -- fk name
-    sqlResult $
-      "ARRAY(SELECT a.attname::text FROM pg_catalog.pg_attribute a JOIN ("
-        <> unnestWithOrdinality "r.conkey"
-        <> ") conkeys ON (a.attnum = conkeys.item) \
-           \WHERE a.attrelid = r.conrelid \
-           \ORDER BY conkeys.n)" -- constrained columns
+    -- constrained columns
+    sqlResultArray . sqlSelect "unnest(r.conkey) WITH ORDINALITY AS conkeys(attnum, n)" $ do
+      sqlJoinOn "pg_catalog.pg_attribute a" "a.attnum = conkeys.attnum"
+      sqlResult "a.attname::text"
+      sqlWhere "a.attrelid = r.conrelid"
+      sqlOrderBy "conkeys.n"
     sqlResult "c.relname::text" -- referenced table
-    sqlResult $
-      "ARRAY(SELECT a.attname::text \
-      \FROM pg_catalog.pg_attribute a JOIN ("
-        <> unnestWithOrdinality "r.confkey"
-        <> ") confkeys ON (a.attnum = confkeys.item) \
-           \WHERE a.attrelid = r.confrelid \
-           \ORDER BY confkeys.n)" -- referenced columns
+    -- referenced columns
+    sqlResultArray . sqlSelect "unnest(r.confkey) WITH ORDINALITY AS confkeys(attnum, n)" $ do
+      sqlJoinOn "pg_catalog.pg_attribute a" "a.attnum = confkeys.attnum"
+      sqlResult "a.attname::text"
+      sqlWhere "a.attrelid = r.confrelid"
+      sqlOrderBy "confkeys.n"
     sqlResult "r.confupdtype" -- on update
     sqlResult "r.confdeltype" -- on delete
     sqlResult "r.condeferrable" -- deferrable?
@@ -1602,29 +1611,19 @@ sqlGetForeignKeys tableName = toSQLCommand
     sqlJoinOn "pg_catalog.pg_class c" "c.oid = r.confrelid"
     sqlWhereEqSql "r.conrelid" $ sqlGetTableID tableName
     sqlWhereEq "r.contype" 'f'
-  where
-    unnestWithOrdinality :: RawSQL () -> SQL
-    unnestWithOrdinality arr =
-      "SELECT n, "
-        <> raw arr
-        <> "[n] AS item FROM generate_subscripts("
-        <> raw arr
-        <> ", 1) AS n"
 
-fetchForeignKey
-  :: (Text, Array1 Text, Text, Array1 Text, Char, Char, Bool, Bool, Bool)
-  -> (ForeignKey, RawSQL ())
-fetchForeignKey
-  ( name
-    , Array1 columns
-    , reftable
-    , Array1 refcolumns
-    , on_update
-    , on_delete
-    , deferrable
-    , deferred
-    , validated
-    ) =
+fetchForeignKey :: RowDecoder (ForeignKey, RawSQL ())
+fetchForeignKey = do
+  name <- fromSQL
+  columns <- fromSQL
+  reftable <- fromSQL
+  refcolumns <- fromSQL
+  on_update <- fromSQL
+  on_delete <- fromSQL
+  deferrable <- fromSQL
+  deferred <- fromSQL
+  validated <- fromSQL
+  pure
     ( ForeignKey
         { fkColumns = map (`rawSQL` ()) columns
         , fkRefTable = rawSQL reftable ()
@@ -1637,14 +1636,14 @@ fetchForeignKey
         }
     , rawSQL name ()
     )
-    where
-      charToForeignKeyAction c = case c of
-        'a' -> ForeignKeyNoAction
-        'r' -> ForeignKeyRestrict
-        'c' -> ForeignKeyCascade
-        'n' -> ForeignKeySetNull
-        'd' -> ForeignKeySetDefault
-        _ ->
-          error $
-            "fetchForeignKey: invalid foreign key action code: "
-              ++ show c
+  where
+    charToForeignKeyAction c = case c of
+      'a' -> ForeignKeyNoAction
+      'r' -> ForeignKeyRestrict
+      'c' -> ForeignKeyCascade
+      'n' -> ForeignKeySetNull
+      'd' -> ForeignKeySetDefault
+      _ ->
+        error $
+          "fetchForeignKey: invalid foreign key action code: "
+            ++ show c
