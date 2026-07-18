@@ -259,44 +259,31 @@ getDBTriggers tableName = do
     sqlJoinOn "pg_type fn_rettype" "fn_rettype.oid = p.prorettype"
     sqlWhereEq "t.tgisinternal" False
     sqlWhereEq "c.relname" $ unRawSQL tableName
-  fetchMany getTrigger
-  where
-    getTrigger :: (String, Int16, Bool, Bool, Bool, String, String, String, Bool, String, Maybe (Array1 Text), String) -> Trigger
-    getTrigger (tgname, tgtype, tgconstraint, tgdeferrable, tginitdeferrable, triggerdef, proname, prosrc, prosecdef, prorettype, proconfig, tblName) =
-      ( Trigger
-          { triggerTable = tableName'
-          , triggerName = triggerBaseName (unsafeSQL tgname) tableName'
-          , triggerKind = tgrKind
-          , triggerEvents = trgEvents
-          , triggerWhen = tgrWhen
-          , triggerFunction =
-              Function
-                { fnName = unsafeSQL proname
-                , fnBody = unsafeSQL prosrc
-                , fnReturns = unsafeSQL prorettype
-                , fnSecurity =
-                    if prosecdef
-                      then Definer
-                      else Invoker
-                , fnConfigurationParameters =
-                    M.fromList . mapMaybe parseFnConfigurationParameter $
-                      maybe [] unArray1 proconfig
-                }
-          }
-      )
-      where
+  fetchMany $ do
+    tgname <- fromSQL
+    tgtype <- fromSQL @Int16
+    tgconstraint <- fromSQL
+    tgdeferrable <- fromSQL
+    tginitdeferrable <- fromSQL
+    triggerdef <- fromSQL
+    proname <- fromSQL
+    prosrc <- fromSQL
+    prosecdef <- fromSQL
+    prorettype <- fromSQL
+    proconfig <- fromSQL
+    tblName <- fromSQL
+    let tableName' :: RawSQL ()
+        tableName' = rawSQL tblName ()
+
         -- Parses "config_name=value" strings into tuples ("config_name", value)
         parseFnConfigurationParameter s
           | [configName, value] <- T.splitOn "=" s =
-              Just (configName, unsafeSQL $ T.unpack value)
+              Just (configName, rawSQL value ())
           | otherwise = Nothing
-
-        tableName' :: RawSQL ()
-        tableName' = unsafeSQL tblName
 
         parseBetween :: Text -> Text -> Maybe (RawSQL ())
         parseBetween left right =
-          let (prefix, match) = Text.breakOnEnd left $ Text.pack triggerdef
+          let (prefix, match) = Text.breakOnEnd left triggerdef
           in if Text.null prefix
                then Nothing
                else Just $ (rawSQL . fst $ Text.breakOn right match) ()
@@ -320,16 +307,20 @@ getDBTriggers tableName = do
           (True, True) -> DeferrableInitiallyDeferred
           (False, True) -> error "A constraint declared INITIALLY DEFERRED must be DEFERRABLE."
 
+        -- Taken from PostgreSQL sources: src/include/catalog/pg_trigger.h:
+        tgtypeBeforeBit = testBit tgtype 1 -- #define TRIGGER_TYPE_BEFORE (1 << 1)
+        tgtypeInsteadBit = testBit tgtype 6 -- #define TRIGGER_TYPE_INSTEAD (1 << 6)
         tgrActionTime :: TriggerActionTime
         tgrActionTime = case (tgtypeInsteadBit, tgtypeBeforeBit) of
           (False, False) -> After
           (False, True) -> Before
           (True, False) -> error "INSTEAD OF triggers are not available on tables."
           (True, True) -> error "The tgtype can't match more than one timing."
-          where
-            -- Taken from PostgreSQL sources: src/include/catalog/pg_trigger.h:
-            tgtypeBeforeBit = testBit tgtype 1 -- #define TRIGGER_TYPE_BEFORE (1 << 1)
-            tgtypeInsteadBit = testBit tgtype 6 -- #define TRIGGER_TYPE_INSTEAD (1 << 6)
+
+        trgUpdateOf :: RawSQL () -> TriggerEvent
+        trgUpdateOf columnsSQL =
+          let columns = map (`rawSQL` ()) . Text.splitOn ", " $ unRawSQL columnsSQL
+          in TriggerUpdateOf columns
 
         -- Similarly, in case of UPDATE OF, the columns can be simply parsed from the
         -- original query. Note that UPDATE and UPDATE OF are mutually exclusive and have
@@ -354,11 +345,27 @@ getDBTriggers tableName = do
             , (3, TriggerDelete) -- #define TRIGGER_TYPE_DELETE (1 << 3)
             , (4, TriggerUpdate) -- #define TRIGGER_TYPE_UPDATE (1 << 4)
             ]
-
-        trgUpdateOf :: RawSQL () -> TriggerEvent
-        trgUpdateOf columnsSQL =
-          let columns = map (unsafeSQL . Text.unpack) . Text.splitOn ", " $ unRawSQL columnsSQL
-          in TriggerUpdateOf columns
+    pure
+      Trigger
+        { triggerTable = tableName'
+        , triggerName = triggerBaseName (rawSQL tgname ()) tableName'
+        , triggerKind = tgrKind
+        , triggerEvents = trgEvents
+        , triggerWhen = tgrWhen
+        , triggerFunction =
+            Function
+              { fnName = rawSQL proname ()
+              , fnBody = rawSQL prosrc ()
+              , fnReturns = rawSQL prorettype ()
+              , fnSecurity =
+                  if prosecdef
+                    then Definer
+                    else Invoker
+              , fnConfigurationParameters =
+                  M.fromList . mapMaybe parseFnConfigurationParameter $
+                    fromMaybe [] proconfig
+              }
+        }
 
 -- | Build an SQL statement for creating a trigger function.
 --

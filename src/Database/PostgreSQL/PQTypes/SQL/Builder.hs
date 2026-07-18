@@ -116,6 +116,7 @@ module Database.PostgreSQL.PQTypes.SQL.Builder
   , sqlSetCmdList
   , sqlCopyColumn
   , sqlResult
+  , sqlResultArray
   , sqlOrderBy
   , sqlGroupBy
   , sqlHaving
@@ -463,7 +464,7 @@ checkAndRememberMaterializationSupport :: (MonadDB m, MonadIO m, MonadMask m) =>
 checkAndRememberMaterializationSupport = do
   res :: Either DBException Int64 <- try . withNewConnection $ do
     runSQL01_ "WITH t(n) AS MATERIALIZED (SELECT (1 :: bigint)) SELECT n FROM t LIMIT 1"
-    fetchOne runIdentity
+    fetchOne fromSQL
   liftIO $ writeIORef withMaterializedSupported (isRight res)
 
 withMaterializedSupported :: IORef Bool
@@ -668,7 +669,7 @@ sqlWhereILike name value = sqlWhere $ name <+> "ILIKE" <?> value
 
 -- | Similar to 'sqlWhereIn', but uses @ANY@ instead of @SELECT UNNEST@.
 sqlWhereEqualsAny :: (MonadState v m, SqlWhere v, Show a, ToSQL a) => SQL -> [a] -> m ()
-sqlWhereEqualsAny name values = sqlWhere $ name <+> "= ANY(" <?> Array1 values <+> ")"
+sqlWhereEqualsAny name values = sqlWhere $ name <+> "= ANY(" <?> values <+> ")"
 
 -- | Note: `sqlWhereIn` will unpack the array using `UNNEST`. Using a postgresql function in this way
 -- will interfere with the planner. Use `sqlWhereEqualsAny` instead, except if you know that
@@ -676,13 +677,13 @@ sqlWhereEqualsAny name values = sqlWhere $ name <+> "= ANY(" <?> Array1 values <
 sqlWhereIn :: (MonadState v m, SqlWhere v, Show a, ToSQL a) => SQL -> [a] -> m ()
 sqlWhereIn name values = do
   -- Unpack the array to give query optimizer more options.
-  sqlWhere $ name <+> "IN (SELECT UNNEST(" <?> Array1 values <+> "))"
+  sqlWhere $ name <+> "IN (SELECT UNNEST(" <?> values <+> "))"
 
 sqlWhereInSql :: (MonadState v m, Sqlable a, SqlWhere v) => SQL -> a -> m ()
 sqlWhereInSql name sql = sqlWhere $ name <+> "IN" <+> parenthesize (toSQLCommand sql)
 
 sqlWhereNotIn :: (MonadState v m, SqlWhere v, Show a, ToSQL a) => SQL -> [a] -> m ()
-sqlWhereNotIn name values = sqlWhere $ name <+> "NOT IN (SELECT UNNEST(" <?> Array1 values <+> "))"
+sqlWhereNotIn name values = sqlWhere $ name <+> "NOT IN (SELECT UNNEST(" <?> values <+> "))"
 
 sqlWhereNotInSql :: (MonadState v m, Sqlable a, SqlWhere v) => SQL -> a -> m ()
 sqlWhereNotInSql name sql = sqlWhere $ name <+> "NOT IN" <+> parenthesize (toSQLCommand sql)
@@ -865,6 +866,24 @@ instance SqlResult SqlDelete where
 
 sqlResult :: (MonadState v m, SqlResult v) => SQL -> m ()
 sqlResult sql = modify (\cmd -> sqlResult1 cmd sql)
+
+-- | Add an @ARRAY(\<select\>)@ expression to the results, turning the rows of
+-- the given 'SqlSelect' into a PostgreSQL array. The result columns of the
+-- inner select are collapsed into a single row so that @ARRAY()@ (which
+-- requires a one-column subquery) receives:
+--
+-- * a scalar, if the inner select has a single result (decode with
+--   @'decodeArray' 'fromSQL'@), or
+--
+-- * a composite value, if it has several (decode with
+--   @'decodeArray' . 'decodeComposite'@).
+sqlResultArray :: (MonadState v m, SqlResult v) => SqlSelect -> m ()
+sqlResultArray sql = sqlResult $ "ARRAY(" <> toSQLCommand asRow <> ")"
+  where
+    -- Collapse the result columns into one row so the subquery returns a single
+    -- column, as ARRAY() requires. Parenthesizing a lone column is a no-op, so
+    -- this also handles arrays of scalars.
+    asRow = sql {sqlSelectResult = [parenthesize . sqlConcatComma $ sqlSelectResult sql]}
 
 class SqlOrderBy a where
   sqlOrderBy1 :: a -> SQL -> a

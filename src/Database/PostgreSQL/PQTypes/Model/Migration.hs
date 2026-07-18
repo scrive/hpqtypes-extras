@@ -29,7 +29,7 @@ module Database.PostgreSQL.PQTypes.Model.Migration
 
 import Data.Int
 
-import Database.PostgreSQL.PQTypes.FromRow (FromRow)
+import Database.PostgreSQL.PQTypes.FromSQL (RowDecoder)
 import Database.PostgreSQL.PQTypes.Model.Index
 import Database.PostgreSQL.PQTypes.Model.Table
 import Database.PostgreSQL.PQTypes.SQL (SQL)
@@ -76,7 +76,10 @@ data MigrationAction m
     --   2. Unzip them into a tuple of lists in Haskell.
     --   3. Pass the lists to PostgreSQL as separate parameters and zip them back in the SQL,
     --      see https://stackoverflow.com/questions/12414750/is-there-something-like-a-zip-function-in-postgresql-that-combines-two-arrays for more details.
-    forall t. FromRow t => ModifyColumnMigration SQL ([t] -> m ()) Int
+    --
+    -- The 'RowDecoder' is used to decode the rows of primary keys provided by
+    -- the cursor SQL.
+    forall t. ModifyColumnMigration SQL (RowDecoder t) ([t] -> m ()) Int
 
 -- | Migration object.
 data Migration m

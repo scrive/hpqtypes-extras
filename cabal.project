@@ -1,11 +1,6 @@
 packages: .
 
-if impl(ghc >= 9.14)
-  allow-newer:
-    , *:base
-    , *:template-haskell
-    , aeson:containers
-    , aeson:indexed-traversable
-    , aeson:semialign
-    , aeson:time
-    , indexed-traversable:containers
+source-repository-package
+    type: git
+    location: https://github.com/scrive/hpqtypes
+    tag: a4785d18ff76ddb33d42d09d85d730cf6825ae39

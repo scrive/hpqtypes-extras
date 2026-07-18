@@ -8,7 +8,7 @@ module Database.PostgreSQL.PQTypes.Model.CompositeType
   ) where
 
 import Data.ByteString qualified as BS
-import Data.Int
+import Data.Foldable (toList)
 import Data.Monoid.Utils
 import Data.Text.Encoding qualified as T
 import Database.PostgreSQL.PQTypes
@@ -53,26 +53,24 @@ sqlDropComposite = ("DROP TYPE" <+>)
 ----------------------------------------
 
 -- | Get composite types defined in the database.
-getDBCompositeTypes :: forall m. MonadDB m => m [CompositeType]
+getDBCompositeTypes :: MonadDB m => m [CompositeType]
 getDBCompositeTypes = do
+  -- Each composite type's columns are aggregated into an array of (name, type)
+  -- records, so a single query is enough to fetch everything.
   runQuery_ . sqlSelect "pg_catalog.pg_class c" $ do
     sqlResult "c.relname::text"
-    sqlResult "c.oid::int4"
+    sqlResultArray . sqlSelect "pg_catalog.pg_attribute a" $ do
+      sqlResult "a.attname::text"
+      sqlResult "pg_catalog.format_type(a.atttypid, a.atttypmod)"
+      sqlWhere "a.attrelid = c.oid"
+      sqlOrderBy "a.attnum"
     sqlWhere "pg_catalog.pg_table_is_visible(c.oid)"
     sqlWhereEq "c.relkind" 'c'
     sqlOrderBy "c.relname"
-  mapM getComposite =<< fetchMany id
-  where
-    getComposite :: (String, Int32) -> m CompositeType
-    getComposite (name, oid) = do
-      runQuery_ . sqlSelect "pg_catalog.pg_attribute a" $ do
-        sqlResult "a.attname::text"
-        sqlResult "pg_catalog.format_type(a.atttypid, a.atttypmod)"
-        sqlWhereEq "a.attrelid" oid
-        sqlOrderBy "a.attnum"
-      columns <- fetchMany fetch
-      return CompositeType {ctName = unsafeSQL name, ctColumns = columns}
-      where
-        fetch :: (String, ColumnType) -> CompositeColumn
-        fetch (cname, ctype) =
-          CompositeColumn {ccName = unsafeSQL cname, ccType = ctype}
+  fetchMany $ do
+    name <- fromSQL
+    columns <- decodeArray . decodeComposite $ do
+      cname <- fromSQL
+      ctype <- fromSQL
+      pure CompositeColumn {ccName = rawSQL cname (), ccType = ctype}
+    pure CompositeType {ctName = rawSQL name (), ctColumns = toList columns}

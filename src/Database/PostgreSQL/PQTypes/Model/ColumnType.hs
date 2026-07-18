@@ -26,16 +26,20 @@ data ColumnType
   | TimestampWithZoneT
   | TSVectorT
   | XmlT
+  | InetT
+  | Int4RangeT
+  | Int8RangeT
+  | NumRangeT
+  | DateRangeT
+  | TSRangeT
+  | TSTZRangeT
   | ArrayT !ColumnType
   | CustomT !(RawSQL ())
   | NumericT !(Maybe (Int, Int))
   deriving (Eq, Ord, Show)
 
-instance PQFormat ColumnType where
-  pqFormat = pqFormat @T.Text
 instance FromSQL ColumnType where
-  type PQBase ColumnType = PQBase T.Text
-  fromSQL mbase = parseType . T.toLower <$> fromSQL mbase
+  fromSQL = parseType . T.toLower <$> fromSQL
     where
       parseType :: T.Text -> ColumnType
       parseType = \case
@@ -54,6 +58,13 @@ instance FromSQL ColumnType where
         "timestamp with time zone" -> TimestampWithZoneT
         "tsvector" -> TSVectorT
         "xml" -> XmlT
+        "inet" -> InetT
+        "int4range" -> Int4RangeT
+        "int8range" -> Int8RangeT
+        "numrange" -> NumRangeT
+        "daterange" -> DateRangeT
+        "tsrange" -> TSRangeT
+        "tstzrange" -> TSTZRangeT
         tname -> case parseNumeric tname of
           Just t -> t
           Nothing
@@ -93,6 +104,13 @@ columnTypeToSQL TextT = "TEXT"
 columnTypeToSQL TSVectorT = "TSVECTOR"
 columnTypeToSQL TimestampWithZoneT = "TIMESTAMPTZ"
 columnTypeToSQL XmlT = "XML"
+columnTypeToSQL InetT = "INET"
+columnTypeToSQL Int4RangeT = "INT4RANGE"
+columnTypeToSQL Int8RangeT = "INT8RANGE"
+columnTypeToSQL NumRangeT = "NUMRANGE"
+columnTypeToSQL DateRangeT = "DATERANGE"
+columnTypeToSQL TSRangeT = "TSRANGE"
+columnTypeToSQL TSTZRangeT = "TSTZRANGE"
 columnTypeToSQL (ArrayT t) = columnTypeToSQL t <> "[]"
 columnTypeToSQL (CustomT tname) = tname
 columnTypeToSQL (NumericT Nothing) = rawSQL "NUMERIC" ()

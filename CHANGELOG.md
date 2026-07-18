@@ -1,3 +1,12 @@
+# hpqtypes-extras-2.0.0.0 (????-??-??)
+* Compatibility with `hpqtypes` >= 2.0.
+* `ModifyColumnMigration` now carries a `RowDecoder` of the primary keys fetched
+  by the cursor SQL instead of relying on a `FromRow` constraint.
+* Add support for the `INET`, `INT4RANGE`, `INT8RANGE`, `NUMRANGE`, `DATERANGE`,
+  `TSRANGE` and `TSTZRANGE` column types.
+* Add the `sqlResultArray` combinator that wraps a subquery in `ARRAY(...)`,
+  collapsing its result columns into a scalar or composite array.
+
 # hpqtypes-extras-1.20.0.0 (2026-06-10)
 * Drop `crypton` dependency in favor of `ppad-ripemd160`.
 * Add support for customizing trigger functions.
