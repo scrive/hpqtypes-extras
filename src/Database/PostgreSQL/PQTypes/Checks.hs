@@ -88,6 +88,7 @@ migrateDatabase
     , dbTables = tables
     }
   migrations = do
+    checkPostgresVersion
     setDBTimeZoneToUTC
     mapM_ checkExtension extensions
     tablesWithVersions <- getTableVersions (tableVersions : tables)
@@ -131,6 +132,7 @@ checkDatabaseWithReport
     , dbDomains = domains
     , dbTables = tables
     } = execWriterT $ do
+    lift checkPostgresVersion
     (_, report) <- W.listen $ do
       tablesWithVersions <- getTableVersions (tableVersions : tables)
       tell $ checkVersions options tablesWithVersions
@@ -600,12 +602,11 @@ checkDBStructure options tables = fmap mconcat . forM tables $ \(table, version)
         sqlOrderBy "a.attnum"
       desc <- fetchMany fetchTableColumn
 
-      isAbove15 <- checkVersionIsAtLeast15
       -- get info about constraints from pg_catalog
       pk <- sqlGetPrimaryKey tblName
       runQuery_ $ sqlGetChecks tblName
       checks <- fetchMany fetchTableCheck
-      runQuery_ $ sqlGetIndexes isAbove15 tblName Nothing
+      runQuery_ $ sqlGetIndexes tblName Nothing
       indexes <- fetchMany fetchTableIndex
       runQuery_ $ sqlGetForeignKeys tblName
       fkeys <- fetchMany fetchForeignKey
@@ -1131,8 +1132,7 @@ checkDBConsistency options domains enums tablesWithVersions migrations = do
           indexSet <- case mLocalIndexName of
             Nothing -> pure False
             Just localIndexName -> do
-              isAbove15 <- checkVersionIsAtLeast15
-              runQuery_ $ sqlGetIndexes isAbove15 mgrTableName (Just localIndexName)
+              runQuery_ $ sqlGetIndexes mgrTableName (Just localIndexName)
               fetchMaybe fetchTableIndex >>= \case
                 Nothing -> do
                   logInfo_ "Local index not found"
@@ -1378,11 +1378,21 @@ checkDBConsistency options domains enums tablesWithVersions migrations = do
 -- | Type synonym for a list of tables along with their database versions.
 type TablesWithVersions = [(Table, Int32)]
 
--- The server_version_num has been there since 8.2
-checkVersionIsAtLeast15 :: (MonadDB m, MonadThrow m) => m Bool
-checkVersionIsAtLeast15 = do
-  runSQL01_ "select current_setting('server_version_num',true)::int >= 150000;"
-  fetchOne runIdentity
+-- | Fail if the PostgreSQL server is older than the oldest supported version.
+checkPostgresVersion :: (MonadDB m, MonadLog m, MonadThrow m) => m ()
+checkPostgresVersion = do
+  runSQL_ "SELECT current_setting('server_version_num')::int4, current_setting('server_version')"
+  (versionNum, version) <- fetchOne $ id @(Int32, Text)
+  when (versionNum < minimumVersion) . resultCheck . validationError $
+    T.concat
+      [ "PostgreSQL "
+      , version
+      , " is not supported, the minimum supported version is "
+      , showt $ minimumVersion `div` 10_000
+      ]
+  where
+    minimumVersion :: Int32
+    minimumVersion = 150_000
 
 -- | Associate each table in the list with its version as it exists in
 -- the DB, or 0 if it's missing from the DB.
@@ -1516,17 +1526,14 @@ fetchTableCheck (name, condition, validated) =
     }
 
 -- *** INDEXES ***
-sqlGetIndexes :: Bool -> RawSQL () -> Maybe (RawSQL ()) -> SQL
-sqlGetIndexes nullsNotDistinctSupported tableName mname = toSQLCommand . sqlSelect "pg_catalog.pg_class c" $ do
+sqlGetIndexes :: RawSQL () -> Maybe (RawSQL ()) -> SQL
+sqlGetIndexes tableName mname = toSQLCommand . sqlSelect "pg_catalog.pg_class c" $ do
   sqlResult "c.relname::text" -- index name
   sqlResult $ "ARRAY(" <> selectCoordinates "0" "i.indnkeyatts" <> ")" -- array of key columns in the index
   sqlResult $ "ARRAY(" <> selectCoordinates "i.indnkeyatts" "i.indnatts" <> ")" -- array of included columns in the index
   sqlResult "am.amname::text" -- the method used (btree, gin etc)
   sqlResult "i.indisunique" -- is it unique?
-  -- does it have NULLS NOT DISTINCT ?
-  if nullsNotDistinctSupported
-    then sqlResult "i.indnullsnotdistinct"
-    else sqlResult "false"
+  sqlResult "i.indnullsnotdistinct" -- does it have NULLS NOT DISTINCT?
   -- if partial, get constraint def
   sqlResult "pg_catalog.pg_get_expr(i.indpred, i.indrelid, true)"
   sqlJoinOn "pg_catalog.pg_index i" "c.oid = i.indexrelid"

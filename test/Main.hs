@@ -1617,11 +1617,6 @@ testSqlWith :: HasCallStack => (String -> TestM ()) -> TestM ()
 testSqlWith step = do
   step "Running sql WITH tests"
   testPass
-  runSQL_ "DELETE FROM bank"
-  step "Checking for WITH MATERIALIZED support"
-  checkAndRememberMaterializationSupport
-  step "Running sql WITH tests again with WITH MATERIALIZED support flag set"
-  testPass
   where
     migrate tables migrations = do
       let definitions = tableDefsWithPgCrypto tables
@@ -1644,9 +1639,9 @@ testSqlWith step = do
         sqlFrom "bank_name"
         sqlSetCmd "name" "bank_name"
         sqlSet "location" ("Other side" :: T.Text)
-      step "testing WITH .. UPDATE"
+      step "testing WITH MATERIALIZED .. UPDATE"
       runQuery_ . sqlUpdate "bank" $ do
-        sqlWith "other_bank" $ do
+        sqlWithMaterialized "other_bank" $ do
           sqlSelect "bank" $ do
             sqlWhereEq "name" ("other" :: T.Text)
             sqlResult "id"
@@ -1654,9 +1649,9 @@ testSqlWith step = do
         sqlSet "location" ("abcd" :: T.Text)
         sqlWhereInSql "bank.id" $ mkSQL "other_bank.id"
         sqlResult "bank.id"
-      step "testing WITH .. DELETE"
+      step "testing WITH NOT MATERIALIZED .. DELETE"
       runQuery_ . sqlDelete "bank" $ do
-        sqlWith "other_bank" $ do
+        sqlWithNotMaterialized "other_bank" $ do
           sqlSelect "bank" $ do
             sqlWhereEq "name" ("other" :: T.Text)
             sqlResult "id"

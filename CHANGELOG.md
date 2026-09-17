@@ -1,3 +1,12 @@
+# hpqtypes-extras-1.21.0.0 (2026-??-??)
+* `migrateDatabase` and `checkDatabase` now require PostgreSQL 15 or later. On an
+  older server they stop with an error.
+* Remove `checkAndRememberMaterializationSupport`. All supported servers
+  understand the `MATERIALIZED` keyword, so delete the call from your code.
+* `sqlWith` now emits a plain `WITH` clause and lets PostgreSQL decide whether
+  to materialize it. It used to emit `WITH ... AS NOT MATERIALIZED`. To keep the
+  old behavior, use the new `sqlWithNotMaterialized`.
+
 # hpqtypes-extras-1.20.0.0 (2026-06-10)
 * Drop `crypton` dependency in favor of `ppad-ripemd160`.
 * Add support for customizing trigger functions.

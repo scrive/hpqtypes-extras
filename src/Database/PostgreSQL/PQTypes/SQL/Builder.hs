@@ -125,9 +125,9 @@ module Database.PostgreSQL.PQTypes.SQL.Builder
   , sqlWith
   , sqlWithRecursive
   , sqlWithMaterialized
+  , sqlWithNotMaterialized
   , sqlUnion
   , sqlUnionAll
-  , checkAndRememberMaterializationSupport
   , sqlSelect
   , sqlSelect2
   , SqlSelect (..)
@@ -165,18 +165,13 @@ module Database.PostgreSQL.PQTypes.SQL.Builder
   )
 where
 
-import Control.Monad.Catch
 import Control.Monad.State
-import Data.Either
-import Data.IORef
-import Data.Int
 import Data.List
 import Data.Maybe
 import Data.Monoid.Utils
 import Data.String
 import Data.Typeable
 import Database.PostgreSQL.PQTypes
-import System.IO.Unsafe
 
 class Sqlable a where
   toSQLCommand :: a -> SQL
@@ -238,7 +233,7 @@ data SqlSelect = SqlSelect
   , sqlSelectHaving :: [SQL]
   , sqlSelectOffset :: Integer
   , sqlSelectLimit :: Integer
-  , sqlSelectWith :: [(SQL, SQL, Materialized)]
+  , sqlSelectWith :: [(SQL, SQL, Materialization)]
   , sqlSelectRecursiveWith :: Recursive
   }
 
@@ -248,7 +243,7 @@ data SqlUpdate = SqlUpdate
   , sqlUpdateWhere :: [SqlCondition]
   , sqlUpdateSet :: [(SQL, SQL)]
   , sqlUpdateResult :: [SQL]
-  , sqlUpdateWith :: [(SQL, SQL, Materialized)]
+  , sqlUpdateWith :: [(SQL, SQL, Materialization)]
   , sqlUpdateRecursiveWith :: Recursive
   }
 
@@ -257,7 +252,7 @@ data SqlInsert = SqlInsert
   , sqlInsertOnConflict :: Maybe (SQL, Maybe SQL)
   , sqlInsertSet :: [(SQL, Multiplicity SQL)]
   , sqlInsertResult :: [SQL]
-  , sqlInsertWith :: [(SQL, SQL, Materialized)]
+  , sqlInsertWith :: [(SQL, SQL, Materialization)]
   , sqlInsertRecursiveWith :: Recursive
   }
 
@@ -274,7 +269,7 @@ data SqlInsertSelect = SqlInsertSelect
   , sqlInsertSelectHaving :: [SQL]
   , sqlInsertSelectOffset :: Integer
   , sqlInsertSelectLimit :: Integer
-  , sqlInsertSelectWith :: [(SQL, SQL, Materialized)]
+  , sqlInsertSelectWith :: [(SQL, SQL, Materialization)]
   , sqlInsertSelectRecursiveWith :: Recursive
   }
 
@@ -283,7 +278,7 @@ data SqlDelete = SqlDelete
   , sqlDeleteUsing :: SQL
   , sqlDeleteWhere :: [SqlCondition]
   , sqlDeleteResult :: [SQL]
-  , sqlDeleteWith :: [(SQL, SQL, Materialized)]
+  , sqlDeleteWith :: [(SQL, SQL, Materialization)]
   , sqlDeleteRecursiveWith :: Recursive
   }
 
@@ -355,7 +350,7 @@ instance Sqlable SqlSelect where
   toSQLCommand cmd =
     smconcat
       [ emitClausesSepComma (recursiveClause $ sqlSelectRecursiveWith cmd) $
-          map (\(name, command, mat) -> name <+> "AS" <+> materializedClause mat <+> parenthesize command) (sqlSelectWith cmd)
+          map withClause (sqlSelectWith cmd)
       , if hasUnion || hasUnionAll
           then emitClausesSep "" unionKeyword (mainSelectClause : unionCmd)
           else mainSelectClause
@@ -412,7 +407,7 @@ instance Sqlable SqlInsert where
   toSQLCommand cmd =
     emitClausesSepComma
       (recursiveClause $ sqlInsertRecursiveWith cmd)
-      (map (\(name, command, mat) -> name <+> "AS" <+> materializedClause mat <+> parenthesize command) (sqlInsertWith cmd))
+      (map withClause (sqlInsertWith cmd))
       <+> "INSERT INTO"
       <+> sqlInsertWhat cmd
       <+> parenthesize (sqlConcatComma (map fst (sqlInsertSet cmd)))
@@ -433,7 +428,7 @@ instance Sqlable SqlInsertSelect where
       -- WITH clause needs to be at the top level, so we emit it here and not
       -- include it in the SqlSelect below.
       [ emitClausesSepComma (recursiveClause $ sqlInsertSelectRecursiveWith cmd) $
-          map (\(name, command, mat) -> name <+> "AS" <+> materializedClause mat <+> parenthesize command) (sqlInsertSelectWith cmd)
+          map withClause (sqlInsertSelectWith cmd)
       , "INSERT INTO" <+> sqlInsertSelectWhat cmd
       , parenthesize . sqlConcatComma . map fst $ sqlInsertSelectSet cmd
       , parenthesize . toSQLCommand $
@@ -456,27 +451,15 @@ instance Sqlable SqlInsertSelect where
       , emitClausesSepComma "RETURNING" $ sqlInsertSelectResult cmd
       ]
 
--- This function has to be called as one of first things in your program
--- for the library to make sure that it is aware if the "WITH MATERIALIZED"
--- clause is supported by your PostgreSQL version.
-checkAndRememberMaterializationSupport :: (MonadDB m, MonadIO m, MonadMask m) => m ()
-checkAndRememberMaterializationSupport = do
-  res :: Either DBException Int64 <- try . withNewConnection $ do
-    runSQL01_ "WITH t(n) AS MATERIALIZED (SELECT (1 :: bigint)) SELECT n FROM t LIMIT 1"
-    fetchOne runIdentity
-  liftIO $ writeIORef withMaterializedSupported (isRight res)
-
-withMaterializedSupported :: IORef Bool
-{-# NOINLINE withMaterializedSupported #-}
-withMaterializedSupported = unsafePerformIO $ newIORef False
-
-isWithMaterializedSupported :: Bool
-{-# NOINLINE isWithMaterializedSupported #-}
-isWithMaterializedSupported = unsafePerformIO $ readIORef withMaterializedSupported
-
-materializedClause :: Materialized -> SQL
-materializedClause Materialized = if isWithMaterializedSupported then "MATERIALIZED" else ""
-materializedClause NonMaterialized = if isWithMaterializedSupported then "NOT MATERIALIZED" else ""
+withClause :: (SQL, SQL, Materialization) -> SQL
+withClause (name, command, materialization) =
+  name <+> "AS" <+> materializationClause <+> parenthesize command
+  where
+    materializationClause :: SQL
+    materializationClause = case materialization of
+      DefaultMaterialization -> ""
+      Materialized -> "MATERIALIZED"
+      NotMaterialized -> "NOT MATERIALIZED"
 
 recursiveClause :: Recursive -> SQL
 recursiveClause Recursive = "WITH RECURSIVE"
@@ -486,7 +469,7 @@ instance Sqlable SqlUpdate where
   toSQLCommand cmd =
     emitClausesSepComma
       (recursiveClause $ sqlUpdateRecursiveWith cmd)
-      (map (\(name, command, mat) -> name <+> "AS" <+> materializedClause mat <+> parenthesize command) (sqlUpdateWith cmd))
+      (map withClause (sqlUpdateWith cmd))
       <+> "UPDATE"
       <+> sqlUpdateWhat cmd
       <+> "SET"
@@ -499,7 +482,7 @@ instance Sqlable SqlDelete where
   toSQLCommand cmd =
     emitClausesSepComma
       (recursiveClause $ sqlDeleteRecursiveWith cmd)
-      (map (\(name, command, mat) -> name <+> "AS" <+> materializedClause mat <+> parenthesize command) (sqlDeleteWith cmd))
+      (map withClause (sqlDeleteWith cmd))
       <+> "DELETE FROM"
       <+> sqlDeleteFrom cmd
       <+> emitClause "USING" (sqlDeleteUsing cmd)
@@ -570,7 +553,7 @@ sqlDelete table refine =
         }
     )
 
-data Materialized = Materialized | NonMaterialized
+data Materialization = DefaultMaterialization | Materialized | NotMaterialized
 data Recursive = Recursive | NonRecursive
 
 -- This instance guarantees that once a single CTE has
@@ -582,7 +565,7 @@ instance Semigroup Recursive where
   _ <> _ = NonRecursive
 
 class SqlWith a where
-  sqlWith1 :: a -> SQL -> SQL -> Materialized -> Recursive -> a
+  sqlWith1 :: a -> SQL -> SQL -> Materialization -> Recursive -> a
 
 instance SqlWith SqlSelect where
   sqlWith1 cmd name sql mat recurse = cmd {sqlSelectWith = sqlSelectWith cmd ++ [(name, sql, mat)], sqlSelectRecursiveWith = recurse <> sqlSelectRecursiveWith cmd}
@@ -596,15 +579,23 @@ instance SqlWith SqlUpdate where
 instance SqlWith SqlDelete where
   sqlWith1 cmd name sql mat recurse = cmd {sqlDeleteWith = sqlDeleteWith cmd ++ [(name, sql, mat)], sqlDeleteRecursiveWith = recurse <> sqlDeleteRecursiveWith cmd}
 
+-- | Add a @WITH@ clause and let PostgreSQL decide whether to materialize it.
 sqlWith :: (MonadState v m, SqlWith v, Sqlable s) => SQL -> s -> m ()
-sqlWith name sql = modify (\cmd -> sqlWith1 cmd name (toSQLCommand sql) NonMaterialized NonRecursive)
+sqlWith name sql = modify (\cmd -> sqlWith1 cmd name (toSQLCommand sql) DefaultMaterialization NonRecursive)
 
+-- | Add a @WITH ... AS MATERIALIZED@ clause.
 sqlWithMaterialized :: (MonadState v m, SqlWith v, Sqlable s) => SQL -> s -> m ()
 sqlWithMaterialized name sql = modify (\cmd -> sqlWith1 cmd name (toSQLCommand sql) Materialized NonRecursive)
 
+-- | Add a @WITH ... AS NOT MATERIALIZED@ clause.
+--
+-- @since 1.21.0.0
+sqlWithNotMaterialized :: (MonadState v m, SqlWith v, Sqlable s) => SQL -> s -> m ()
+sqlWithNotMaterialized name sql = modify (\cmd -> sqlWith1 cmd name (toSQLCommand sql) NotMaterialized NonRecursive)
+
 -- | Note: RECURSIVE only powers SELECTs (but the SELECT can feed an UPDATE outside of the recursive query).
 sqlWithRecursive :: (MonadState v m, SqlWith v, Sqlable s) => SQL -> s -> m ()
-sqlWithRecursive name sql = modify (\cmd -> sqlWith1 cmd name (toSQLCommand sql) NonMaterialized Recursive)
+sqlWithRecursive name sql = modify (\cmd -> sqlWith1 cmd name (toSQLCommand sql) DefaultMaterialization Recursive)
 
 -- | Note: WHERE clause of the main SELECT is treated specially, i.e. it only
 -- applies to the main SELECT, not the whole union.
