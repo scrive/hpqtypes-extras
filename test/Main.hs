@@ -28,7 +28,6 @@ import Test.Tasty.HUnit
 import Test.Tasty.Options
 
 newtype ConnectionString = ConnectionString String
-  deriving (Typeable)
 
 instance IsOption ConnectionString where
   defaultValue =

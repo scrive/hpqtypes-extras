@@ -5,8 +5,6 @@ module Database.PostgreSQL.PQTypes.Utils.NubList
   , overNubList
   ) where
 
-import Data.Typeable
-
 import Data.Semigroup qualified as SG
 import Data.Set qualified as Set
 import Text.Read qualified as R
@@ -21,7 +19,7 @@ import Text.Read qualified as R
 -- | NubList : A de-duplicated list that maintains the original order.
 newtype NubList a
   = NubList {fromNubList :: [a]}
-  deriving (Eq, Typeable)
+  deriving (Eq)
 
 -- NubList assumes that nub retains the list order while removing duplicate
 -- elements (keeping the first occurence). Documentation for "Data.List.nub"
