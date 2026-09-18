@@ -204,6 +204,8 @@ jobs:
           if [ $((HCNUMVER < 90800)) -ne 0 ] ; then echo "package hpqtypes-extras" >> cabal.project ; fi
           if [ $((HCNUMVER < 90800)) -ne 0 ] ; then echo "    ghc-options: -j4" >> cabal.project ; fi
           cat >> cabal.project <<EOF
+          package hpqtypes-extras
+            ghc-options: -Werror
           EOF
           cat cabal.project
           cat cabal.project.local

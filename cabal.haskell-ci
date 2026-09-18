@@ -3,3 +3,7 @@ doctest:        False
 tests:          True
 postgresql:     True
 installed:      -all
+
+raw-project
+  package hpqtypes-extras
+    ghc-options: -Werror

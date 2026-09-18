@@ -170,7 +170,6 @@ import Data.List
 import Data.Maybe
 import Data.Monoid.Utils
 import Data.String
-import Data.Typeable
 import Database.PostgreSQL.PQTypes
 
 class Sqlable a where
@@ -204,7 +203,7 @@ data AscDesc a = Asc a | Desc a
   deriving (Eq, Show)
 
 data Multiplicity a = Single a | Many [a]
-  deriving (Eq, Ord, Show, Typeable)
+  deriving (Eq, Ord, Show)
 
 -- | 'SqlCondition' are clauses that are part of the WHERE block in
 -- SQL statements. Each statement has a list of conditions, all of
@@ -215,7 +214,7 @@ data Multiplicity a = Single a | Many [a]
 data SqlCondition
   = SqlPlainCondition SQL
   | SqlExistsCondition SqlSelect
-  deriving (Typeable, Show)
+  deriving (Show)
 
 instance Sqlable SqlCondition where
   toSQLCommand (SqlPlainCondition a) = a
