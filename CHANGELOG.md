@@ -1,4 +1,4 @@
-# hpqtypes-extras-1.21.0.0 (2026-??-??)
+# hpqtypes-extras-1.21.0.0 (2026-09-18)
 * `migrateDatabase` and `checkDatabase` now require PostgreSQL 15 or later. On an
   older server they stop with an error.
 * Remove `checkAndRememberMaterializationSupport`. All supported servers
