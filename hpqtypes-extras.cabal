@@ -89,8 +89,8 @@ library
                , containers        >= 0.5
                , exceptions        >= 0.10
                , extra             >= 1.6.17
-               , hpqtypes          >= 1.13.0.0
-               , log-base          >= 0.11
+               , hpqtypes          >= 1.13.0.0 && < 2
+               , log-base          >= 0.12.0.1
                , mtl               >= 2.2
                , ppad-ripemd160    >= 0.1.4
                , text              >= 1.2
@@ -127,7 +127,7 @@ test-suite  hpqtypes-extras-tests
                     , hpqtypes-extras
                     , log-base
                     , tasty
-                    , tasty-hunit
+                    , tasty-hunit >= 0.10
                     , text
                     , uuid-types
 
