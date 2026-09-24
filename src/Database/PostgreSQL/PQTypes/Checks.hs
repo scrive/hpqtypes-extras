@@ -908,9 +908,9 @@ checkDBConsistency options domains enums tablesWithVersions migrations = do
             [ mgrFrom | Migration {..} <- migrations, mgrTableName == tblName table
             ]
           expectedMigrationVersions =
-            reverse $
-              take (length presentMigrationVersions) $
-                reverse [0 .. tblVersion table - 1]
+            reverse
+              $ take (length presentMigrationVersions)
+              $ reverse [0 .. tblVersion table - 1]
       checkMigrationsListValidity
         table
         presentMigrationVersions

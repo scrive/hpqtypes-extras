@@ -160,18 +160,18 @@ uniqueIndexOnColumnWithCondition column whereC =
 
 indexName :: RawSQL () -> TableIndex -> RawSQL ()
 indexName tname TableIndex {..} =
-  flip rawSQL () $
-    T.take 63 . unRawSQL $
-      mconcat
-        [ if idxUnique then "unique_idx__" else "idx__"
-        , tname
-        , "__"
-        , mintercalate "__" $ map (asText sanitize . indexColumnName) idxColumns
-        , if null idxInclude
-            then ""
-            else "$$" <> mintercalate "__" (map (asText sanitize) idxInclude)
-        , maybe "" (("__" <>) . hashWhere) idxWhere
-        ]
+  flip rawSQL ()
+    $ T.take 63 . unRawSQL
+    $ mconcat
+      [ if idxUnique then "unique_idx__" else "idx__"
+      , tname
+      , "__"
+      , mintercalate "__" $ map (asText sanitize . indexColumnName) idxColumns
+      , if null idxInclude
+          then ""
+          else "$$" <> mintercalate "__" (map (asText sanitize) idxInclude)
+      , maybe "" (("__" <>) . hashWhere) idxWhere
+      ]
   where
     asText f = flip rawSQL () . f . unRawSQL
     -- See http://www.postgresql.org/docs/9.4/static/sql-syntax-lexical.html#SQL-SYNTAX-IDENTIFIERS.

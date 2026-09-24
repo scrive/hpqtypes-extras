@@ -10,8 +10,9 @@ import Data.Either
 import Data.List (zip4)
 import Data.Set qualified as Set
 import Data.Text qualified as T
-import Data.Typeable
 import Data.UUID.Types
+import System.Environment
+import System.Exit
 
 import Data.Monoid.Utils
 import Database.PostgreSQL.PQTypes
@@ -25,18 +26,6 @@ import Data.Map qualified as M
 import Database.PostgreSQL.PQTypes.Model.Function
 import Test.Tasty
 import Test.Tasty.HUnit
-import Test.Tasty.Options
-
-newtype ConnectionString = ConnectionString String
-
-instance IsOption ConnectionString where
-  defaultValue =
-    ConnectionString
-      -- For GitHub Actions CI
-      "host=postgres user=postgres password=postgres"
-  parseValue = Just . ConnectionString
-  optionName = return "connection-string"
-  optionHelp = return "Postgres connection string"
 
 testExtrasOptions :: ExtrasOptions
 testExtrasOptions =
@@ -1801,12 +1790,12 @@ migrationTest2 connSource =
 
     runQuery_ $ sqlCreateComposite composite
 
-    assertNoException "checkDatabase should run fine for consistent DB" $
-      checkDatabase extrasOptions $
-        emptyDbDefinitions {dbComposites = [composite], dbTables = currentSchema}
-    assertException "checkDatabase fails if composite type definition is not provided" $
-      checkDatabase extrasOptions $
-        emptyDbDefinitions {dbTables = currentSchema}
+    assertNoException "checkDatabase should run fine for consistent DB"
+      $ checkDatabase extrasOptions
+      $ emptyDbDefinitions {dbComposites = [composite], dbTables = currentSchema}
+    assertException "checkDatabase fails if composite type definition is not provided"
+      $ checkDatabase extrasOptions
+      $ emptyDbDefinitions {dbTables = currentSchema}
     assertNoException
       "checkDatabaseAllowUnknownTables runs fine \
       \for consistent DB"
@@ -1827,9 +1816,9 @@ migrationTest2 connSource =
     runSQL_
       "INSERT INTO table_versions (name, version) \
       \VALUES ('unknown_table', 0)"
-    assertException "checkDatabase throw when extra entry in 'table_versions'" $
-      checkDatabase extrasOptions $
-        emptyDbDefinitions {dbTables = currentSchema}
+    assertException "checkDatabase throw when extra entry in 'table_versions'"
+      $ checkDatabase extrasOptions
+      $ emptyDbDefinitions {dbTables = currentSchema}
     assertNoException
       "checkDatabaseAllowUnknownObjects \
       \accepts extra entry in 'table_versions'"
@@ -1838,19 +1827,19 @@ migrationTest2 connSource =
     runSQL_ "DELETE FROM table_versions where name='unknown_table'"
 
     runSQL_ "CREATE TABLE unknown_table (title text)"
-    assertException "checkDatabase should throw with unknown table" $
-      checkDatabase extrasOptions $
-        emptyDbDefinitions {dbTables = currentSchema}
-    assertNoException "checkDatabaseAllowUnknownObjects accepts unknown table" $
-      checkDatabase extrasOptionsWithUnknownObjects $
-        emptyDbDefinitions {dbTables = currentSchema}
+    assertException "checkDatabase should throw with unknown table"
+      $ checkDatabase extrasOptions
+      $ emptyDbDefinitions {dbTables = currentSchema}
+    assertNoException "checkDatabaseAllowUnknownObjects accepts unknown table"
+      $ checkDatabase extrasOptionsWithUnknownObjects
+      $ emptyDbDefinitions {dbTables = currentSchema}
 
     runSQL_
       "INSERT INTO table_versions (name, version) \
       \VALUES ('unknown_table', 0)"
-    assertException "checkDatabase should throw with unknown table" $
-      checkDatabase extrasOptions $
-        emptyDbDefinitions {dbTables = currentSchema}
+    assertException "checkDatabase should throw with unknown table"
+      $ checkDatabase extrasOptions
+      $ emptyDbDefinitions {dbTables = currentSchema}
     assertNoException
       "checkDatabaseAllowUnknownObjects \
       \accepts unknown tables with version"
@@ -2051,9 +2040,9 @@ migrationTest5 connSource =
         { mgrTableName = "bank"
         , mgrFrom = 1
         , mgrAction =
-            StandardMigration $
-              runQuery_ $
-                sqlAlterTable "bank" [sqlAddColumn stringColumn]
+            StandardMigration
+              $ runQuery_
+              $ sqlAlterTable "bank" [sqlAddColumn stringColumn]
         }
 
     copyStringColumnMigration =
@@ -2073,9 +2062,9 @@ migrationTest5 connSource =
         { mgrTableName = "bank"
         , mgrFrom = 3
         , mgrAction =
-            StandardMigration $
-              runQuery_ $
-                sqlAlterTable "bank" [sqlAddColumn boolColumn]
+            StandardMigration
+              $ runQuery_
+              $ sqlAlterTable "bank" [sqlAddColumn boolColumn]
         }
 
     modifyBoolColumnMigration =
@@ -2100,9 +2089,9 @@ migrationTest5 connSource =
       rows_new :: [Maybe T.Text] <- fetchMany runIdentity
       runQuery_ . sqlSelect "bank" $ sqlResult "name"
       rows_old :: [Maybe T.Text] <- fetchMany runIdentity
-      liftIO . assertEqual "All name_new are equal name" True $
-        all (uncurry (==)) $
-          zip rows_new rows_old
+      liftIO . assertEqual "All name_new are equal name" True
+        $ all (uncurry (==))
+        $ zip rows_new rows_old
 
     checkAddBoolColumn = do
       runQuery_ . sqlSelect "bank" $ sqlResult "name_is_true"
@@ -2523,9 +2512,9 @@ testCaseSteps' testName connSource f =
   testCaseSteps testName $ \step' -> do
     let step s = liftIO $ step' s
     withStdOutLogger $ \logger ->
-      runLogT "hpqtypes-extras-test" logger defaultLogLevel $
-        runDBT connSource defaultTransactionSettings $
-          f step
+      runLogT "hpqtypes-extras-test" logger defaultLogLevel
+        $ runDBT connSource defaultTransactionSettings
+        $ f step
 
 tableDefsWithPgCrypto :: [Table] -> DatabaseDefinitions
 tableDefsWithPgCrypto tables =
@@ -2625,33 +2614,40 @@ numericColumnTypeTest connSource =
 
 main :: IO ()
 main = do
-  defaultMainWithIngredients ings $
-    askOption $ \(ConnectionString connectionString) ->
-      let connSettings =
-            defaultConnectionSettings
-              { csConnInfo = T.pack connectionString
-              }
-          ConnectionSource connSource = simpleSource connSettings
-      in testGroup
-           "DB tests"
-           [ migrationTest1 connSource
-           , migrationTest2 connSource
-           , migrationTest3 connSource
-           , migrationTest4 connSource
-           , migrationTest5 connSource
-           , triggerTests connSource
-           , sqlWithTests connSource
-           , unionTests connSource
-           , unionAllTests connSource
-           , sqlWithRecursiveTests connSource
-           , foreignKeyIndexesTests connSource
-           , overlapingIndexesTests connSource
-           , nullsNotDistinctTests connSource
-           , sqlAnyAllTests
-           , enumTest connSource
-           , numericColumnTypeTest connSource
-           ]
+  (connString, args) <- getConnString
+  let connSettings = defaultConnectionSettings {csConnInfo = connString}
+      ConnectionSource connSource = simpleSource connSettings
+  withArgs args . defaultMain $
+    testGroup
+      "DB tests"
+      [ migrationTest1 connSource
+      , migrationTest2 connSource
+      , migrationTest3 connSource
+      , migrationTest4 connSource
+      , migrationTest5 connSource
+      , triggerTests connSource
+      , sqlWithTests connSource
+      , unionTests connSource
+      , unionAllTests connSource
+      , sqlWithRecursiveTests connSource
+      , foreignKeyIndexesTests connSource
+      , overlapingIndexesTests connSource
+      , nullsNotDistinctTests connSource
+      , sqlAnyAllTests
+      , enumTest connSource
+      , numericColumnTypeTest connSource
+      ]
   where
-    ings =
-      includingOptions [Option (Proxy :: Proxy ConnectionString)]
-        : defaultIngredients
+    getConnString :: IO (T.Text, [String])
+    getConnString =
+      getArgs >>= \case
+        connString : args -> pure (T.pack connString, args)
+        [] ->
+          lookupEnv "GITHUB_ACTIONS" >>= \case
+            Just "true" -> pure ("host=localhost user=postgres password=postgres", [])
+            _ -> printUsage >> exitFailure
+
+    printUsage :: IO ()
+    printUsage = do
+      prog <- getProgName
+      putStrLn $ "Usage: " <> prog <> " <connection info string> [tasty args]"

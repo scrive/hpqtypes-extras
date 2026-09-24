@@ -3,16 +3,16 @@ name:                hpqtypes-extras
 version:             1.21.0.0
 synopsis:            Extra utilities for hpqtypes library
 description:         The following extras for hpqtypes library:
-                     .
+
                      * DSL for easy, modular construction of SQL queries.
-                     .
+
                      * System for automatic validation and migration
                        of a database schema.
 
 homepage:            https://github.com/scrive/hpqtypes-extras
 license:             BSD-3-Clause
 license-file:        LICENSE
-extra-source-files:  CHANGELOG.md, README.md
+extra-doc-files:     CHANGELOG.md, README.md
 author:              Scrive AB
 maintainer:          Andrzej Rybczak <andrzej@rybczak.net>,
                      Jonathan Jouty <jonathan@scrive.com>,
@@ -20,7 +20,7 @@ maintainer:          Andrzej Rybczak <andrzej@rybczak.net>,
 copyright:           Scrive AB
 category:            Database
 build-type:          Simple
-tested-with:         GHC == { 9.2.8, 9.4.8, 9.6.7, 9.8.4, 9.10.3, 9.12.4, 9.14.1 }
+tested-with:         GHC ^>= { 9.2, 9.4, 9.6, 9.8, 9.10, 9.12, 9.14 }
 
 Source-repository head
   Type:     git
